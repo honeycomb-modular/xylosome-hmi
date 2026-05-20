@@ -1,0 +1,153 @@
+<svg viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg" role="img" font-family="'JetBrains Mono', 'Fira Mono', 'Courier New', monospace">
+  <title>Xylosome System Architecture</title>
+  <desc>System architecture diagram showing the Main Box and Pendant subsystems and their connections.</desc>
+
+  <style>
+    text { font-family: 'JetBrains Mono', 'Fira Mono', 'Courier New', monospace; }
+    .label-dim  { fill: #888; }
+    .label      { fill: #e0e0e0; }
+    .label-bright { fill: #a8e6a8; }
+    .label-blue { fill: #a0a0f0; }
+    .label-red  { fill: #f08080; }
+    .box-title  { fill: #666; font-size: 10px; letter-spacing: 0.12em; }
+  </style>
+
+  <!-- Background -->
+  <rect width="900" height="620" fill="#0e0e0e" rx="0"/>
+
+  <!-- Section labels -->
+  <text x="120" y="30" text-anchor="middle" class="box-title">MAIN BOX — fixed</text>
+  <text x="660" y="30" text-anchor="middle" class="box-title">PENDANT — handheld</text>
+
+  <!-- Outlines -->
+  <rect x="18" y="38" width="204" height="548" rx="6" fill="none" stroke="#2a2a2a" stroke-width="1.5"/>
+  <rect x="468" y="38" width="414" height="548" rx="6" fill="none" stroke="#2a2a2a" stroke-width="1.5"/>
+
+  <!-- 24V PSU -->
+  <rect x="44" y="58" width="152" height="52" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="120" y="79" text-anchor="middle" font-size="11" class="label">24V PSU</text>
+  <text x="120" y="96" text-anchor="middle" font-size="9" class="label-dim">mains input</text>
+
+  <line x1="120" y1="110" x2="120" y2="132" stroke="#4a9a4a" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- ClearCore -->
+  <rect x="44" y="132" width="152" height="100" rx="4" fill="#1a2a1a" stroke="#4a9a4a" stroke-width="1.5"/>
+  <text x="120" y="153" text-anchor="middle" font-size="11" class="label-bright">ClearCore</text>
+  <text x="120" y="170" text-anchor="middle" font-size="9" class="label-dim">Ethernet  ·  24V I/O</text>
+  <text x="120" y="184" text-anchor="middle" font-size="9" class="label-dim">motor control</text>
+  <text x="120" y="198" text-anchor="middle" font-size="9" class="label-dim">camera timing</text>
+  <text x="120" y="212" text-anchor="middle" font-size="9" class="label-dim">motion logic</text>
+
+  <circle cx="120" cy="232" r="3" fill="#4a9a4a"/>
+  <line x1="120" y1="232" x2="120" y2="258" stroke="#4a9a4a" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Panasonic Servo -->
+  <rect x="44" y="258" width="152" height="44" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="120" y="277" text-anchor="middle" font-size="11" class="label">Panasonic Servo</text>
+  <text x="120" y="293" text-anchor="middle" font-size="9" class="label-dim">direct drive</text>
+
+  <circle cx="120" cy="322" r="3" fill="#4a9a4a"/>
+  <line x1="120" y1="302" x2="120" y2="322" stroke="#4a9a4a" stroke-width="1.5"/>
+  <line x1="120" y1="322" x2="120" y2="322" stroke="#4a9a4a" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- NEMA 17 -->
+  <rect x="44" y="322" width="152" height="44" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="120" y="341" text-anchor="middle" font-size="11" class="label">NEMA 17 Stepper</text>
+  <text x="120" y="357" text-anchor="middle" font-size="9" class="label-dim">direct drive</text>
+
+  <line x1="120" y1="366" x2="120" y2="386" stroke="#4a9a4a" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Line Scanner -->
+  <rect x="44" y="386" width="152" height="44" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="120" y="405" text-anchor="middle" font-size="11" class="label">Line Scanner</text>
+  <text x="120" y="421" text-anchor="middle" font-size="9" class="label-dim">trigger I/O · timing sync</text>
+
+  <!-- E-STOP -->
+  <rect x="44" y="456" width="152" height="44" rx="4" fill="#2a1a1a" stroke="#c05050" stroke-width="1.5"/>
+  <text x="120" y="475" text-anchor="middle" font-size="11" class="label-red">E-STOP IN 24V</text>
+  <text x="120" y="491" text-anchor="middle" font-size="9" class="label-dim">hardwire NC loop</text>
+  <text x="120" y="518" text-anchor="middle" font-size="9" class="label-dim">NC loop → hardwired</text>
+  <text x="120" y="531" text-anchor="middle" font-size="9" class="label-dim">external e-stop panel</text>
+
+  <!-- CAT6 middle block -->
+  <rect x="248" y="160" width="104" height="130" rx="4" fill="#141414" stroke="#2a2a2a" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="300" y="182" text-anchor="middle" font-size="9" class="label-dim">CAT6 STP</text>
+  <text x="300" y="200" text-anchor="middle" font-size="9" fill="#a0c0a0">PoE power</text>
+  <line x1="270" y1="210" x2="330" y2="210" stroke="#1e3a1e" stroke-width="1"/>
+  <text x="300" y="228" text-anchor="middle" font-size="9" fill="#a0c0a0">Ethernet</text>
+  <text x="300" y="248" text-anchor="middle" font-size="9" class="label-dim">≤ 100 m</text>
+  <text x="300" y="266" text-anchor="middle" font-size="9" class="label-dim">single cable</text>
+  <text x="300" y="282" text-anchor="middle" font-size="9" class="label-dim">pendant ↔ box</text>
+
+  <line x1="196" y1="182" x2="248" y2="200" stroke="#4a9a4a" stroke-width="1" stroke-dasharray="5,3"/>
+  <line x1="196" y1="84"  x2="248" y2="175" stroke="#4a9a4a" stroke-width="1" stroke-dasharray="5,3"/>
+  <line x1="352" y1="195" x2="488" y2="195" stroke="#4a9a4a" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowGreen)"/>
+  <line x1="352" y1="230" x2="488" y2="310" stroke="#4a9a4a" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#arrowGreen)"/>
+
+  <!-- PoE HAT -->
+  <rect x="488" y="168" width="152" height="52" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="564" y="189" text-anchor="middle" font-size="11" class="label">PoE HAT</text>
+  <text x="564" y="205" text-anchor="middle" font-size="9" class="label-dim">Pi 5 official · 5V out</text>
+  <text x="564" y="218" text-anchor="middle" font-size="9" class="label-dim">Ethernet passthrough</text>
+
+  <line x1="564" y1="220" x2="564" y2="258" stroke="#4a9a4a" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Pi 5 -->
+  <rect x="488" y="258" width="152" height="100" rx="4" fill="#1a2a1a" stroke="#4a9a4a" stroke-width="1.5"/>
+  <text x="564" y="279" text-anchor="middle" font-size="11" class="label-bright">Raspberry Pi 5</text>
+  <text x="564" y="296" text-anchor="middle" font-size="9" class="label-dim">Qt6 / QML HMI</text>
+  <text x="564" y="310" text-anchor="middle" font-size="9" class="label-dim">TCP ↔ ClearCore</text>
+  <text x="564" y="324" text-anchor="middle" font-size="9" class="label-dim">USB serial ↔ Teensy</text>
+  <text x="564" y="338" text-anchor="middle" font-size="9" class="label-dim">HDMI + USB ↔ display</text>
+
+  <line x1="530" y1="358" x2="530" y2="400" stroke="#888" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowGrey)"/>
+  <line x1="640" y1="308" x2="700" y2="308" stroke="#888" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowGrey)"/>
+  <text x="669" y="302" text-anchor="middle" font-size="8" class="label-dim">USB</text>
+
+  <!-- WaveShare -->
+  <rect x="488" y="400" width="152" height="52" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="564" y="421" text-anchor="middle" font-size="11" class="label">WaveShare 5.5″</text>
+  <text x="564" y="437" text-anchor="middle" font-size="9" class="label-dim">HDMI + USB touch</text>
+
+  <!-- Teensy 4.1 -->
+  <rect x="700" y="258" width="152" height="100" rx="4" fill="#1a1a2a" stroke="#6060c0" stroke-width="1.5"/>
+  <text x="776" y="279" text-anchor="middle" font-size="11" class="label-blue">Teensy 4.1</text>
+  <text x="776" y="296" text-anchor="middle" font-size="9" class="label-dim">encoder / buttons</text>
+  <text x="776" y="310" text-anchor="middle" font-size="9" class="label-dim">USB serial ↔ Pi 5</text>
+  <text x="776" y="324" text-anchor="middle" font-size="9" class="label-dim">pendant carrier PCB</text>
+
+  <line x1="776" y1="358" x2="776" y2="400" stroke="#6060c0" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+
+  <!-- Physical Controls -->
+  <rect x="700" y="400" width="152" height="72" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="776" y="421" text-anchor="middle" font-size="11" class="label">Physical Controls</text>
+  <text x="776" y="437" text-anchor="middle" font-size="9" class="label-dim">rotary encoder / jog</text>
+  <text x="776" y="451" text-anchor="middle" font-size="9" class="label-dim">BTN1 · BTN2 · ENC_SW</text>
+  <text x="776" y="465" text-anchor="middle" font-size="9" class="label-dim">30 mm knob</text>
+
+  <!-- Legend -->
+  <rect x="248" y="490" width="390" height="80" rx="4" fill="#111" stroke="#222" stroke-width="1"/>
+  <text x="262" y="508" font-size="9" class="label-dim">LEGEND</text>
+  <line x1="262" y1="524" x2="296" y2="524" stroke="#4a9a4a" stroke-width="2"/>
+  <text x="302" y="528" font-size="9" class="label-dim">power</text>
+  <line x1="262" y1="544" x2="296" y2="544" stroke="#4a9a4a" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="302" y="548" font-size="9" class="label-dim">data / Ethernet</text>
+  <line x1="380" y1="524" x2="414" y2="524" stroke="#888" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="420" y="528" font-size="9" class="label-dim">USB serial / HDMI</text>
+  <line x1="380" y1="544" x2="414" y2="544" stroke="#6060c0" stroke-width="1.5"/>
+  <text x="420" y="548" font-size="9" class="label-dim">pendant internal</text>
+  <line x1="262" y1="562" x2="296" y2="562" stroke="#c05050" stroke-width="1.5"/>
+  <text x="302" y="566" font-size="9" class="label-dim">e-stop hardwire</text>
+
+  <defs>
+    <marker id="arrowGreen" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#4a9a4a"/>
+    </marker>
+    <marker id="arrowGrey" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#888"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#6060c0"/>
+    </marker>
+  </defs>
+</svg>

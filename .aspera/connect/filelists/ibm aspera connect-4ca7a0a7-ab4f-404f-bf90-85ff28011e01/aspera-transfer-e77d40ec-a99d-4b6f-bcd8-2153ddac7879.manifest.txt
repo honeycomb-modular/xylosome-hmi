@@ -1,0 +1,39 @@
+## Transfer manifest (FASP ver 4.0.0.182279)
+## Transport: ASCP
+## Name: Gadget_Pressure_Plate_Test_LTA_4_HR01_L10617891.mov(+0)
+## UUID: e77d40ec-a99d-4b6f-bcd8-2153ddac7879
+## Client: 216.4.176.59:60333
+## Server: 66.172.3.86:33001
+## ServerUser: faspex
+## ServerHostname: aspera02.fotokem.com
+## Recipient: 216.4.176.59
+## Checksum: SPAR-NONE
+## FileChecksumType: none
+## Cookie: aspera.faspex20:d:47331c3a-c19c-40f2-bf6a-ff1e60f9a9d6:aG95dGV2YW5ob3l0ZW1hQG1lLmNvbQ:eyJXb3Jrb3JkZXIgTnVtYmVyIjoiIiwiX3BrZ191dWlkIjoiMzgxMGUyNTEtYTM0MS00ZmFkLWIyZTgtYmFlY2ZiNjA1ZmIyIiwiX3BrZ19uYW1lIjoiR2FkZ2V0IENhbWVyYSBUZXN0IC0gUHJvUmVzIiwiX2NyZWF0ZWRfdXRjIjoiMjAyMi8wMi8wNCAyMTo0MToxMCArMDAwMCIsIl9tZXRhZGF0YV9wcm9maWxlX25hbWUiOiJUZXN0IiwiX21ldGFkYXRhX3Byb2ZpbGVfdXVpZCI6IjNiZDZmZTQ2LWQ0ZDgtNGJiMC04NzkxLWQ5NmFmNzBlZmQ4ZSIsIl9tZXRhZGF0YV9wcm9maWxlX3ZlcnNpb24iOiIyMDIwLTAxLTA5IDE3OjQ4OjEzIn0:R2FkZ2V0IENhbWVyYSBUZXN0IC0gUHJvUmVz
+## XferId: 4ca7a0a7-ab4f-404f-bf90-85ff28011e01
+## XferRetry: 90
+## Tags: {    "aspera": {        "xfer_id": "4ca7a0a7-ab4f-404f-bf90-85ff28011e01",        "xfer_retry": 90,        "faspex": {            "requestor": {                "name": "FKI-GDDEL00",                "first_name": "FotoKem",                "last_name": "EnterpriseData",                "email": "enterprisedata@fotokem.com"            },            "downloader": {                "email": "hoytevanhoytema@me.com",                "first_name": "hoytevanhoytema@me.com",                "last_name": "(external email)",                "name": "hoytevanhoytema@me.com"            },            "metadata": {                "Workorder Number": "",                "_created_utc": "2022/02/04 21:41:10 +0000",                "_metadata_profile_name": "Test",                "_metadata_profile_uuid": "3bd6fe46-d4d8-4bb0-8791-d96af70efd8e",                "_metadata_profile_version": "2020-01-09 17:48:13",                "_pkg_name": "Gadget Camera Test - ProRes",                "_pkg_uuid": "3810e251-a341-4fad-b2e8-baecfb605fb2"            }        }    }}
+## Start: 2022-02-08 14:23:11
+
+"/Users/hoytevhoytema/Downloads/Gadget_Pressure_Plate_Test_LTA_4_HR01_L10617891.mov" 2082521088B 2082521088B completed, :
+
+
+===========================================
+Total number of sources:                1
+--Total sources scanned:                1
+Total paths scan attempted:             1
+--Total paths scan failed:              0
+--Total paths scan skipped:             0
+--Total paths scan excluded:            0
+--Total paths scan completed:           1
+Total dir transfer attempted:           0
+--Total dir transfer failed:            0
+--Total dir transfer passed:            0
+Total file transfer attempted:          1
+--Total file transfer failed:           0
+--Total file transfer passed:           1
+--Total file transfer skipped:          1
+===========================================
+Transfer success
+Total elapsed: 0.0s
+Total transferred bytes: 0

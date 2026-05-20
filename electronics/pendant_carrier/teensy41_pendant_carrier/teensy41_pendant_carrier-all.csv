@@ -1,0 +1,17 @@
+### Footprint positions - created on 2026-05-15T19:05:37 ###
+### Printed by KiCad version 10.0.2
+## Unit = mm, Angle = deg.
+## Side : All
+# Ref     Val         Package                            PosX       PosY       Rot  Side
+C1        470pF       C_0805_2012Metric              113.0000  -157.0000    0.0000  top
+C2        470pF       C_0805_2012Metric              113.0000  -149.0000    0.0000  top
+C3        100nF       C_0805_2012Metric              113.0000  -167.0000    0.0000  top
+C4        100nF       C_0805_2012Metric              113.0000  -163.0000    0.0000  top
+C5        10uF        C_0805_2012Metric              113.0000  -173.0000    0.0000  top
+J1        Button1     JST_XH_1x02_P2.50mm_Vertical   128.0000  -165.0000   90.0000  top
+J2        Button2     JST_XH_1x02_P2.50mm_Vertical   128.0000  -156.0000   90.0000  top
+J3        Encoder     JST_XH_1x06_P2.50mm_Vertical   128.0000  -144.0000   90.0000  top
+R1        10k         R_0805_2012Metric              113.0000  -153.0000    0.0000  top
+R2        10k         R_0805_2012Metric              113.0000  -145.0000    0.0000  top
+U1        Teensy_4.1  Teensy4_1_Socketed_2x24        113.1000  -148.7900    0.0000  top
+## End

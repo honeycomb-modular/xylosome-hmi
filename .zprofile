@@ -1,0 +1,5 @@
+# Setting SPINNAKER_GENTL64_CTI and GENICAM_GENTL64_PATH for Spinnaker GenTL producer
+# The original version is saved in /usr/local/lib/spinnaker-gentl/zprofile.spinnakergentl
+export SPINNAKER_GENTL64_CTI="/usr/local/lib/spinnaker-gentl/Spinnaker_GenTL.cti"
+if [ -z $GENICAM_GENTL64_PATH ]; then export GENICAM_GENTL64_PATH="/usr/local/lib/spinnaker-gentl"
+else export GENICAM_GENTL64_PATH="/usr/local/lib/spinnaker-gentl:$GENICAM_GENTL64_PATH"; fi

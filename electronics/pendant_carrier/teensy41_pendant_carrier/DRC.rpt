@@ -1,0 +1,113 @@
+** Drc report for teensy41_pendant_carrier.kicad_pcb **
+** Created on 2026-05-15T10:40:21 **
+** Report includes: Errors, Warnings **
+
+** Found 31 DRC violations **
+[copper_edge_clearance]: Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.4917 mm)
+    Rule: board setup constraints edge; error
+    @(126.1417 mm, 184.3480 mm): Segment on Edge.Cuts
+    @(109.0000 mm, 181.5000 mm): Track [+5V] on B.Cu, length 16.5000 mm
+[copper_edge_clearance]: Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.4917 mm)
+    Rule: board setup constraints edge; error
+    @(126.1417 mm, 184.3480 mm): Segment on Edge.Cuts
+    @(125.5000 mm, 181.5000 mm): Track [+5V] on B.Cu, length 37.5000 mm
+[lib_footprint_mismatch]: Footprint 'JST_XH_1x06_P2.50mm_Vertical' does not match copy in library 'teensy41_pendant_carrier'
+    Local override; warning
+    @(128.0000 mm, 144.0000 mm): Footprint J3
+[lib_footprint_mismatch]: Footprint 'JST_XH_1x02_P2.50mm_Vertical' does not match copy in library 'teensy41_pendant_carrier'
+    Local override; warning
+    @(128.0000 mm, 156.0000 mm): Footprint J2
+[lib_footprint_mismatch]: Footprint 'JST_XH_1x02_P2.50mm_Vertical' does not match copy in library 'teensy41_pendant_carrier'
+    Local override; warning
+    @(128.0000 mm, 165.0000 mm): Footprint J1
+[lib_footprint_mismatch]: Footprint 'R_0805_2012Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(113.0000 mm, 145.0000 mm): Footprint R2
+[lib_footprint_mismatch]: Footprint 'C_0805_2012Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(113.0000 mm, 149.0000 mm): Footprint C2
+[lib_footprint_mismatch]: Footprint 'R_0805_2012Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(113.0000 mm, 153.0000 mm): Footprint R1
+[lib_footprint_mismatch]: Footprint 'C_0805_2012Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(113.0000 mm, 157.0000 mm): Footprint C1
+[lib_footprint_mismatch]: Footprint 'C_0805_2012Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(113.0000 mm, 163.0000 mm): Footprint C4
+[lib_footprint_mismatch]: Footprint 'C_0805_2012Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(113.0000 mm, 167.0000 mm): Footprint C3
+[lib_footprint_mismatch]: Footprint 'C_0805_2012Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(113.0000 mm, 173.0000 mm): Footprint C5
+[lib_footprint_mismatch]: Footprint 'MountingHole_3.2mm_M3' does not match copy in library 'MountingHole'
+    Local override; warning
+    @(113.1450 mm, 105.0000 mm): Footprint MH1
+[lib_footprint_mismatch]: Footprint 'MountingHole_3.2mm_M3' does not match copy in library 'MountingHole'
+    Local override; warning
+    @(113.0710 mm, 184.3480 mm): Footprint MH2
+[lib_footprint_mismatch]: Footprint 'MountingHole_3.2mm_M3' does not match copy in library 'MountingHole'
+    Local override; warning
+    @(143.7300 mm, 133.2150 mm): Footprint MH3
+[lib_footprint_mismatch]: Footprint 'MountingHole_3.2mm_M3' does not match copy in library 'MountingHole'
+    Local override; warning
+    @(143.7300 mm, 163.5910 mm): Footprint MH4
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.1000 mm, 116.3900 mm): Reference field of U1
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(124.5000 mm, 137.7500 mm): Reference field of J3
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(124.5000 mm, 154.7500 mm): Reference field of J2
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(124.5000 mm, 163.7500 mm): Reference field of J1
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 143.3500 mm): Reference field of R2
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 147.3500 mm): Reference field of C2
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 151.3500 mm): Reference field of R1
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 155.3500 mm): Reference field of C1
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 161.3500 mm): Reference field of C4
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 165.3500 mm): Reference field of C3
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0000 mm, 171.3500 mm): Reference field of C5
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.1450 mm, 108.6000 mm): Reference field of MH1
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(113.0710 mm, 180.7480 mm): Reference field of MH2
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(139.5300 mm, 133.2150 mm): Reference field of MH3
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)
+    Rule: board setup constraints silk text height; warning
+    @(139.5300 mm, 163.5910 mm): Reference field of MH4
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **

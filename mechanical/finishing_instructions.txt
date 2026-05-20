@@ -1,0 +1,35 @@
+XYLOSOME — FINISHING INSTRUCTIONS
+buttondial1 / all grip surfaces
+==================================
+
+Reference aesthetic: Mitutoyo 150-195 micrometer end cap.
+Target feel: fine, dense diamond grip — crisp but not sharp.
+
+
+STEP 1 — KNURL
+--------------
+Pattern : Diamond cross-hatch, 30°/30° helix, 60° included angle
+Pitch   : 0.6–0.8 mm  (~33–40 TPI)
+Depth   : 0.15–0.2 mm  (shallow, flat-top teeth — not sharp V)
+Zone    : Outer Ø30 mm cylindrical band only
+          Do NOT knurl front face, rear face, or stepped recess
+
+
+STEP 2 — SANDBLAST
+------------------
+Media   : Glass bead or fine aluminium oxide, medium grit
+Surfaces: All external faces including knurled band
+Result  : Uniform matte satin — no shiny patches
+Note    : Blast must come BEFORE chrome — blasting after plating
+          will destroy the finish
+
+
+STEP 3 — CHROME PLATE
+---------------------
+Type      : Decorative chrome only (NOT hard chrome build-up)
+Thickness : 0.01–0.03 mm maximum — preserve knurl sharpness
+Mask      : Shaft bore Ø6.38 mm + M3 tapped set screw hole
+            before plating — chrome in threads will seize the screw
+Result    : Satin chrome — bright but not mirror, knurl reads through
+
+Request a sample coupon through the full process before full run.

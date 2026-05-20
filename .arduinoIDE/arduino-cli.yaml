@@ -1,0 +1,9 @@
+board_manager:
+    additional_urls:
+        - https://dl.espressif.com/dl/ package_esp32_index.json
+directories:
+    builtin:
+        libraries: /Users/hoytevhoytema/Library/Arduino15/libraries
+    data: /Users/hoytevhoytema/Library/Arduino15
+    user: /Users/hoytevhoytema/Documents/Arduino
+locale: en

@@ -1,0 +1,38 @@
+## Transfer manifest (FASP ver 3.9.6.177808)
+## Name: WindowsNoEditor.rar(+0)
+## UUID: 985b319a-5f02-41f7-9b42-fbe3409d6bc5
+## Client: 10.192.180.250:63363
+## Server: 64.111.160.65:33001
+## ServerUser: faspex
+## ServerHostname: aspera.activision.com
+## Recipient: 10.192.180.250
+## Checksum: SPAR-NONE
+## FileChecksumType: none
+## Cookie: aspera.faspex20:d:68330f4d-a3e8-48c8-b301-9e2fedc60ec5:aG95dGV2YW5ob3l0ZW1hQG1lLmNvbQ:eyJfcGtnX3V1aWQiOiI0NjUzZWVlOS1hZDU5LTRhMWMtYjFkNi1mZTIwZmU4NGJhNDgiLCJfcGtnX25hbWUiOiJTSEcgVmFuZ3VhcmQgR2VzdGFwbyBIUSBGbHl0aHJvdWdoIiwiX2NyZWF0ZWRfdXRjIjoiMjAyMC8xMS8xMyAxODowNjoyNSArMDAwMCJ9:dmlrdG9yaWEua2FsbWFuQGRpZ2ljcGljdHVyZXMuY29t
+## XferId: 7885555e-ff4e-45e6-b63b-966e0ffc13b0
+## XferRetry: 90
+## Tags: { "aspera" : { "faspex" : { "metadata" : { "_created_utc" : "2020/11/13 17:15:55 +0000", "_pkg_name" : "viktoria.kalman@digicpictures.com", "_pkg_uuid" : "4653eee9-ad59-4a1c-b1d6-fe20fe84ba48" }, "requestor" : { "email" : "Dan.Kendall@activision.com", "first_name" : "Dan", "last_name" : "Kendall", "name" : "dkendall" } }, "xfer_id" : "7885555e-ff4e-45e6-b63b-966e0ffc13b0", "xfer_retry" : 90 } }
+## Start: 2020-11-13 10:38:52
+
+"/Users/hoytevhoytema/Downloads/WindowsNoEditor.rar" 442338347B 442338347B completed
+
+
+===========================================
+Total number of sources:                1
+--Total sources scanned:                1
+Total paths scan attempted:             1
+--Total paths scan failed:              0
+--Total paths scan skipped:             0
+--Total paths scan excluded:            0
+--Total paths scan completed:           1
+Total dir transfer attempted:           0
+--Total dir transfer failed:            0
+--Total dir transfer passed:            0
+Total file transfer attempted:          1
+--Total file transfer failed:           0
+--Total file transfer passed:           1
+--Total file transfer skipped:          0
+===========================================
+Transfer success
+Total elapsed: 26.7s
+Total transferred bytes: 442338347

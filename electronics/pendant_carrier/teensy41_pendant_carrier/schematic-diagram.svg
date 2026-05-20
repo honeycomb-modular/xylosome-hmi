@@ -1,0 +1,146 @@
+<svg viewBox="0 0 880 520" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-labelledby="ttl desc">
+  <title id="ttl">Teensy 4.1 Pendant Carrier — connection schematic (Rev B)</title>
+  <desc id="desc">A socketed Teensy 4.1 connects to a Grayhill 62AG22-H5-P optical encoder via a 6-pin JST connector and an output-conditioning block of 10k pull-ups to 3.3V and 470pF filter caps. Two pushbuttons connect on 2-pin JST connectors. The encoder is powered from the Teensy's 5V (VIN) pin, and the Teensy's micro-USB goes to a Raspberry Pi.</desc>
+
+  <style>
+    .sig  { stroke: #4a8fb8; stroke-width: 2; fill: none; }
+    .pwr  { stroke: #c2772f; stroke-width: 2; fill: none; }
+    .gnd  { stroke: currentColor; stroke-width: 2; fill: none; opacity: .5; }
+    .box  { stroke: currentColor; fill: none; stroke-width: 1.6; }
+    .chip { stroke: currentColor; fill: none; stroke-width: 2; }
+    .lbl  { fill: currentColor; font-size: 12px; }
+    .lbl-s{ fill: currentColor; font-size: 10.5px; opacity: .7; }
+    .net  { fill: #4a8fb8; font-size: 10px; font-weight: 600; }
+    .netp { fill: #c2772f; font-size: 10px; font-weight: 600; }
+    .title{ fill: currentColor; font-size: 14.5px; font-weight: 700; }
+    .pad  { fill: currentColor; opacity: .55; }
+    .pads { fill: #4a8fb8; }
+    .padp { fill: #c2772f; }
+    .dot  { fill: currentColor; opacity: .55; }
+  </style>
+
+  <text x="24" y="30" class="title">Teensy 4.1 Pendant Carrier — Rev B</text>
+  <text x="24" y="48" class="lbl-s">Grayhill 62AG22-H5-P encoder · open-collector outputs pulled to 3.3 V · bus-powered from the Pi</text>
+
+  <!-- ===== J3 Encoder ===== -->
+  <rect x="40" y="138" width="150" height="208" rx="8" class="box"/>
+  <text x="115" y="162" class="title" text-anchor="middle">J3 · Encoder</text>
+  <text x="115" y="177" class="lbl-s" text-anchor="middle">JST-XH 6-pin</text>
+  <circle cx="190" cy="200" r="3.4" class="padp"/><text x="180" y="204" class="lbl" text-anchor="end">+5V</text>
+  <circle cx="190" cy="226" r="3.4" class="pads"/><text x="180" y="230" class="lbl" text-anchor="end">A</text>
+  <circle cx="190" cy="252" r="3.4" class="pads"/><text x="180" y="256" class="lbl" text-anchor="end">B</text>
+  <circle cx="190" cy="278" r="3.4" class="pad"/><text x="180" y="282" class="lbl" text-anchor="end">GND</text>
+  <circle cx="190" cy="304" r="3.4" class="pads"/><text x="180" y="308" class="lbl" text-anchor="end">SW</text>
+  <circle cx="190" cy="330" r="3.4" class="pad"/><text x="180" y="334" class="lbl" text-anchor="end">GND</text>
+  <text x="115" y="324" class="lbl-s" text-anchor="middle">62AG22-</text>
+  <text x="115" y="337" class="lbl-s" text-anchor="middle">H5-P</text>
+
+  <!-- ===== Output conditioning block ===== -->
+  <rect x="262" y="182" width="150" height="92" rx="8" class="box" stroke-dasharray="4 3"/>
+  <text x="337" y="202" class="title" text-anchor="middle" font-size="12">Output conditioning</text>
+  <text x="337" y="220" class="lbl-s" text-anchor="middle">R1,R2  10 kΩ → 3V3</text>
+  <text x="337" y="234" class="lbl-s" text-anchor="middle">C1,C2  470 pF → GND</text>
+  <text x="337" y="252" class="lbl-s" text-anchor="middle">(required pull-ups +</text>
+  <text x="337" y="264" class="lbl-s" text-anchor="middle">noise filter)</text>
+  <circle cx="262" cy="226" r="3.4" class="pads"/>
+  <circle cx="262" cy="252" r="3.4" class="pads"/>
+  <circle cx="412" cy="226" r="3.4" class="pads"/>
+  <circle cx="412" cy="252" r="3.4" class="pads"/>
+  <circle cx="337" cy="182" r="3.4" class="padp"/>
+  <circle cx="337" cy="274" r="3.4" class="pad"/>
+
+  <!-- ===== Teensy 4.1 ===== -->
+  <rect x="480" y="130" width="185" height="270" rx="8" class="chip"/>
+  <text x="572" y="158" class="title" text-anchor="middle">Teensy 4.1</text>
+  <text x="572" y="173" class="lbl-s" text-anchor="middle">(socketed in 2×</text>
+  <text x="572" y="185" class="lbl-s" text-anchor="middle">24-pin headers)</text>
+
+  <circle cx="480" cy="210" r="3.4" class="padp"/><text x="492" y="214" class="lbl">3V3</text>
+  <circle cx="480" cy="236" r="3.4" class="padp"/><text x="492" y="240" class="lbl">VIN (5V)</text>
+  <circle cx="480" cy="268" r="3.4" class="pads"/><text x="492" y="272" class="lbl">D4</text>
+  <circle cx="480" cy="294" r="3.4" class="pads"/><text x="492" y="298" class="lbl">D5</text>
+  <circle cx="480" cy="320" r="3.4" class="pads"/><text x="492" y="324" class="lbl">D6</text>
+  <circle cx="480" cy="352" r="3.4" class="pad"/><text x="492" y="356" class="lbl">GND</text>
+
+  <circle cx="665" cy="200" r="3.4" class="pads"/><text x="653" y="204" class="lbl" text-anchor="end">D2</text>
+  <circle cx="665" cy="262" r="3.4" class="pad"/><text x="653" y="266" class="lbl" text-anchor="end">GND</text>
+  <circle cx="665" cy="324" r="3.4" class="pads"/><text x="653" y="328" class="lbl" text-anchor="end">D3</text>
+
+  <rect x="552" y="400" width="40" height="14" rx="2" class="box"/>
+  <text x="572" y="411" class="lbl-s" text-anchor="middle">USB</text>
+
+  <!-- ===== J1 / J2 buttons ===== -->
+  <rect x="730" y="160" width="130" height="64" rx="8" class="box"/>
+  <text x="795" y="184" class="title" text-anchor="middle">J1 · Button 1</text>
+  <text x="795" y="200" class="lbl-s" text-anchor="middle">JST-XH 2-pin</text>
+  <circle cx="730" cy="200" r="3.4" class="pads"/><text x="742" y="204" class="lbl">D2</text>
+  <circle cx="730" cy="216" r="3.4" class="pad"/><text x="742" y="220" class="lbl">GND</text>
+
+  <rect x="730" y="284" width="130" height="64" rx="8" class="box"/>
+  <text x="795" y="308" class="title" text-anchor="middle">J2 · Button 2</text>
+  <text x="795" y="324" class="lbl-s" text-anchor="middle">JST-XH 2-pin</text>
+  <circle cx="730" cy="324" r="3.4" class="pads"/><text x="742" y="328" class="lbl">D3</text>
+  <circle cx="730" cy="340" r="3.4" class="pad"/><text x="742" y="344" class="lbl">GND</text>
+
+  <!-- ===== Raspberry Pi ===== -->
+  <rect x="480" y="446" width="185" height="50" rx="8" class="box"/>
+  <text x="572" y="468" class="title" text-anchor="middle">Raspberry Pi</text>
+  <text x="572" y="484" class="lbl-s" text-anchor="middle">runs the UI · USB host + power</text>
+
+  <!-- GND rail -->
+  <line x1="150" y1="392" x2="710" y2="392" class="gnd"/>
+
+  <!-- ===== power nets ===== -->
+  <!-- +5V: J3 -> Teensy VIN -->
+  <path class="pwr" d="M190,200 H452 V236 H480"/>
+  <text x="300" y="195" class="netp">+5V</text>
+  <!-- 3V3: Teensy 3V3 -> conditioning block -->
+  <path class="pwr" d="M480,210 H337 V182"/>
+  <text x="345" y="207" class="netp">3V3</text>
+
+  <!-- ===== signal nets ===== -->
+  <!-- ENC_A -->
+  <path class="sig" d="M190,226 H262"/>
+  <path class="sig" d="M412,226 H452 V268 H480"/>
+  <text x="214" y="221" class="net">ENC_A</text>
+  <!-- ENC_B -->
+  <path class="sig" d="M190,252 H262"/>
+  <path class="sig" d="M412,252 H440 V294 H480"/>
+  <text x="214" y="247" class="net">ENC_B</text>
+  <!-- ENC_SW -->
+  <path class="sig" d="M190,304 H458 V320 H480"/>
+  <text x="214" y="299" class="net">ENC_SW</text>
+  <!-- D2 button -->
+  <path class="sig" d="M730,200 H665"/>
+  <text x="690" y="195" class="net">D2</text>
+  <!-- D3 button -->
+  <path class="sig" d="M730,324 H665"/>
+  <text x="690" y="319" class="net">D3</text>
+
+  <!-- ===== ground nets ===== -->
+  <path class="gnd" d="M190,278 H210 V392"/>
+  <path class="gnd" d="M190,330 H222 V392"/>
+  <path class="gnd" d="M337,274 V392"/>
+  <path class="gnd" d="M480,352 V392"/>
+  <path class="gnd" d="M665,262 H692 V392"/>
+  <path class="gnd" d="M730,216 H712 V392"/>
+  <path class="gnd" d="M730,340 H704 V392"/>
+  <!-- junction dots on GND rail -->
+  <circle cx="210" cy="392" r="2.6" class="dot"/>
+  <circle cx="222" cy="392" r="2.6" class="dot"/>
+  <circle cx="337" cy="392" r="2.6" class="dot"/>
+  <circle cx="480" cy="392" r="2.6" class="dot"/>
+  <circle cx="692" cy="392" r="2.6" class="dot"/>
+  <circle cx="704" cy="392" r="2.6" class="dot"/>
+
+  <!-- USB to Pi -->
+  <path class="sig" d="M572,414 V446"/>
+  <text x="582" y="434" class="lbl-s">micro-USB → Pi</text>
+
+  <!-- ===== legend ===== -->
+  <line x1="40" y1="430" x2="64" y2="430" class="sig"/><text x="72" y="434" class="lbl-s">signal</text>
+  <line x1="130" y1="430" x2="154" y2="430" class="pwr"/><text x="162" y="434" class="lbl-s">power (+5V / 3V3)</text>
+  <line x1="300" y1="430" x2="324" y2="430" class="gnd"/><text x="332" y="434" class="lbl-s">GND</text>
+  <text x="40" y="460" class="lbl-s">Encoder outputs A/B are open-collector — the 10 kΩ pull-ups to 3.3 V are required, and keep the Teensy GPIO 3.3 V-safe.</text>
+  <text x="40" y="476" class="lbl-s">Encoder gets 5 V from the Teensy VIN pin (USB-derived). Encoder pushbutton (SW) and both buttons use the Teensy's internal pull-ups.</text>
+</svg>

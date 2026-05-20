@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "teensy41_pendant_carrier")(type "KiCad")(uri "${KIPRJMOD}/teensy41_pendant_carrier.pretty")(options "")(descr "Project footprints for the Teensy 4.1 pendant carrier"))
+)

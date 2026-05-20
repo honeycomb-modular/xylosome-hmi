@@ -1,0 +1,38 @@
+## Transfer manifest (FASP ver 3.9.6.177808)
+## Name: salt_snake_test_02_35mm_cc01_051321.mov.aspera-env(+0)
+## UUID: 804756ab-85d0-480e-928d-d7e6c408d388
+## Client: 142.129.112.220:55104
+## Server: 66.172.3.86:33001
+## ServerUser: faspex
+## ServerHostname: aspera02.fotokem.com
+## Recipient: 142.129.112.220
+## Checksum: SPAR-NONE
+## FileChecksumType: none
+## Cookie: aspera.faspex20:d:9aceb857-8c8e-4399-bf24-8dd5887f364e:aG95dGV2YW5ob3l0ZW1hQG1lLmNvbQ:eyJXb3Jrb3JkZXIgTnVtYmVyIjoiIiwiX3BrZ191dWlkIjoiZTYxNTdhNmYtMzEwYi00OGVkLTkyNzItMzY5MmU1NzMwNzkwIiwiX3BrZ19uYW1lIjoiVUpQUCAtIDM1bW0gVGVzdCBGb290YWdlIFByb1JlcyIsIl9jcmVhdGVkX3V0YyI6IjIwMjEvMDUvMTQgMjI6Mzk6MjIgKzAwMDAiLCJfbWV0YWRhdGFfcHJvZmlsZV9uYW1lIjoiVGVzdCIsIl9tZXRhZGF0YV9wcm9maWxlX3V1aWQiOiIzYmQ2ZmU0Ni1kNGQ4LTRiYjAtODc5MS1kOTZhZjcwZWZkOGUiLCJfbWV0YWRhdGFfcHJvZmlsZV92ZXJzaW9uIjoiMjAyMC0wMS0wOSAxNzo0ODoxMyJ9:VUpQUCAtIDM1bW0gVGVzdCBGb290YWdlIFByb1Jlcw
+## XferId: 63b79161-7fbd-41ac-aafc-06e8b213a9b6
+## XferRetry: 90
+## Tags: { "aspera" : { "faspex" : { "downloader" : { "email" : "hoytevanhoytema@me.com", "first_name" : "hoytevanhoytema@me.com", "last_name" : "(external email)", "name" : "hoytevanhoytema@me.com" }, "metadata" : { "Workorder Number" : "", "_created_utc" : "2021/05/14 22:39:22 +0000", "_metadata_profile_name" : "Test", "_metadata_profile_uuid" : "3bd6fe46-d4d8-4bb0-8791-d96af70efd8e", "_metadata_profile_version" : "2020-01-09 17:48:13", "_pkg_name" : "UJPP - 35mm Test Footage ProRes", "_pkg_uuid" : "e6157a6f-310b-48ed-9272-3692e5730790" }, "requestor" : { "email" : "enterprisedata@fotokem.com", "first_name" : "FotoKem", "last_name" : "EnterpriseData", "name" : "FKI-GDDEL00" } }, "xfer_id" : "63b79161-7fbd-41ac-aafc-06e8b213a9b6", "xfer_retry" : 90 } }
+## Start: 2021-05-14 15:44:22
+
+"/Users/hoytevhoytema/Downloads/salt_snake_test_02_35mm_cc01_051321.mov" 1504637026B 1504637026B completed
+
+
+===========================================
+Total number of sources:                1
+--Total sources scanned:                1
+Total paths scan attempted:             1
+--Total paths scan failed:              0
+--Total paths scan skipped:             0
+--Total paths scan excluded:            0
+--Total paths scan completed:           1
+Total dir transfer attempted:           0
+--Total dir transfer failed:            0
+--Total dir transfer passed:            0
+Total file transfer attempted:          1
+--Total file transfer failed:           0
+--Total file transfer passed:           1
+--Total file transfer skipped:          0
+===========================================
+Transfer success
+Total elapsed: 133.0s
+Total transferred bytes: 1504637026

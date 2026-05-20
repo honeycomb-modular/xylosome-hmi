@@ -1,0 +1,132 @@
+# Xylosome Dev Log
+
+---
+
+## 2026-05-20
+
+### PCB — teensy41_pendant_carrier
+
+- Reviewed KiCad project (Rev B, ~48.7 × 89.3 mm, 2-layer, shaped from Sketch10.dxf)
+- DRC has 2 real errors: +5V traces on B.Cu are ~0.08 mm too close to board edge (0.4917 mm vs 0.5 mm rule). Fix: nudge traces inward. JLCPCB real minimum is 0.3 mm so these will likely pass fab, but worth fixing cleanly.
+- 14 footprint mismatch warnings + 15 text height warnings — cosmetic, not blocking
+- BOM was missing LCSC part numbers — confirmed numbers:
+  - 10kΩ 0402 resistors → **C17414**
+  - 470pF 0402 caps → **C1572**
+  - JST-XH 2-pin connector → **C49678**
+  - JST-XH 6-pin connector → **C15850**
+- PCB project to be moved into `electronics/pendant_carrier/` (not done yet)
+
+### Encoder — Grayhill 62AG22-H5-P
+
+- Confirmed: optical encoder, **16 detents/rev**, clicks at each detent
+- Open-collector outputs — need 10 kΩ pull-ups to 3V3 (on PCB) and 470 pF filter caps
+- 30 mm knob on a 16-detent encoder has good tactile weight — not too light, not too heavy
+- Firmware divides raw quadrature count by 4 (4 pulses per detent) → Pi receives whole click counts
+
+### Firmware — Teensy 4.1
+
+- Created `firmware/teensy_pendant/teensy_pendant.ino`
+  - Libraries: Bounce2 (debounce), Encoder (quadrature)
+  - Pins: BTN1=D2, BTN2=D3, ENC_A=D4, ENC_B=D5, ENC_SW=D6
+  - Protocol: USB CDC serial 115200 8N1, one ASCII line per event
+  - Messages: `READY`, `BTN1 DOWN/UP`, `BTN2 DOWN/UP`, `ENC_SW DOWN/UP`, `JOG <delta>`
+- Created `pi/services/pendant_serial.py`
+  - Threaded reader, auto-reconnects on disconnect
+  - `on_event` callback receives plain dicts: `{"type":"jog","delta":1}`, `{"type":"button","id":"BTN1","state":"down"}`
+- Created `firmware/clearcore/README.md` — stub noting responsibilities (servo, stepper, camera timing, TCP)
+
+### Architecture
+
+- Clarified final architecture:
+  - **No e-stop on pendant** — hardwired NC loop is external into ClearCore 24V E-STOP IN only
+  - **No LEDs or haptics** on pendant
+  - ClearCore drives **Panasonic servo** (primary scan axis) + **NEMA 17 stepper** (secondary, role TBD) + coordinates **line scanner camera** trigger timing
+  - Pi ↔ ClearCore: TCP over CAT6 PoE (single cable, up to 100 m)
+  - Pi ↔ Teensy: USB serial (CDC)
+  - Pi ↔ Display: HDMI + USB (touch, but going touch-free — see below)
+- Created `docs/architecture/xylosome_architecture.svg` (inline diagram)
+- Created `docs/architecture/xylosome_architecture.pdf` (reportlab, Helvetica, dark theme, A4 landscape — universally readable)
+
+### Project structure reorganisation
+
+Moved files into clean hierarchy:
+
+```
+xylosome_pi/
+  pi/
+    hmi/          ← Qt6/QML app (was src/ qml/ etc at root)
+    services/     ← pendant_serial.py
+  firmware/
+    teensy_pendant/
+    clearcore/
+  docs/
+    architecture/
+    concept/
+  electronics/    ← placeholder for PCB project
+```
+
+### Pi HMI code review
+
+Compared architecture to existing `pi/hmi/` Qt6/QML codebase:
+
+- `MotorModel` — mock 10 Hz dynamics. Comment says "swap for UART rx" — stale. Needs real ClearCore TCP client.
+- `HttpServer` — QTcpServer REST API on :8080, mirrors Qt state. Functional.
+- `ScreenLive.qml` — mode selector, setpoint slider, telemetry — all bound to mock Motor singleton. UI complete.
+- `ScreenSequences.qml` (now ScreenScan) — Catmull-Rom spline editor, playhead, motor dial. No real motion yet.
+- `ScreenSettings.qml` — has stale labels: `uart.peer = teensy / 1 mbps` and `motor.bus = can / rmd-x8`. Both need updating.
+
+### UI Concept document
+
+- Created `docs/concept/xylosome_ui_concept.docx`
+- Covers all 7 screens: Splash, Scan, Live, Camera, Presets, Telemetry, Settings
+- Includes per-screen pendant behaviour tables, displays, controls, and wishlist items
+
+### Pendant navigation model
+
+Defined encoder interaction grammar:
+- **ENC rotate** → move focus between sections / items / parameters
+- **ENC click** → enter / confirm / advance one level
+- **BTN2** → back, always, one level at a time
+- **BTN1** → context action (screen-specific)
+
+ScreenScan four-section focus layout: Spline editor | Position settings | BTN1 function | BTN2 function
+
+Spline sub-flow (Section 4.3 of concept doc):
+1. Aspect select → 2. Value edit → 3. Scrub bar → 4. Speed node drop/edit → 5. Confirm/back
+
+### Touch-free design direction
+
+- Display will be output-only — no touch relied upon for any primary workflow
+- Full touch → encoder gesture mapping documented in concept doc Section 4.5
+- 4 items marked TBD (mode selector cycling, preset action selection)
+- Key implementation note: QML needs a visible focus cursor (highlight ring / underline) so operator always knows what ENC rotate affects
+
+### Display — AMOLED upgrade path
+
+- Current: WaveShare 5.5" HDMI + USB touch (960 × 540 IPS LCD)
+- Recommended upgrade: **WaveShare 5.5" HDMI AMOLED** (1080 × 1920)
+  - Drop-in replacement: same brand, same HDMI+USB interface, same size
+  - True black background suits the dark UI theme
+  - Better viewing angles and outdoor/workshop visibility
+  - Touch layer still present but irrelevant given touch-free direction
+- Also noted: DFRobot 6.67" flexible AMOLED ($199) — interesting but too large for pendant
+
+---
+
+## Outstanding items
+
+| Item | Priority | Notes |
+|------|----------|-------|
+| Fix PCB DRC errors | Medium | Move 2 × +5V traces inward on B.Cu |
+| Fill LCSC part numbers in BOM CSV | Low | Numbers above — just paste them in |
+| Move PCB project → `electronics/pendant_carrier/` | Low | Folder not created yet |
+| Update ScreenSettings.qml stale labels | Medium | uart.peer → usb.pendant, motor.bus → motion=clearcore/tcp |
+| Wire pendant_serial.py into Qt app | High | Threading + Qt signal bridge needed |
+| Build ClearCore TCP client layer | High | Largest outstanding gap |
+| Replace MotorModel.tick() with real telemetry | High | Depends on TCP client |
+| Implement ScreenCamera | Medium | Needs camera API details first |
+| Implement focus cursor in QML | High | Required for touch-free operation |
+| Resolve TBD gesture mappings (mode select, preset actions) | Medium | Before disabling touch |
+| Clarify NEMA 17 role | Open question | Focus / Z / indexing? |
+| Clarify camera model | Open question | Determines ScreenCamera implementation |
+| Clarify ClearCore TCP protocol | Open question | Defines Pi ↔ ClearCore API layer |

@@ -1,0 +1,32 @@
+/Applications/iMovie.app/Contents/MacOS/iMovie ; exit;
+/Applications/iMovie.app/Contents/MacOS/iMovie ; exit;
+/Applications/iMovie.app/Contents/MacOS/iMovie ; exit;
+/Applications/Safari.app/Contents/MacOS/Safari ; exit;
+xcode-select --install
+ls /dev/cu.*
+ls /dev/cu.*
+ls /dev/cu.*
+ls /dev/cu.*
+ls /dev/cu.*
+xcode-select --install
+xcode-select -p
+sudo rm -rf /Library/Developer/CommandLineTools
+xcode-select --install
+sudo rm -rf /Library/Developer/CommandLineTools
+xcode-select --install
+xcode-select -p
+xcode-select -p
+/Users/hoytevhoytema/Documents/Arduino/libraries/LovyanGFX/src/lgfx/v1/Bus*
+/Users/hoytevhoytema/Documents/Arduino/libraries/LovyanGFX/src/lgfx/v1/Bus*
+ls /dev/cu.*
+xcode-select --install
+xcode-select -p
+sudo rm -rf /Library/Developer/CommandLineTools
+xcode-select --install
+sudo rm -rf /Library/Developer/CommandLineTools
+xcode-select --install
+xcode-select -p
+xcode-select -p
+/Users/hoytevhoytema/Documents/Arduino/libraries/LovyanGFX/src/lgfx/v1/Bus*
+/Users/hoytevhoytema/Documents/Arduino/libraries/LovyanGFX/src/lgfx/v1/Bus*
+ls /dev/cu.*
