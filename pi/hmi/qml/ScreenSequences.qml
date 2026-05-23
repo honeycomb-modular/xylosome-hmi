@@ -21,7 +21,6 @@ import XylosomeHMI 1.0
 
 Item {
     id: root
-    width: 960; height: 540
 
     // ── Layout constants ──────────────────────────────────────────────────────
     readonly property int canvasX:    0

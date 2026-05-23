@@ -1,0 +1,3 @@
+swaybg -c '#000000' &
+sleep 2 && WAYLAND_DISPLAY=wayland-0 wlr-randr --output HDMI-A-2 --transform 90 &
+sleep 1 && XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland /home/hoyte/xylosome-hmi/pi/hmi/build/xylosome_hmi &

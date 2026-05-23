@@ -11,7 +11,6 @@ import XylosomeHMI 1.0
 
 Item {
     id: root
-    width: 960; height: 540
 
     // Injected by StackView when pushed with properties.
     property string screenTitle: "placeholder"

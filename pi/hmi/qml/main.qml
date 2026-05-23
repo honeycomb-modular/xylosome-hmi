@@ -11,11 +11,11 @@ ApplicationWindow {
     // Hardcoded to exactly match the 960×540 logical canvas at scale 2.
     // Do NOT use Screen.width/height — Qt's binding can resolve fractionally,
     // leaving a 1px gap at the right edge when the canvas fills to root.width.
-    width:  960
-    height: 540
+    width: 1280 
+    height: 720
 
     visibility: Window.FullScreen
-    flags:      Qt.FramelessWindowHint | Qt.Window
+    flags:     Qt.FramelessWindowHint | Qt.Window
 
     visible: true
     title:   "XYLOSOME"
@@ -44,6 +44,7 @@ ApplicationWindow {
         id: nav
         // Explicit size rather than anchors.fill — same reason as window dimensions above.
         x: 0; y: 0; width: 960; height: 540
+transform: Scale { xScale: 1280/960; yScale: 720/540; origin.x: 0; origin.y: 0 }
 
         initialItem: "qrc:/XylosomeHMI/qml/ScreenSplash.qml"
 

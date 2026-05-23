@@ -8,7 +8,6 @@ import XylosomeHMI 1.0
 
 Item {
     id: root
-    width: 960; height: 540
 
     Rectangle {
         anchors.fill: parent
