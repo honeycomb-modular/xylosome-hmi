@@ -19,6 +19,18 @@ import XylosomeHMI 1.0
 
 Item {
     id: root
+    property int selectedRow: Pendant.selectedRow
+
+    Connections {
+        target: Pendant
+        function onJogEvent(delta) {
+            console.log("QML jog:", delta, "row:", selectedRow)
+            selectedRow = (selectedRow + delta + 5) % 5
+        }
+        function onButtonEvent(id, down) {
+            if (id === "ENC_SW" && down) navRows.itemAt(selectedRow).clicked()
+        }
+    }
 
     // ── Header ────────────────────────────────────────────────────────────────
 
@@ -61,28 +73,38 @@ Item {
 
     NavRow {
         x: 18; y: 149; width: 924
+        id: nav01
+        selected: selectedRow === 0
         rowNum: "01"; rowName: "live";      rowDesc: "position / velocity / torque"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenLive.qml"))
     }
     NavRow {
         x: 18; y: 191; width: 924
+        id: nav02
+        selected: selectedRow === 1
         rowNum: "02"; rowName: "sequences"; rowDesc: "saved motion programs"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSequences.qml"))
     }
     NavRow {
         x: 18; y: 234; width: 924
+        id: nav03
+        selected: selectedRow === 2
         rowNum: "03"; rowName: "presets";   rowDesc: "quick go-to positions"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "presets" })
     }
     NavRow {
         x: 18; y: 277; width: 924
+        id: nav04
+        selected: selectedRow === 3
         rowNum: "04"; rowName: "telemetry"; rowDesc: "real-time monitoring"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "telemetry" })
     }
     NavRow {
         x: 18; y: 320; width: 924
+        id: nav05
+        selected: selectedRow === 4
         rowNum: "05"; rowName: "settings";  rowDesc: "brightness, network, calibration"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
     }

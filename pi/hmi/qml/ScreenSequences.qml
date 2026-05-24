@@ -721,6 +721,20 @@ Item {
         onTriggered: canvas.requestPaint()
     }
     function scheduleRepaint() { if (!repaintTimer.running) repaintTimer.start() }
+    property int _lastJogTotal: 0
+    Timer {
+        interval: 50; repeat: true; running: true
+        onTriggered: {
+            var curr = Pendant.jogTotal
+            if (curr !== root._lastJogTotal) {
+                var d = curr - root._lastJogTotal
+                root._lastJogTotal = curr
+                root.boxW = Math.max(root.boxMinW, Math.min(root.canvasW - 45, root.boxW + d * 8))
+                root.scheduleRepaint()
+                Motor.seqBoxW = root.boxW
+            }
+        }
+    }
 
     Component.onCompleted: {
         root.hand2Angle = 45.0 * (root.boxW / root.canvasH) + 45.0

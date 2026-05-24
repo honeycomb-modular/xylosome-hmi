@@ -26,6 +26,7 @@ Item {
 
     // ── Pressed state ─────────────────────────────────────────────────────────
     property bool _pressed: false
+    property bool selected: false
 
     // ── ">" indicator — appears on press ─────────────────────────────────────
     Text {
@@ -34,7 +35,7 @@ Item {
             left:           parent.left
             verticalCenter: parent.verticalCenter
         }
-        text:  root._pressed ? "> " : "  "
+        text:  (root._pressed || root.selected) ? "> " : "  "
         color: Theme.accent
         font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
     }
