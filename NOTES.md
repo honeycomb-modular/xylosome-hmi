@@ -116,10 +116,13 @@ Note: `QT_WAYLAND_DISABLE_WINDOWDECORATION=1` and `windowRule serverDecoration="
 do NOT work — labwc ignores them. The `<core><decoration>client</decoration></core>`
 setting is the correct and confirmed fix.
 
-## Screen layout — ScreenSequences as root
+## Screen layout — ScreenScan as root
 
-`ScreenSplash` (3 s) → `ScreenSequences` (root/home) → `ScreenHome` (nav menu, via ⚙ button)
+`ScreenSplash` (3 s) → `ScreenScan` (primary/root) → `ScreenHome` (nav menu, via ⚙ button)
 
-**ScreenSequences layout:**
+**ScreenScan layout** (was ScreenSequences — renamed 2026-05-24):
 - Top half (y 0–270): motion curve canvas, full width
 - Bottom half (y 270–540): XYLOSOME title + subtitle (left), play/stop buttons (right), ⚙ gear (bottom-left → ScreenHome)
+
+**ScreenHome nav rows** (as of 2026-05-24):
+01 live · 02 camera · 03 presets · 04 telemetry · 05 connected devices · 06 settings · 07 metadata

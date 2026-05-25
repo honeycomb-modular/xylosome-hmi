@@ -1,13 +1,65 @@
 # XYLOSOME HMI — Qt6/QML Port · Session Notes
 
 ## What this project is
-A Qt6/QML port of the XYLOSOME ESP32/LVGL touchscreen HMI.
-Single-motor art installation controller running on Raspberry Pi 5.
-Currently running on a WaveShare 5.5" AMOLED 1080×1920 (portrait physical,
-rotated to landscape via wlr-randr, scaled to 853×480 logical).
+A Qt6/QML port of the XYLOSOME HMI.
+Art installation controller — Panasonic servo + NEMA 17 stepper via ClearCore,
+line scanner camera, pendant controls (Teensy 4.1 + Grayhill encoder + 3 buttons).
 
-Dev workflow: edit files on Mac → rsync to Pi → rebuild with ninja on Pi.
-Primary: VS Code Remote SSH → edit directly on Pi → rebuild in integrated terminal.
+> ⚠️ **Two Pi targets — read carefully before deploying.**
+> All active development as of 2026-05-24 is on **Pi 4** (dev unit).
+> The final pendant hardware is **Pi 5**. The two have different display stacks,
+> compositors, and build workflows. Do not mix up deploy commands.
+
+---
+
+## Pi 4 — current dev unit ⬅️ active
+
+- **IP**: 192.168.10.2
+- **Display stack**: EGLFS (no desktop compositor)
+- **Remote access**: TigerVNC via systemd (`sudo systemctl restart tigervnc`)
+- **SSH**: `ssh -o PubkeyAuthentication=no hoyte@192.168.10.2`
+- **Repo path on Pi**: `/home/hoyte/xylosome-hmi/pi/hmi/`
+- **Build**: `make` (Unix Makefiles, not Ninja)
+- **SVG export path**: `/home/hoyte/xylosome_exports/`
+
+### Pi 4 deploy sequence
+
+```bash
+# 1. Rsync (Mac terminal)
+rsync -av --exclude='.git' --exclude='build' \
+  "/Users/hoytevhoytema/Library/Mobile Documents/com~apple~CloudDocs/Documents/projects/xylosome_pi/pi/hmi/" \
+  hoyte@192.168.10.2:/home/hoyte/xylosome-hmi/pi/hmi/
+
+# 2. SSH in
+ssh -o PubkeyAuthentication=no hoyte@192.168.10.2
+
+# 3. Build
+cd /home/hoyte/xylosome-hmi/pi/hmi/build && make -j$(nproc)
+
+# 4. Restart UI
+sudo systemctl restart tigervnc
+```
+
+### Pi 4 first-time cmake (if build dir is clean)
+```bash
+cd /home/hoyte/xylosome-hmi/pi/hmi
+mkdir -p build && cd build
+cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+```
+
+---
+
+## Pi 5 — final pendant hardware (not yet in use for this codebase)
+
+> All notes below describe the Pi 5 setup. This is the target platform
+> for production, but the HMI has not yet been deployed or tested here.
+> When ready: redo cmake, display config, and autostart for Wayland/labwc.
+
+- **IP**: 192.168.2.2 (Mac Internet Sharing ethernet)
+- **Display stack**: Wayland / labwc compositor
+- **Build**: Ninja
+- **SSH**: `ssh hoyte@192.168.2.2`
 
 Rsync from Mac:
 `rsync -av /Users/hoytevhoytema/Documents/projects/xylosome_pi/qml/ hoyte@192.168.2.2:~/xylosome_pi/qml/`

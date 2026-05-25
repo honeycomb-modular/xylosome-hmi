@@ -150,6 +150,67 @@ design-notes.md Section 4 J3 table updated to reflect this.
 
 ---
 
+## 2026-05-24
+
+> ⚠️ **All work below was done on Pi 4 (dev unit at 192.168.10.2, EGLFS + TigerVNC).**
+> When the Pi 5 pendant is ready this entire HMI will need to be re-deployed and
+> re-tested under Wayland/labwc. Pi 4 and Pi 5 have different display stacks —
+> see SESSION_NOTES.md for both configurations.
+
+### Metadata Infuser — implemented ✅
+
+Full implementation of the temporal metadata recorder for scan sessions.
+
+**New files:**
+- `pi/hmi/src/MetadataRecorder.h` — C++ singleton registered in QML as `Recorder`
+- `pi/hmi/src/MetadataRecorder.cpp` — implementation
+- `pi/hmi/qml/ScreenMetadata.qml` — UI page (accessible from ScreenHome row 07)
+
+**How it works:**
+- Execute button in ScreenScan triggers 4 sequential passes (R/G/B/C), same curve
+- `Recorder.startSession()` called on execute press — snapshots current curve + boxW
+- `Recorder.startPass(i)` / `Recorder.endPass(i)` called per pass
+- `Recorder.commitSession()` finalises + auto-exports SVG to `/home/hoyte/xylosome_exports/`
+- `Recorder.simulateTrigger()` generates a fake complete session for testing (no execute needed)
+
+**SVG output format (final design):**
+- 568 × 200 px, transparent background, black on transparent
+- Header box (44 px): `XYLOSOME_01` at 20px Courier New + letter-spacing, date right-aligned
+- Timing table (328 × 112 px): 4 rows R/G/B/C — t_start / t_end / duration / ms
+- Curve box (240 × 112 px): 1px black Catmull-Rom polyline, dashed zero axis
+- Params box (44 px): node coords line 1, box_w / aspect / lines line 2 — both 11px, no collision
+- Named: `xylosome_YYYYMMDD_HHMMSS.svg`
+
+---
+
+### Screen rename: ScreenSequences → ScreenScan ✅
+
+Aligned with concept document (docs/concept/xylosome_ui_concept.docx):
+- `ScreenSequences.qml` renamed to `ScreenScan.qml`
+- `ScreenSplash` updated to boot to `ScreenScan`
+- CMakeLists updated
+
+---
+
+### ScreenHome restructured ✅
+
+- Removed stale device/motor/bus/net status block
+- Nav rows updated to match concept doc screen map:
+
+| Row | Name | Destination |
+|-----|------|-------------|
+| 01 | live | ScreenLive |
+| 02 | camera | ScreenPlaceholder (TODO) |
+| 03 | presets | ScreenPlaceholder (TODO) |
+| 04 | telemetry | ScreenPlaceholder (TODO) |
+| 05 | connected devices | ScreenPlaceholder (TODO) |
+| 06 | settings | ScreenSettings |
+| 07 | metadata | ScreenMetadata |
+
+"connected devices" replaces the old inline status block — clearcore / teensy / camera info belongs there when the screen is built.
+
+---
+
 ## Outstanding items
 
 | Item | Priority | Notes |
