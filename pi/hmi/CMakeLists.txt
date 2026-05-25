@@ -53,7 +53,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenSplash.qml
         qml/ScreenHome.qml
         qml/ScreenLive.qml
-        qml/ScreenSequences.qml
+        qml/ScreenScan.qml
         qml/ScreenSettings.qml
         qml/ScreenMetadata.qml
         qml/ScreenPlaceholder.qml

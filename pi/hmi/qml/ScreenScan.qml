@@ -1,5 +1,5 @@
-// ScreenSequences.qml — XYLOSOME primary screen + velocity-time program editor.
-// Now the root screen (replaces ScreenHome as the startup destination).
+// ScreenScan.qml — XYLOSOME primary screen + velocity-time program editor.
+// Root screen — splash advances here directly on boot.
 //
 // Layout (960×540 @ scale 2):
 //   Top half    y=0..270   Canvas — full-width spline editor + rainbow void

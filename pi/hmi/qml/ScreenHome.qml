@@ -1,15 +1,12 @@
-// ScreenHome.qml — XYLOSOME landing page.
-// Port of src/ui/screen_home.cpp.
+// ScreenHome.qml — XYLOSOME navigation menu.
+// Secondary screen — accessed from ScreenScan via the [menu] button.
 //
-// Layout (960×540 @ scale 2, all coordinates scaled ×1.125 from 854×480 original):
+// Layout (960×540 @ scale 2):
 //   y=25   "XYLOSOME" heading
 //   y=41   subtitle, version (right-aligned)
 //   y=90   hairline
 //   y=110  "select task" prompt
-//   y=149  nav rows (5 × stride ~43)
-//   y=389  hairline
-//   y=405  status block line 1
-//   y=432  status block line 2
+//   y=149  nav rows
 //   y=484  hairline
 //   y=515  footer text + clock
 
@@ -62,65 +59,47 @@ Item {
 
     NavRow {
         x: 18; y: 149; width: 924
-        rowNum: "01"; rowName: "live";      rowDesc: "position / velocity / torque"
+        rowNum: "01"; rowName: "live";               rowDesc: "position / velocity / torque"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenLive.qml"))
     }
     NavRow {
         x: 18; y: 191; width: 924
-        rowNum: "02"; rowName: "sequences"; rowDesc: "saved motion programs"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSequences.qml"))
+        rowNum: "02"; rowName: "camera";             rowDesc: "line scanner settings"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
+                                            { screenTitle: "camera" })
     }
     NavRow {
         x: 18; y: 234; width: 924
-        rowNum: "03"; rowName: "presets";   rowDesc: "quick go-to positions"
+        rowNum: "03"; rowName: "presets";            rowDesc: "saved positions and scan configurations"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "presets" })
     }
     NavRow {
         x: 18; y: 277; width: 924
-        rowNum: "04"; rowName: "telemetry"; rowDesc: "real-time monitoring"
+        rowNum: "04"; rowName: "telemetry";          rowDesc: "real-time monitoring"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "telemetry" })
     }
     NavRow {
         x: 18; y: 320; width: 924
-        rowNum: "05"; rowName: "settings";  rowDesc: "brightness, network, calibration"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
+        rowNum: "05"; rowName: "connected devices";  rowDesc: "clearcore · teensy · camera"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
+                                            { screenTitle: "connected devices" })
     }
     NavRow {
         x: 18; y: 363; width: 924
-        rowNum: "06"; rowName: "metadata";  rowDesc: "trigger recorder — svg export"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))
+        rowNum: "06"; rowName: "settings";           rowDesc: "network, calibration, axis params"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
     }
-
-    // ── Status block ──────────────────────────────────────────────────────────
-
-    Hairline { x: 18; y: 389; width: 924 }
-
-    // Row 1
-    Text { x: 18;  y: 405; text: "device";        color: Theme.colorTextDim; font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-    Text { x: 124; y: 405; text: "single-motor";  color: Theme.colorText;    font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-    Text { x: 360; y: 405; text: "bus";            color: Theme.colorTextDim; font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-    Text { x: 414; y: 405; text: "uart → teensy → can"; color: Theme.colorText; font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-
-    // Row 2
-    Text { x: 18;  y: 432; text: "motor";         color: Theme.colorTextDim; font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-    Text { x: 124; y: 432; text: "rmd-x8";         color: Theme.colorText;    font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-    Text { x: 360; y: 432; text: "net";            color: Theme.colorTextDim; font.family: Theme.fontFamily; font.pixelSize: Theme.fontBody }
-    Text {
-        id: netLabel
-        x: 414; y: 432
-        text:  "server :8080"
-        color: Theme.colorText
-        font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
+    NavRow {
+        x: 18; y: 406; width: 924
+        rowNum: "07"; rowName: "metadata";           rowDesc: "trigger recorder — svg export"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))
     }
 
     // ── Footer ────────────────────────────────────────────────────────────────
 
-    Hairline {
-        anchors { bottom: parent.bottom; bottomMargin: 56; left: parent.left; leftMargin: 9 }
-        width: 942
-    }
+    Hairline { x: 18; y: 462; width: 924 }
 
     Text {
         id: footerText

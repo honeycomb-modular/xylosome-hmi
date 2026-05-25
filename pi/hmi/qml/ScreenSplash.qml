@@ -24,6 +24,6 @@ Item {
     Timer {
         interval: 3000
         running: true
-        onTriggered: root.StackView.view.replace("qrc:/XylosomeHMI/qml/ScreenSequences.qml")
+        onTriggered: root.StackView.view.replace("qrc:/XylosomeHMI/qml/ScreenScan.qml")
     }
 }
