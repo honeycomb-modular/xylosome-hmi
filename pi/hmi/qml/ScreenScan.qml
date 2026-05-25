@@ -44,6 +44,9 @@ Item {
     property string execState:    "idle"
     property bool   blinkVisible: true        // drives [resume] blink
     property bool   homed:        false       // bind to Motor.homed when C++ side adds it
+    property bool   _dialDriving: false       // breaks boxW ↔ angle feedback loop
+    readonly property real arcDegrees: Math.max(10, hand2Angle - hand1Angle)
+    readonly property real maxSpeed:   100.0  // deg/s — Panasonic servo reference speed
 
     // ── Multi-pass state ──────────────────────────────────────────────────────
     // One execute = 4 sequential passes (R / G / B / C), same curve each time.
@@ -320,7 +323,7 @@ Item {
             ctx.setLineDash([2, 4])
             ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(bw, zeroY); ctx.stroke()
             ctx.setLineDash([])
-            ctx.fillStyle = "#5C5C5C"; ctx.font = "12px sans-serif"; ctx.textAlign = "right"
+            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px sans-serif"; ctx.textAlign = "right"
             ctx.fillText("time", bw - 6, zeroY - 5)
             ctx.restore()
 
@@ -330,7 +333,7 @@ Item {
             ctx.setLineDash([2, 4])
             ctx.beginPath(); ctx.moveTo(bw/2, 0); ctx.lineTo(bw/2, ch); ctx.stroke()
             ctx.setLineDash([])
-            ctx.fillStyle = "#5C5C5C"; ctx.font = "12px sans-serif"; ctx.textAlign = "center"
+            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px sans-serif"; ctx.textAlign = "center"
             ctx.translate(bw/2 - 9, 16); ctx.rotate(-Math.PI / 2)
             ctx.fillText("speed", 0, 0)
             ctx.restore()
@@ -339,7 +342,7 @@ Item {
             if (root.insertMarkerIdx >= 0 && root.insertMarkerIdx < nodeModel.count) {
                 var mx = root.pxOfNx(nodeModel.get(root.insertMarkerIdx).nx)
                 ctx.save()
-                ctx.strokeStyle = "#F87171"; ctx.lineWidth = 1; ctx.globalAlpha = 0.7
+                ctx.strokeStyle = Theme.danger.toString(); ctx.lineWidth = 1; ctx.globalAlpha = 0.7
                 ctx.beginPath(); ctx.moveTo(mx, 0); ctx.lineTo(mx, ch); ctx.stroke()
                 ctx.restore()
             }
@@ -347,18 +350,21 @@ Item {
             // Playhead
             if (root.playheadX >= 0) {
                 ctx.save()
-                ctx.strokeStyle = "#F87171"; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.9
+                ctx.strokeStyle = Theme.danger.toString(); ctx.lineWidth = 1.5; ctx.globalAlpha = 0.9
                 ctx.beginPath(); ctx.moveTo(root.playheadX, 0); ctx.lineTo(root.playheadX, ch); ctx.stroke()
                 ctx.restore()
             }
 
             // Info overlay (bottom-right of box)
             ctx.save()
-            ctx.fillStyle = "#606060"; ctx.font = "12px sans-serif"
+            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px sans-serif"
             ctx.textAlign = "right"; ctx.globalAlpha = 1.0
-            ctx.fillText("lines: "    + root.formatLines(root.linesCount),     bw - 8, ch - 8)
-            ctx.fillText("aspect: "   + (root.boxW / root.canvasH).toFixed(2), bw - 8, ch - 24)
-            ctx.fillText("velocity: " + root.avgVelocity().toFixed(3),         bw - 8, ch - 40)
+            var arcDeg     = root.arcDegrees
+            var realAvgSpd = Math.abs(root.avgVelocity()) * root.maxSpeed
+            var scanSec    = arcDeg / Math.max(1.0, realAvgSpd)
+            ctx.fillText("lines: "  + root.formatLines(root.linesCount),                                           bw - 8, ch - 8)
+            ctx.fillText("arc: "    + arcDeg.toFixed(0) + "\xB0  AR: " + (root.boxW / root.canvasH).toFixed(2),  bw - 8, ch - 24)
+            ctx.fillText("avg: "    + realAvgSpd.toFixed(0) + " deg/s  ~" + scanSec.toFixed(1) + " s",            bw - 8, ch - 40)
 
             // Pass indicator — shown during multi-pass execution
             if (root.inMultiPass) {
@@ -456,7 +462,7 @@ Item {
         y: root.canvasY
         width: 39; height: root.canvasH
 
-        Rectangle { anchors.fill: parent; color: Theme.accentDim; radius: 0 }
+        Rectangle { anchors.fill: parent; color: Theme.accent; radius: 0 }
 
         MouseArea {
             anchors.fill: parent
@@ -541,13 +547,38 @@ Item {
             }
         }
 
+        // ── Pie fill — arc sector between hand1 and hand2 ────────────────────
+        Canvas {
+            id: pieFillCanvas
+            anchors.fill: parent
+            property real _h1: root.hand1Angle
+            property real _h2: root.hand2Angle
+            on_H1Changed: requestPaint()
+            on_H2Changed: requestPaint()
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                var cx = motorCircle.cx, cy = motorCircle.cy, r = motorCircle.r
+                var a1 = (root.hand1Angle - 90) * Math.PI / 180
+                var a2 = (root.hand2Angle - 90) * Math.PI / 180
+                if (a2 <= a1) return
+                // Arc outline — full accent, no alpha
+                ctx.beginPath()
+                ctx.arc(cx, cy, r, a1, a2, false)
+                ctx.strokeStyle = Theme.accent.toString()
+                ctx.lineWidth   = 2
+                ctx.globalAlpha = 1.0
+                ctx.stroke()
+            }
+        }
+
         // ── Hand 1 — start position ───────────────────────────────────────────
         Rectangle {
             id: hand1
             readonly property real handLen: motorCircle.r + 6
             readonly property real gapPx:   10    // ~3 mm gap from centre
             width: 2;  height: handLen - gapPx
-            color: Theme.colorTextDim
+            color: Theme.accent
             x: motorCircle.cx - 1
             y: motorCircle.cy - handLen
             transform: Rotation {
@@ -562,7 +593,7 @@ Item {
             readonly property real handLen: motorCircle.r + 6
             readonly property real gapPx:   10
             width: 2;  height: handLen - gapPx
-            color: Theme.colorTextDim
+            color: Theme.accent
             x: motorCircle.cx - 1
             y: motorCircle.cy - handLen
             transform: Rotation {
@@ -590,7 +621,7 @@ Item {
         // ── Centre pivot ──────────────────────────────────────────────────────
         Rectangle {
             width: 6;  height: 6;  radius: 3
-            color: Theme.colorTextDim
+            color: Theme.accent
             x: motorCircle.cx - 3
             y: motorCircle.cy - 3
         }
@@ -611,8 +642,16 @@ Item {
                 anchors.fill: parent
                 onPositionChanged: {
                     if (!pressed) return
-                    var p = mapToItem(motorCircle, mouse.x, mouse.y)
-                    root.hand1Angle = Math.atan2(p.x - motorCircle.cx, -(p.y - motorCircle.cy)) * 180 / Math.PI
+                    var p   = mapToItem(motorCircle, mouse.x, mouse.y)
+                    var ang = Math.atan2(p.x - motorCircle.cx, -(p.y - motorCircle.cy)) * 180 / Math.PI
+                    root._dialDriving = true
+                    root.hand1Angle   = Math.min(root.hand2Angle - 10, ang)
+                    var arc = root.hand2Angle - root.hand1Angle
+                    root.boxW = Math.max(root.boxMinW,
+                                Math.min(root.canvasW - 45, Math.round(arc * (root.canvasW - 45) / 180)))
+                    root._dialDriving = false
+                    root.scheduleRepaint()
+                    Motor.seqBoxW = root.boxW
                 }
             }
         }
@@ -633,8 +672,16 @@ Item {
                 anchors.fill: parent
                 onPositionChanged: {
                     if (!pressed) return
-                    var p = mapToItem(motorCircle, mouse.x, mouse.y)
-                    root.hand2Angle = Math.atan2(p.x - motorCircle.cx, -(p.y - motorCircle.cy)) * 180 / Math.PI
+                    var p   = mapToItem(motorCircle, mouse.x, mouse.y)
+                    var ang = Math.atan2(p.x - motorCircle.cx, -(p.y - motorCircle.cy)) * 180 / Math.PI
+                    root._dialDriving = true
+                    root.hand2Angle   = Math.max(root.hand1Angle + 10, ang)
+                    var arc = root.hand2Angle - root.hand1Angle
+                    root.boxW = Math.max(root.boxMinW,
+                                Math.min(root.canvasW - 45, Math.round(arc * (root.canvasW - 45) / 180)))
+                    root._dialDriving = false
+                    root.scheduleRepaint()
+                    Motor.seqBoxW = root.boxW
                 }
             }
         }
@@ -717,8 +764,11 @@ Item {
         repeat:   true
         running:  false
         onTriggered: {
-            var spd = root.speedAtX(root.playheadX)
-            root.playheadX += 3.375 * Math.max(0.08, spd)
+            // Physics: real velocity (deg/s) × pixels/deg × 16 ms/frame
+            // → at avg ~0.3 speed factor, 90° arc ≈ 3 s per pass
+            var arcDeg = root.arcDegrees
+            var spd    = root.speedAtX(root.playheadX)
+            root.playheadX += Math.max(0.3, spd * root.maxSpeed * root.boxW / arcDeg * 0.016)
             if (root.playheadX >= root.boxW) {
                 if (root.inMultiPass) {
                     // ── End of this pass ─────────────────────────────────────
@@ -774,11 +824,13 @@ Item {
     function scheduleRepaint() { if (!repaintTimer.running) repaintTimer.start() }
 
     Component.onCompleted: {
-        root.hand2Angle = 45.0 * (root.boxW / root.canvasH) + 45.0
+        root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)
         root.scheduleRepaint()
     }
     onBoxWChanged: {
-        root.hand2Angle = 45.0 * (root.boxW / root.canvasH) + 45.0
+        // Only update hand2 when the handle bar is driving (not when dial is driving)
+        if (!root._dialDriving)
+            root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)
         root.scheduleRepaint()
     }
 }

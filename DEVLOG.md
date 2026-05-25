@@ -284,3 +284,15 @@ ClearCore programming is not in scope for current sprint.
 | Implement focus cursor in QML | High | Required for touch-free operation |
 | Resolve TBD gesture mappings (mode select, preset actions) | Medium | Before disabling touch |
 | Clarify ClearCore TCP protocol | Open question | Defines Pi ↔ ClearCore API layer |
+
+## Deploy command (Pi 4) — 2026-05-25
+
+```bash
+rsync -av --exclude='.git' --exclude='build' \
+  "/Users/hoytevhoytema/Library/Mobile Documents/com~apple~CloudDocs/Documents/projects/xylosome_pi/pi/hmi/" \
+  hoyte@192.168.10.2:/home/hoyte/xylosome-hmi/pi/hmi/ && \
+ssh -o PubkeyAuthentication=no hoyte@192.168.10.2 \
+  "cd /home/hoyte/xylosome-hmi/pi/hmi/build && make -j\$(nproc) && sudo systemctl restart tigervnc"
+```
+
+Remote path: `/home/hoyte/xylosome-hmi/` (hyphen). Restart target: `tigervnc`.
