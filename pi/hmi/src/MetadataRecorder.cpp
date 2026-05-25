@@ -55,7 +55,40 @@ QVariantList MetadataRecorder::currentPasses() const
     return out;
 }
 
-// ── Simulate trigger (testing, no ClearCore) ──────────────────────────────────
+// ── Real-time session API ─────────────────────────────────────────────────────
+
+void MetadataRecorder::startSession()
+{
+    m_current             = TriggerRecord{};
+    m_current.capturedAt  = QDateTime::currentDateTime();
+    m_current.index       = m_triggers.size() + 1;
+    m_current.nodes       = m_motor->nodes();
+    m_current.boxW        = m_motor->seqBoxW();
+}
+
+void MetadataRecorder::startPass(int pass)
+{
+    if (pass < 0 || pass > 3) return;
+    m_current.passes[pass].tStart_ms = QDateTime::currentMSecsSinceEpoch();
+}
+
+void MetadataRecorder::endPass(int pass)
+{
+    if (pass < 0 || pass > 3) return;
+    m_current.passes[pass].tEnd_ms = QDateTime::currentMSecsSinceEpoch();
+}
+
+void MetadataRecorder::commitSession()
+{
+    m_triggers.append(m_current);
+    emit triggerCountChanged();
+    emit lastSummaryChanged();
+
+    // Auto-export SVG after every real execute session.
+    exportSvg("/home/hoyte/xylosome_exports");
+}
+
+// ── Simulate trigger (testing, no real execute needed) ────────────────────────
 
 void MetadataRecorder::simulateTrigger()
 {
@@ -79,33 +112,6 @@ void MetadataRecorder::simulateTrigger()
 
     m_triggers.append(rec);
     emit triggerCountChanged();
-    emit lastSummaryChanged();
-}
-
-// ── ClearCore integration ─────────────────────────────────────────────────────
-
-void MetadataRecorder::handleTrigger()
-{
-    TriggerRecord rec;
-    rec.capturedAt = QDateTime::currentDateTime();
-    rec.index      = m_triggers.size() + 1;
-    rec.nodes      = m_motor->nodes();
-    rec.boxW       = m_motor->seqBoxW();
-    m_triggers.append(rec);
-    emit triggerCountChanged();
-    emit lastSummaryChanged();
-}
-
-void MetadataRecorder::handlePassStart(int pass)
-{
-    if (m_triggers.isEmpty() || pass < 0 || pass > 3) return;
-    m_triggers.last().passes[pass].tStart_ms = QDateTime::currentMSecsSinceEpoch();
-}
-
-void MetadataRecorder::handlePassEnd(int pass)
-{
-    if (m_triggers.isEmpty() || pass < 0 || pass > 3) return;
-    m_triggers.last().passes[pass].tEnd_ms = QDateTime::currentMSecsSinceEpoch();
     emit lastSummaryChanged();
 }
 
@@ -199,233 +205,229 @@ QString MetadataRecorder::exportSvg(const QString &directory)
 
 // ── SVG builder ───────────────────────────────────────────────────────────────
 //
-// Output: 8192 × (header + N × triggerRowH) px, white-on-black.
-// Typography: Courier New monospace.
-// Curve: Catmull-Rom polyline, matches screen rendering exactly.
+// One trigger per SVG. Black on transparent. Architectural drawing aesthetic.
+// Layout: [header box — full width]
+//         [timing table | curve]  ← same height, side by side
+//         [parameters box — full width]
+// No fills. 1px black borders. No decoration. Text sets the size; curve adapts.
 
 QString MetadataRecorder::buildSvg() const
 {
-    // ── Geometry constants ────────────────────────────────────────────────────
-    const int svgW       = 8192;
-    const int marginX    = 96;
-    const int headerH    = 200;
-    const int trigRowH   = 360;   // height per trigger block
-    const int footerH    = 60;
+    if (m_triggers.isEmpty()) return {};
 
-    // Speed curve graph (left of each trigger block)
-    const int graphW     = 1400;
-    const int graphH     = 200;
-    const int graphOffY  = 48;    // offset from trigger block top
+    // Export only the latest trigger.
+    const TriggerRecord &tr = m_triggers.last();
 
-    // Timing table (right of graph)
-    const int tableX     = marginX + graphW + 72;
-    const int tableColW  = 220;
+    // ── Typography ────────────────────────────────────────────────────────────
+    const QString fm   = "Courier New, Courier, monospace";
+    const int     fz   = 13;       // single font size throughout
+    const double  cw   = 7.8;      // character width at 13px Courier New (px)
+    const int     lh   = 20;       // line height
 
-    // Typography
-    const int fzTitle    = 48;
-    const int fzHead     = 32;
-    const int fzBody     = 30;
-    const int fzDim      = 24;
-    const QString fontMono = "Courier New, Courier, monospace";
+    // ── Table column widths (chars × cw + 10px gap, except last col) ─────────
+    // # | ch | t_start | t_end | duration | ms
+    const int c_num  = 20;   // "1"   1 char
+    const int c_ch   = 26;   // "R"   1 char + gap
+    const int c_ts   = 84;   // "00:00.000"  9 chars
+    const int c_te   = 84;   // "00:02.140"  9 chars
+    const int c_dur  = 62;   // "2.140s"     6 chars
+    const int c_ms   = 36;   // "2140"       4 chars  (last — no gap)
 
-    // Colors
-    const QString cBg    = "#000000";
-    const QString cText  = "#ECECEC";
-    const QString cDim   = "#888888";
-    const QString cFaint = "#444444";
-    const QString cBorder= "#333333";
-    const QString cPanel = "#0A0A0A";
-    const QString chColor[4] = { "#CC4444", "#44CC44", "#4488CC", "#AAAAAA" };
-    const char   *chName[4]  = { "R", "G", "B", "C" };
+    const int tblInner = c_num + c_ch + c_ts + c_te + c_dur + c_ms; // 312
+    const int pad      = 8;  // left/right padding inside any box
+    const int tblW     = tblInner + pad * 2;   // 328
 
-    int totalH = headerH + m_triggers.size() * trigRowH + footerH;
+    // Table rows: 1 label + 4 data
+    const int rows     = 5;
+    const int tblInnerH = rows * lh;
+    const int vpad     = 6;
+    const int tblH     = tblInnerH + vpad * 2;    // 112
 
+    // Curve box: same height as table, width chosen to feel square-ish
+    const int crvW     = 240;
+    const int crvH     = tblH;
+
+    // Full content width = table + curve (no gap — shared border)
+    const int svgW     = tblW + crvW;             // 568
+
+    // Header (large title) and params (two lines)
+    const int fzLg     = 20;                       // XYLOSOME_01 title font size
+    const int fzSm     = 11;                       // small font for params rows
+    const int hdrH     = 44;                       // tall enough for 20px title
+    const int prmH     = 44;                       // tall enough for two 11px lines
+
+    // Layout Y positions (no margins — boxes tile edge to edge)
+    const int yHdr     = 0;
+    const int yMain    = hdrH;
+    const int yPrm     = hdrH + tblH;
+    const int svgH     = hdrH + tblH + prmH;      // 200
+
+    // ── Colours ───────────────────────────────────────────────────────────────
+    const QString cBlk = "#000000";
+    const QString cDim = "#555555";
+
+    const char *chN[4] = { "R", "G", "B", "C" };
+
+    qint64 t0 = tr.passes[0].tStart_ms >= 0
+                ? tr.passes[0].tStart_ms
+                : tr.capturedAt.toMSecsSinceEpoch();
+
+    double aspect = double(tr.boxW) / 270.0;
+    int    lines  = qMax(1, qRound(aspect * 8000.0));
+
+    // ── SVG root — transparent background ────────────────────────────────────
     QString svg;
     QTextStream o(&svg);
 
-    // ── SVG root ──────────────────────────────────────────────────────────────
     o << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     o << QString("<svg xmlns=\"http://www.w3.org/2000/svg\" "
                  "width=\"%1\" height=\"%2\" viewBox=\"0 0 %1 %2\">\n")
-         .arg(svgW).arg(totalH);
+         .arg(svgW).arg(svgH);
 
-    // Background
-    o << QString("<rect width=\"%1\" height=\"%2\" fill=\"%3\"/>\n")
-         .arg(svgW).arg(totalH).arg(cBg);
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
-    // ── Inline helpers (lambdas) ──────────────────────────────────────────────
-
-    // text element
-    auto txt = [&](int x, int y, const QString &s, int sz,
-                   const QString &fill = "#ECECEC",
-                   const QString &anchor = "start")
-    {
-        o << QString("<text x=\"%1\" y=\"%2\" "
-                     "font-family=\"%3\" font-size=\"%4\" "
+    // text — baseline y
+    auto txt = [&](int x, int y, const QString &s,
+                   const QString &fill  = "#000000",
+                   const QString &anchor = "start") {
+        o << QString("<text x=\"%1\" y=\"%2\" font-family=\"%3\" font-size=\"%4\" "
                      "fill=\"%5\" text-anchor=\"%6\">%7</text>\n")
-             .arg(x).arg(y).arg(fontMono).arg(sz).arg(fill).arg(anchor)
+             .arg(x).arg(y).arg(fm).arg(fz).arg(fill).arg(anchor)
              .arg(s.toHtmlEscaped());
     };
 
-    // horizontal rule
-    auto hline = [&](int x, int y, int w, const QString &stroke = "#333333") {
-        o << QString("<line x1=\"%1\" y1=\"%2\" x2=\"%3\" y2=\"%2\" "
-                     "stroke=\"%4\" stroke-width=\"1\"/>\n")
-             .arg(x).arg(y).arg(x + w).arg(stroke);
+    // box: no fill, 1px black stroke
+    auto box = [&](int x, int y, int w, int h) {
+        o << QString("<rect x=\"%1\" y=\"%2\" width=\"%3\" height=\"%4\" "
+                     "fill=\"none\" stroke=\"%5\" stroke-width=\"1\"/>\n")
+             .arg(x).arg(y).arg(w).arg(h).arg(cBlk);
     };
 
-    // ── Session header ────────────────────────────────────────────────────────
-    const TriggerRecord &first = m_triggers.first();
-    QString sessionId = first.capturedAt.toString("yyyyMMdd-HHmmss");
-    QString dateStr   = first.capturedAt.toString("yyyy-MM-dd  hh:mm:ss");
-
-    txt(marginX, 64, "XYLOSOME", fzTitle, cText);
-    txt(marginX + 380, 64,
-        QString("—  %1  —  %2").arg(sessionId).arg(dateStr),
-        fzHead, cDim);
-    txt(svgW - marginX, 64,
-        QString("%1 TRIGGER%2")
-            .arg(m_triggers.size())
-            .arg(m_triggers.size() == 1 ? "" : "S"),
-        fzDim, cFaint, "end");
-
-    hline(marginX, 80, svgW - 2 * marginX, cBorder);
-
-    txt(marginX, 120, "SPEED CURVE", fzDim, cFaint);
-    txt(marginX + graphW + 72, 120, "PASS TIMING", fzDim, cFaint);
-    hline(marginX, 136, svgW - 2 * marginX, "#1E1E1E");
-
-    // ── Per-trigger blocks ────────────────────────────────────────────────────
-    for (int ti = 0; ti < m_triggers.size(); ti++) {
-        const TriggerRecord &tr = m_triggers[ti];
-        int baseY = headerH + ti * trigRowH;
-
-        // Trigger label
-        txt(marginX, baseY + 32,
-            QString("TRIGGER %1").arg(tr.index), fzDim, cFaint);
-        txt(marginX + 280, baseY + 32,
-            tr.capturedAt.toString("hh:mm:ss.zzz"), fzDim, cDim);
-
-        // ── Speed curve box ───────────────────────────────────────────────────
-        int gx = marginX;
-        int gy = baseY + graphOffY;
-
-        // Box background
-        o << QString("<rect x=\"%1\" y=\"%2\" width=\"%3\" height=\"%4\" "
-                     "fill=\"%5\" stroke=\"%6\" stroke-width=\"1\"/>\n")
-             .arg(gx).arg(gy).arg(graphW).arg(graphH).arg(cPanel).arg(cBorder);
-
-        // Grid (fine + coarse)
-        o << "<g stroke=\"#161616\" stroke-width=\"0.5\">\n";
-        for (int gix = 0; gix <= graphW; gix += graphW / 16)
-            o << QString("<line x1=\"%1\" y1=\"%2\" x2=\"%1\" y2=\"%3\"/>\n")
-                 .arg(gx + gix).arg(gy).arg(gy + graphH);
-        for (int giy = 0; giy <= graphH; giy += graphH / 4)
-            o << QString("<line x1=\"%1\" y1=\"%2\" x2=\"%3\" y2=\"%2\"/>\n")
-                 .arg(gx).arg(gy + giy).arg(gx + graphW);
-        o << "</g>\n";
-
-        // Zero axis (horizontal centre, dashed)
-        int zy = gy + graphH / 2;
+    // horizontal rule
+    auto rule = [&](int x, int y, int w) {
         o << QString("<line x1=\"%1\" y1=\"%2\" x2=\"%3\" y2=\"%2\" "
-                     "stroke=\"#505050\" stroke-width=\"0.5\" stroke-dasharray=\"6,8\"/>\n")
-             .arg(gx).arg(zy).arg(gx + graphW);
+                     "stroke=\"%4\" stroke-width=\"0.5\"/>\n")
+             .arg(x).arg(y).arg(x + w).arg(cDim);
+    };
 
-        // Channel labels on zero axis (right side, stacked)
-        // (space-saving: only one shared curve for now; future = 4 overlaid curves)
-        o << QString("<text x=\"%1\" y=\"%2\" "
-                     "font-family=\"%3\" font-size=\"%4\" fill=\"%5\">SPEED</text>\n")
-             .arg(gx + 10).arg(gy + 22)
-             .arg(fontMono).arg(fzDim).arg(cFaint);
+    // ── 1. Header box (full width) ────────────────────────────────────────────
+    box(0, yHdr, svgW, hdrH);
 
-        // Catmull-Rom curve from snapshotted nodes
-        QVector<QPointF> rawPts;
-        for (const QVariant &v : tr.nodes) {
-            QVariantMap nm = v.toMap();
-            double nx = nm.value("nx", 0.0).toDouble();
-            double ny = nm.value("ny", 0.5).toDouble();
-            rawPts.append(QPointF(nx * graphW, ny * graphH));
-        }
+    // Left: fixed product label at large size, vertically centred
+    o << QString("<text x=\"%1\" y=\"%2\" font-family=\"%3\" font-size=\"%4\" "
+                 "letter-spacing=\"1\" fill=\"%5\" text-anchor=\"start\">XYLOSOME_01</text>\n")
+         .arg(pad).arg(yHdr + 29).arg(fm).arg(fzLg).arg(cBlk);
 
-        if (rawPts.size() >= 2) {
-            QVector<QPointF> curve = evalCatmullRom(rawPts, 24);
-            if (!curve.isEmpty()) {
-                o << "<polyline fill=\"none\" stroke=\"" << cText
-                  << "\" stroke-width=\"2.5\" stroke-linejoin=\"round\" points=\"";
-                for (const QPointF &pt : curve) {
-                    o << QString("%1,%2 ")
-                         .arg(gx + pt.x(), 0, 'f', 1)
-                         .arg(gy + pt.y(), 0, 'f', 1);
-                }
-                o << "\"/>\n";
+    // Right: date / time  — same baseline
+    txt(svgW - pad, yHdr + 29,
+        tr.capturedAt.toString("yyyy-MM-dd  hh:mm:ss.zzz"),
+        cDim, "end");
 
-                // Node dots
-                for (const QPointF &np : rawPts) {
-                    o << QString("<circle cx=\"%1\" cy=\"%2\" r=\"4\" fill=\"#4ADE80\"/>\n")
-                         .arg(gx + np.x(), 0, 'f', 1)
-                         .arg(gy + np.y(), 0, 'f', 1);
-                }
-            }
-        }
+    // ── 2a. Timing table box (left column) ───────────────────────────────────
+    box(0, yMain, tblW, tblH);
 
-        // box_w annotation below graph
-        txt(gx, gy + graphH + 22,
-            QString("box_w = %1 px").arg(tr.boxW), fzDim, cFaint);
+    // Column x offsets (absolute)
+    const int x0 = pad;
+    const int x1 = pad + c_num;
+    const int x2 = pad + c_num + c_ch;
+    const int x3 = pad + c_num + c_ch + c_ts;
+    const int x4 = pad + c_num + c_ch + c_ts + c_te;
+    const int x5 = pad + c_num + c_ch + c_ts + c_te + c_dur;
 
-        // ── Timing table ──────────────────────────────────────────────────────
-        // t0 = absolute ms of first pass start (or trigger wall time)
-        qint64 t0 = tr.passes[0].tStart_ms >= 0
-                    ? tr.passes[0].tStart_ms
-                    : tr.capturedAt.toMSecsSinceEpoch();
+    // Label row
+    const int lblY = yMain + vpad + fz;
+    txt(x0, lblY, "#",        cDim);
+    txt(x1, lblY, "ch",       cDim);
+    txt(x2, lblY, "t_start",  cDim);
+    txt(x3, lblY, "t_end",    cDim);
+    txt(x4, lblY, "duration", cDim);
+    txt(x5, lblY, "ms",       cDim);
 
-        int tblY = baseY + graphOffY;
+    rule(0, yMain + vpad + fz + 4, tblW);
 
-        // Column headers
-        auto th = [&](int col, const QString &label) {
-            txt(tableX + col * tableColW, tblY + 30, label, fzDim, cFaint);
-        };
-        th(0, "PASS");
-        th(1, "CH");
-        th(2, "t_start");
-        th(3, "t_end");
-        th(4, "DURATION");
+    // Data rows
+    for (int pi = 0; pi < 4; pi++) {
+        const PassRecord &pr = tr.passes[pi];
+        const int ry = yMain + vpad + fz + 4 + (pi + 1) * lh;
 
-        hline(tableX, tblY + 38, svgW - marginX - tableX, cBorder);
+        QString tsStr  = pr.tStart_ms >= 0 ? formatMsRelative(pr.tStart_ms, t0) : "--:--.---";
+        QString teStr  = pr.tEnd_ms   >= 0 ? formatMsRelative(pr.tEnd_ms,   t0) : "--:--.---";
+        QString durStr = formatDuration(pr.duration_ms());
+        QString msStr  = pr.duration_ms() >= 0 ? QString::number(pr.duration_ms()) : "---";
 
-        for (int pi = 0; pi < 4; pi++) {
-            const PassRecord &pr = tr.passes[pi];
-            int rowY = tblY + 38 + 2 + (pi + 1) * 46;
+        txt(x0, ry, QString::number(pi + 1), cDim);
+        txt(x1, ry, chN[pi],  cBlk);
+        txt(x2, ry, tsStr,    cBlk);
+        txt(x3, ry, teStr,    cBlk);
+        txt(x4, ry, durStr,   cBlk);
+        txt(x5, ry, msStr,    cDim);
 
-            QString tStart = pr.tStart_ms >= 0
-                ? formatMsRelative(pr.tStart_ms, t0) : "--:--.---";
-            QString tEnd   = pr.tEnd_ms   >= 0
-                ? formatMsRelative(pr.tEnd_ms,   t0) : "--:--.---";
-            QString dur    = formatDuration(pr.duration_ms());
+        if (pi < 3) rule(0, ry + 4, tblW);
+    }
 
-            txt(tableX + 0 * tableColW, rowY, QString::number(pi + 1), fzBody, cDim);
-            txt(tableX + 1 * tableColW, rowY, chName[pi],               fzBody, chColor[pi]);
-            txt(tableX + 2 * tableColW, rowY, tStart,                   fzBody, cText);
-            txt(tableX + 3 * tableColW, rowY, tEnd,                     fzBody, cText);
-            txt(tableX + 4 * tableColW, rowY, dur,                      fzBody, cText);
-        }
+    // ── 2b. Curve box (right column, same height as table) ───────────────────
+    // Shares left border with table's right border (no gap).
+    box(tblW, yMain, crvW, crvH);
 
-        // Block separator
-        if (ti < m_triggers.size() - 1) {
-            hline(marginX, baseY + trigRowH - 10, svgW - 2 * marginX, "#1E1E1E");
+    // Inner plot area
+    const int gPad = 10;
+    const int giX  = tblW + gPad;
+    const int giY  = yMain + gPad;
+    const int giW  = crvW - gPad * 2;
+    const int giH  = crvH - gPad * 2;
+
+    // Zero axis — dashed, horizontal centre
+    const int zy = giY + giH / 2;
+    o << QString("<line x1=\"%1\" y1=\"%2\" x2=\"%3\" y2=\"%2\" "
+                 "stroke=\"%4\" stroke-width=\"0.5\" stroke-dasharray=\"3,4\"/>\n")
+         .arg(giX).arg(zy).arg(giX + giW).arg(cDim);
+
+    // Catmull-Rom curve — single black line
+    QVector<QPointF> rawPts;
+    for (const QVariant &v : tr.nodes) {
+        QVariantMap nm = v.toMap();
+        rawPts.append(QPointF(nm.value("nx", 0.0).toDouble() * giW,
+                              nm.value("ny", 0.5).toDouble() * giH));
+    }
+    if (rawPts.size() >= 2) {
+        QVector<QPointF> curve = evalCatmullRom(rawPts, 32);
+        if (!curve.isEmpty()) {
+            o << "<polyline fill=\"none\" stroke=\"" << cBlk
+              << "\" stroke-width=\"1\" stroke-linejoin=\"round\" points=\"";
+            for (const QPointF &pt : curve)
+                o << QString("%1,%2 ").arg(giX + pt.x(), 0, 'f', 1)
+                                     .arg(giY + pt.y(), 0, 'f', 1);
+            o << "\"/>\n";
         }
     }
 
-    // ── Footer ────────────────────────────────────────────────────────────────
-    int footY = headerH + m_triggers.size() * trigRowH;
-    hline(marginX, footY + 16, svgW - 2 * marginX, cBorder);
+    // ── 3. Parameters box (full width, two stacked lines at fzSm) ───────────
+    box(0, yPrm, svgW, prmH);
 
-    txt(marginX, footY + 46,
-        QString("XYLOSOME METADATA — EXPORTED %1")
-            .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")),
-        fzDim, cFaint);
-    txt(svgW - marginX, footY + 46,
-        "github.com/honeycomb-modular/xylosome-hmi",
-        fzDim, cFaint, "end");
+    // Shared small-text emitter (always cDim, always fzSm)
+    auto txtSm = [&](int x, int y, const QString &s, const QString &anchor = "start") {
+        o << QString("<text x=\"%1\" y=\"%2\" font-family=\"%3\" font-size=\"%4\" "
+                     "fill=\"%5\" text-anchor=\"%6\">%7</text>\n")
+             .arg(x).arg(y).arg(fm).arg(fzSm).arg(cDim).arg(anchor)
+             .arg(s.toHtmlEscaped());
+    };
+
+    // Line 1 — node coordinates
+    QString nodeStr = "n:";
+    for (const QVariant &v : tr.nodes) {
+        QVariantMap nm = v.toMap();
+        nodeStr += QString(" (%1,%2)")
+            .arg(nm.value("nx", 0.0).toDouble(), 0, 'f', 2)
+            .arg(nm.value("ny", 0.0).toDouble(), 0, 'f', 2);
+    }
+    txtSm(pad, yPrm + vpad + fzSm, nodeStr);
+
+    // Line 2 — technical summary
+    QString techStr = QString("box_w %1  aspect %2  lines %3")
+        .arg(tr.boxW)
+        .arg(aspect, 0, 'f', 3)
+        .arg(lines);
+    txtSm(pad, yPrm + vpad + fzSm + 16, techStr);
 
     o << "</svg>\n";
     return svg;

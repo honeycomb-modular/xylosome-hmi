@@ -45,6 +45,14 @@ Item {
     property bool   blinkVisible: true        // drives [resume] blink
     property bool   homed:        false       // bind to Motor.homed when C++ side adds it
 
+    // ── Multi-pass state ──────────────────────────────────────────────────────
+    // One execute = 4 sequential passes (R / G / B / C), same curve each time.
+    property bool inMultiPass:  false
+    property int  currentPass:  0             // 0=R  1=G  2=B  3=C
+
+    readonly property var passChannelNames: ["R", "G", "B", "C"]
+    readonly property var passChannelColors: ["#CC4444", "#44CC44", "#4488CC", "#AAAAAA"]
+
     // Dial hands — independent angles.
     // Green bar (boxW) drives hand2 only (via onBoxWChanged).
     // Dragging each node tip moves that hand independently.
@@ -351,6 +359,16 @@ Item {
             ctx.fillText("lines: "    + root.formatLines(root.linesCount),     bw - 8, ch - 8)
             ctx.fillText("aspect: "   + (root.boxW / root.canvasH).toFixed(2), bw - 8, ch - 24)
             ctx.fillText("velocity: " + root.avgVelocity().toFixed(3),         bw - 8, ch - 40)
+
+            // Pass indicator — shown during multi-pass execution
+            if (root.inMultiPass) {
+                var chNames  = ["R", "G", "B", "C"]
+                var chColors = ["#CC4444", "#44CC44", "#4488CC", "#AAAAAA"]
+                ctx.fillStyle = chColors[root.currentPass]
+                ctx.font      = "13px monospace"
+                ctx.fillText("PASS " + (root.currentPass + 1) + " / 4  " + chNames[root.currentPass],
+                             bw - 8, ch - 56)
+            }
             ctx.restore()
 
             // Spline
@@ -648,11 +666,15 @@ Item {
                 (root.execState === "paused" && root.blinkVisible)
         onClicked: {
             if (root.execState === "idle") {
-                if (root.playheadX < 0) root.playheadX = 0
+                root.playheadX    = 0
                 root.isPlaying    = true
                 root.execState    = "running"
                 root.blinkVisible = true
-                root.homed        = false   // [ready] only valid before sequence starts
+                root.homed        = false
+                root.inMultiPass  = true
+                root.currentPass  = 0
+                Recorder.startSession()    // snapshot curve + boxW
+                Recorder.startPass(0)      // t_start for R pass
                 playheadTimer.start()
             } else if (root.execState === "running") {
                 playheadTimer.stop()
@@ -681,7 +703,9 @@ Item {
             root.execState    = "idle"
             root.blinkVisible = true
             root.playheadX    = -1
-            root.homed        = true   // will be replaced by Motor.homed binding later
+            root.homed        = true
+            root.inMultiPass  = false
+            root.currentPass  = 0
         }
     }
 
@@ -696,11 +720,36 @@ Item {
             var spd = root.speedAtX(root.playheadX)
             root.playheadX += 3.375 * Math.max(0.08, spd)
             if (root.playheadX >= root.boxW) {
-                root.playheadX    = -1
-                root.isPlaying    = false
-                root.execState    = "idle"
-                root.blinkVisible = true
-                playheadTimer.stop()
+                if (root.inMultiPass) {
+                    // ── End of this pass ─────────────────────────────────────
+                    Recorder.endPass(root.currentPass)
+                    root.currentPass++
+
+                    if (root.currentPass < 4) {
+                        // ── Start next pass ───────────────────────────────────
+                        Recorder.startPass(root.currentPass)
+                        root.playheadX = 0      // reset — same curve, next colour
+                        root.scheduleRepaint()
+                        // timer keeps running
+                    } else {
+                        // ── All 4 passes complete ─────────────────────────────
+                        Recorder.commitSession()   // finalise + auto-export SVG
+                        root.inMultiPass  = false
+                        root.currentPass  = 0
+                        root.playheadX    = -1
+                        root.isPlaying    = false
+                        root.execState    = "idle"
+                        root.blinkVisible = true
+                        playheadTimer.stop()
+                    }
+                } else {
+                    // Single-pass fallback (shouldn't happen in normal use)
+                    root.playheadX    = -1
+                    root.isPlaying    = false
+                    root.execState    = "idle"
+                    root.blinkVisible = true
+                    playheadTimer.stop()
+                }
             }
         }
     }
@@ -714,7 +763,8 @@ Item {
         onTriggered: root.blinkVisible = !root.blinkVisible
     }
 
-    onPlayheadXChanged: root.scheduleRepaint()
+    onPlayheadXChanged:  root.scheduleRepaint()
+    onCurrentPassChanged: root.scheduleRepaint()
 
     Timer {
         id: repaintTimer

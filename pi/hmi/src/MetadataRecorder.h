@@ -3,17 +3,18 @@
 //
 // Singleton registered in QML as "Recorder" (import XylosomeHMI 1.0).
 //
-// Records the temporal and geometric state of every trigger event:
-//   - Per-pass timestamps (t_start, t_end) for R / G / B / C passes
-//   - Speed curve snapshot (Motor.nodes + Motor.seqBoxW) at trigger time
+// One execute press = 4 sequential passes (R/G/B/C), same curve, same duration.
+// The recorder captures wall-clock timestamps for each pass, then auto-exports
+// the session SVG when all 4 complete.
 //
-// Exports a single SVG per session: forensic readout suitable for
-// compositing over the 8K scan in Photoshop.
+// Real-time usage (called from ScreenSequences.qml execute logic):
+//   Recorder.startSession()     — on execute press (snapshots curve)
+//   Recorder.startPass(0..3)    — at the start of each pass
+//   Recorder.endPass(0..3)      — at the end of each pass
+//   Recorder.commitSession()    — after pass 3, auto-exports SVG
 //
-// ClearCore integration (future):
-//   Call handleTrigger() / handlePassStart(n) / handlePassEnd(n)
-//   from the Ethernet message parser when ClearCore events arrive.
-//   Until then, simulateTrigger() lets you test the page and SVG output.
+// Test usage (from ScreenMetadata [test trigger] button):
+//   Recorder.simulateTrigger()  — generates a complete fake session instantly
 
 #include <QObject>
 #include <QVariantList>
@@ -65,20 +66,22 @@ public:
     QString      lastSummary()  const;
     QVariantList currentPasses() const;
 
-    // ── QML-invokable actions ─────────────────────────────────────────────────
+    // ── Real-time session API (called from ScreenSequences execute logic) ────────
+    Q_INVOKABLE void startSession();        // snapshot curve; call on execute press
+    Q_INVOKABLE void startPass(int pass);   // record t_start; pass = 0..3
+    Q_INVOKABLE void endPass(int pass);     // record t_end
+    Q_INVOKABLE void commitSession();       // finalise + auto-export SVG
 
-    // Simulate a complete 4-pass trigger for testing (no ClearCore required).
-    // Snapshots current Motor.nodes + seqBoxW, generates plausible timestamps.
-    Q_INVOKABLE void    simulateTrigger();
+    // ── Test / manual ─────────────────────────────────────────────────────────
+    // Simulate a complete 4-pass session instantly (no real execute needed).
+    Q_INVOKABLE void simulateTrigger();
 
-    // Generate and write the session SVG.
+    // Re-export the last committed session to the given directory.
     // Returns the full file path on success, empty string on failure.
     Q_INVOKABLE QString exportSvg(const QString &directory);
 
-    // ── ClearCore integration (future Ethernet handler) ───────────────────────
-    void handleTrigger();           // call on "trigger start" message
-    void handlePassStart(int pass); // pass: 0=R  1=G  2=B  3=C
-    void handlePassEnd(int pass);
+    // Auto-export path (used by commitSession; same directory as manual export)
+    static constexpr const char *kAutoExportDir = "/home/hoyte/xylosome_exports";
 
 signals:
     void triggerCountChanged();
@@ -94,4 +97,5 @@ private:
     // ── State ─────────────────────────────────────────────────────────────────
     MotorModel              *m_motor;
     QVector<TriggerRecord>   m_triggers;
+    TriggerRecord            m_current;     // in-progress session (between startSession / commitSession)
 };

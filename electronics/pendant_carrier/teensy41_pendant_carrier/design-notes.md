@@ -101,16 +101,21 @@ JST-XH, placed along one long edge so every cable leaves in the same direction.
 | 2 | GND |
 
 ### J3 — Grayhill 62AG22-H5-P encoder (6-pin XH)
-Pin order matches the encoder's own pinout, so the adapter cable is straight-through.
+
+> **Cable note:** The Grayhill 62AG22-H5-P has a **2×3 pin header** (two rows of
+> 3, 1.27 mm pitch). The adapter cable converts this to a single-row 6-pin
+> JST-XH by connecting **row 2 first (encoder pins 4, 5, 6 → J3 pins 1, 2, 3)**
+> then **row 1 (encoder pins 1, 2, 3 → J3 pins 4, 5, 6)**. The cable is **NOT**
+> straight-through pin-for-pin.
 
 | J3 pin | Encoder pin | Net | On-board |
 |---|---|---|---|
-| 1 | 1 — POWER +5 V | +5 V (VIN) | — |
-| 2 | 2 — OUTPUT A | ENC_A → D4 | R1 10 kΩ → 3V3, C1 470 pF → GND |
-| 3 | 3 — OUTPUT B | ENC_B → D5 | R2 10 kΩ → 3V3, C2 470 pF → GND |
-| 4 | 4 — GROUND | GND | — |
-| 5 | 5 — pushbutton (NO) | ENC_SW → D6 | (Teensy internal pull-up) |
-| 6 | 6 — pushbutton (other side) | GND | — |
+| 1 | 6 — switch return | GND | — |
+| 2 | 5 — switch NO | ENC_SW → D6 | (Teensy internal pull-up) |
+| 3 | 4 — OUTPUT B | ENC_B → D5 | R2 10 kΩ → 3V3, C2 470 pF → GND |
+| 4 | 1 — POWER +5 V | +5 V (VIN) | — |
+| 5 | 2 — OUTPUT A | ENC_A → D4 | R1 10 kΩ → 3V3, C1 470 pF → GND |
+| 6 | 3 — GROUND | GND | — |
 
 ---
 

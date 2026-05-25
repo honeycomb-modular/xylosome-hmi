@@ -113,6 +113,43 @@ Spline sub-flow (Section 4.3 of concept doc):
 
 ---
 
+## 2026-05-23
+
+### Firmware — teensy_pendant.ino working ✅
+
+All three inputs confirmed working on hardware:
+- BTN1, BTN2 — correct DOWN/UP events
+- ENC_SW — correct DOWN/UP events
+- JOG — correct signed delta per detent
+
+Key fix: ENC_A (D4) and ENC_B (D5) need `INPUT_PULLUP`, not plain `INPUT`.
+The external 10kΩ pull-ups on the PCB are insufficient without the Teensy's
+internal pull-up also enabled — likely because the open-collector outputs of the
+Grayhill 62AG pull too hard relative to the pull-up value in this wiring.
+
+---
+
+### PCB — J3 encoder connector mapping corrected
+
+The J3 pin table in `design-notes.md` was wrong. The Grayhill 62AG22-H5-P has
+a **2×3 pin header** (two rows of 3, 1.27 mm pitch), not a single row of 6.
+The adapter cable connects row 2 first then row 1, so the mapping to the
+single-row 6-pin JST-XH is:
+
+| J3 pin | Encoder pin | Signal |
+|---|---|---|
+| 1 | 6 — switch return | GND |
+| 2 | 5 — switch NO | ENC_SW → D6 |
+| 3 | 4 — Output B | ENC_B → D5 |
+| 4 | 1 — Power | +5V (VIN) |
+| 5 | 2 — Output A | ENC_A → D4 |
+| 6 | 3 — GND | GND |
+
+Firmware Teensy pin assignments (D4=ENC_A, D5=ENC_B, D6=ENC_SW) are unchanged.
+design-notes.md Section 4 J3 table updated to reflect this.
+
+---
+
 ## Outstanding items
 
 | Item | Priority | Notes |
