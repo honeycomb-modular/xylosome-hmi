@@ -87,6 +87,11 @@ Item {
         rowNum: "05"; rowName: "settings";  rowDesc: "brightness, network, calibration"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
     }
+    NavRow {
+        x: 18; y: 363; width: 924
+        rowNum: "06"; rowName: "metadata";  rowDesc: "trigger recorder — svg export"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))
+    }
 
     // ── Status block ──────────────────────────────────────────────────────────
 

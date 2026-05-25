@@ -33,6 +33,8 @@ qt_add_executable(xylosome_hmi
     src/MotorModel.cpp
     src/HttpServer.h
     src/HttpServer.cpp
+    src/MetadataRecorder.h
+    src/MetadataRecorder.cpp
 )
 
 qt_add_qml_module(xylosome_hmi
@@ -53,6 +55,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenLive.qml
         qml/ScreenSequences.qml
         qml/ScreenSettings.qml
+        qml/ScreenMetadata.qml
         qml/ScreenPlaceholder.qml
     RESOURCES
         HMLOGO.png

@@ -25,6 +25,7 @@
 
 #include "MotorModel.h"
 #include "HttpServer.h"
+#include "MetadataRecorder.h"
 
 int main(int argc, char *argv[])
 {
@@ -42,6 +43,10 @@ int main(int argc, char *argv[])
     // ── 1. Motor model ────────────────────────────────────────────────────────
     MotorModel motor;
 
+    // ── 1b. Metadata recorder ─────────────────────────────────────────────────
+    // Holds reference to motor to snapshot speed curve at trigger time.
+    MetadataRecorder recorder(&motor);
+
     // ── 2. HTTP server ────────────────────────────────────────────────────────
     // Default port 8080 (no root required).
     // To bind :80 on Pi without root:
@@ -55,6 +60,9 @@ int main(int argc, char *argv[])
     // Register MotorModel as a QML singleton accessible as "Motor" in any
     // file that does:  import XylosomeHMI 1.0
     qmlRegisterSingletonInstance<MotorModel>("XylosomeHMI", 1, 0, "Motor", &motor);
+
+    // Register MetadataRecorder as "Recorder" — same pattern as Motor.
+    qmlRegisterSingletonInstance<MetadataRecorder>("XylosomeHMI", 1, 0, "Recorder", &recorder);
 
     QQmlApplicationEngine engine;
 
