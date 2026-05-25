@@ -55,45 +55,33 @@ Item {
     }
 
     // ── Navigation rows ───────────────────────────────────────────────────────
-    // Stride 43 px, starting at y=149.  Scaled from 38 px stride at 480p.
+    // 5 rows, stride 57 px, starting at y=149.
 
     NavRow {
         x: 18; y: 149; width: 924
-        rowNum: "01"; rowName: "live";               rowDesc: "position / velocity / torque"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenLive.qml"))
+        rowNum: "01"; rowName: "capture modes";      rowDesc: "jog · static · program scan"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCapture.qml"))
     }
     NavRow {
-        x: 18; y: 191; width: 924
-        rowNum: "02"; rowName: "camera";             rowDesc: "line scanner settings"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
-                                            { screenTitle: "camera" })
-    }
-    NavRow {
-        x: 18; y: 234; width: 924
-        rowNum: "03"; rowName: "presets";            rowDesc: "saved positions and scan configurations"
+        x: 18; y: 206; width: 924
+        rowNum: "02"; rowName: "presets";            rowDesc: "saved capture configurations"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "presets" })
     }
     NavRow {
-        x: 18; y: 277; width: 924
-        rowNum: "04"; rowName: "telemetry";          rowDesc: "real-time monitoring"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
-                                            { screenTitle: "telemetry" })
-    }
-    NavRow {
-        x: 18; y: 320; width: 924
-        rowNum: "05"; rowName: "connected devices";  rowDesc: "clearcore · teensy · camera"
+        x: 18; y: 263; width: 924
+        rowNum: "03"; rowName: "connected devices";  rowDesc: "clearcore · teensy · camera"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "connected devices" })
     }
     NavRow {
-        x: 18; y: 363; width: 924
-        rowNum: "06"; rowName: "settings";           rowDesc: "network, calibration, axis params"
+        x: 18; y: 320; width: 924
+        rowNum: "04"; rowName: "settings";           rowDesc: "network, calibration, camera, axis"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
     }
     NavRow {
-        x: 18; y: 406; width: 924
-        rowNum: "07"; rowName: "metadata";           rowDesc: "trigger recorder — svg export"
+        x: 18; y: 377; width: 924
+        rowNum: "05"; rowName: "metadata";           rowDesc: "trigger recorder — svg export"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))
     }
 

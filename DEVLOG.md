@@ -211,6 +211,64 @@ Aligned with concept document (docs/concept/xylosome_ui_concept.docx):
 
 ---
 
+## Navigation structure — finalised 2026-05-25
+
+ScreenScan is root. ScreenHome is the nav menu (gear button).
+
+```
+ScreenScan  ← root, always
+  └── gear → ScreenHome
+        01 capture modes  → ScreenCapture
+              → program scan  (links to ScreenScan)
+              → jog           (manual movement + telemetry + capture)
+              → static        (motor parked, color or BW)
+        02 presets        → ScreenPlaceholder (TODO)
+        03 connected devices → ScreenPlaceholder (TODO)
+        04 settings       → ScreenSettings
+              subpage: camera settings (TODO)
+        05 metadata       → ScreenMetadata
+```
+
+ScreenLive retired — absorbed into capture modes / jog.
+
+---
+
+## Preset definition — 2026-05-25
+
+A preset is a complete capture recipe. Loading one configures everything needed
+to reproduce a result:
+
+- Velocity curve (speed profile, aspect ratio, node positions)
+- Camera parameters (line rate, TDI stages, exposure, gain)
+- Capture mode (program / jog / static)
+- Color mode (full R/G/B/C or BW)
+
+Presets are mode-agnostic — a preset can encode any combination of the above.
+ScreenPresets will eventually read/write parameters from all other screens.
+
+---
+
+## Architecture decisions (resolved)
+
+### Color filter wheel trigger — 2026-05-25
+
+The NEMA 17 stepper drives a 4-position color filter wheel (R / G / B / Clear).
+**Trigger source: Panasonic servo end-of-travel → ClearCore.**
+
+When the servo reaches its end position, ClearCore detects this and advances the
+filter wheel one step autonomously. The Pi does not command individual filter
+positions — it only commands the scan (start/stop). ClearCore owns the wheel
+sequencing internally.
+
+This means:
+- Pi fires one "execute scan" command per full 4-pass acquisition
+- ClearCore handles the R→G→B→C advance cycle internally, gated by servo end position
+- No per-pass signaling needed on the Pi ↔ ClearCore protocol
+
+ClearCore programming is not in scope for current sprint.
+
+---
+
 ## Outstanding items
 
 | Item | Priority | Notes |
@@ -222,9 +280,7 @@ Aligned with concept document (docs/concept/xylosome_ui_concept.docx):
 | Wire pendant_serial.py into Qt app | High | Threading + Qt signal bridge needed |
 | Build ClearCore TCP client layer | High | Largest outstanding gap |
 | Replace MotorModel.tick() with real telemetry | High | Depends on TCP client |
-| Implement ScreenCamera | Medium | Needs camera API details first |
+| Implement ScreenCamera | Medium | Camera: Dalsa Piranha 2 via Teledyne frame grabber |
 | Implement focus cursor in QML | High | Required for touch-free operation |
 | Resolve TBD gesture mappings (mode select, preset actions) | Medium | Before disabling touch |
-| Clarify NEMA 17 role | Open question | Focus / Z / indexing? |
-| Clarify camera model | Open question | Determines ScreenCamera implementation |
 | Clarify ClearCore TCP protocol | Open question | Defines Pi ↔ ClearCore API layer |
