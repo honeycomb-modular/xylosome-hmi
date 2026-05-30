@@ -47,6 +47,35 @@ ApplicationWindow {
 
         initialItem: "qrc:/XylosomeHMI/qml/ScreenSplash.qml"
 
+        // ── Pendant input router ────────────────────────────────────────────────
+        // Maps keyboard keys to the focus grammar for dev/testing. The Teensy
+        // pendant will later feed the same three actions (JOG → next/prev,
+        // click → enter, BTN2 → back) via serial, with no change to the screens.
+        //   ↓ / → / Tab   → moveNext      ↑ / ← → movePrev
+        //   Enter / Space → enter         Esc / Backspace → back
+        // A screen opts in by exposing `property var focusController` and,
+        // optionally, a `focusBack()` function. Unhandled keys bubble here from
+        // the focused screen, which doesn't consume arrow/enter keys.
+        focus: true
+        Keys.onPressed: function(event) {
+            var s  = nav.currentItem
+            var fc = (s && s.focusController) ? s.focusController : null
+            switch (event.key) {
+            case Qt.Key_Down: case Qt.Key_Right: case Qt.Key_Tab:
+                if (fc) { fc.moveNext(); event.accepted = true } break
+            case Qt.Key_Up: case Qt.Key_Left: case Qt.Key_Backtab:
+                if (fc) { fc.movePrev(); event.accepted = true } break
+            case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space:
+                if (fc) { fc.enter(); event.accepted = true } break
+            case Qt.Key_Delete:   // pendant BTN1 — screen-specific context action
+                if (s && typeof s.focusContext === "function") { s.focusContext(); event.accepted = true } break
+            case Qt.Key_Escape: case Qt.Key_Backspace:
+                if (fc && fc.editing) { fc.back(); event.accepted = true }
+                else if (s && typeof s.focusBack === "function") { s.focusBack(); event.accepted = true }
+                break
+            }
+        }
+
         pushEnter: Transition {
             PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 200 }
         }

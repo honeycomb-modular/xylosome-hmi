@@ -16,6 +16,9 @@ Item {
     // Injected by StackView when pushed with properties.
     property string screenTitle: "placeholder"
 
+    // Nothing focusable here yet — back returns to the menu.
+    function focusBack() { root.StackView.view.pop() }
+
     // ── Header ────────────────────────────────────────────────────────────────
 
     BackButton { x: 18; y: 16 }

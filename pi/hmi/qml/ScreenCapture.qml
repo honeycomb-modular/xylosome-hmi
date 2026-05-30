@@ -25,6 +25,32 @@ Item {
     // 0 = program scan, 1 = jog, 2 = static
     property int activeMode: 1
 
+    // ── Touch-free focus ────────────────────────────────────────────────────────
+    // Cursor cycles the 3 mode tabs plus the buttons of the visible panel. The
+    // hold-to-jog pads are excluded (they need press-and-hold, not a click) until
+    // the ClearCore jog command exists. Back returns to the menu.
+    property var focusController: capFocus
+    function focusBack() { root.StackView.view.pop() }
+
+    FocusController {
+        id: capFocus
+        index: 1   // start on the active "jog" tab
+        targets: {
+            var t = [tabProgram, tabJog, tabStatic]
+            if (root.activeMode === 0)      return t.concat([btnOpenScan])
+            else if (root.activeMode === 1) return t.concat([btnSlow, btnMed, btnFast, btnEnable, btnZero, btnJogCapture])
+            else                            return t.concat([btnColor, btnBw, btnStaticCapture])
+        }
+        onActivated: function(item) {
+            if (item === tabProgram)     root.activeMode = 0
+            else if (item === tabJog)    root.activeMode = 1
+            else if (item === tabStatic) root.activeMode = 2
+            else if (item.clicked)       item.clicked()
+        }
+    }
+
+    FocusIndicator { target: capFocus.current }
+
     // ── Header ────────────────────────────────────────────────────────────────
 
     BackButton { x: 18; y: 16 }
@@ -49,6 +75,7 @@ Item {
     // Three equal tabs across 942 px (314 each), y=63..108.
 
     Item {
+        id: tabProgram
         x: 9; y: 63; width: 314; height: 45
         Text {
             anchors.centerIn: parent
@@ -65,6 +92,7 @@ Item {
     }
 
     Item {
+        id: tabJog
         x: 323; y: 63; width: 314; height: 45
         Text {
             anchors.centerIn: parent
@@ -81,6 +109,7 @@ Item {
     }
 
     Item {
+        id: tabStatic
         x: 637; y: 63; width: 314; height: 45
         Text {
             anchors.centerIn: parent
@@ -119,6 +148,7 @@ Item {
         }
 
         TerminalButton {
+            id: btnOpenScan
             x: 0; y: 90; width: 220; height: 45
             label: "[open scan editor]"
             // Pop all the way back to ScreenScan (stack root).
@@ -168,18 +198,21 @@ Item {
         }
 
         TerminalButton {
+            id: btnSlow
             x: 100; y: 58; width: 120; height: 38
             label: "[slow]"
             active: jogPanel.jogSpeed === 0
             onClicked: jogPanel.jogSpeed = 0
         }
         TerminalButton {
+            id: btnMed
             x: 232; y: 58; width: 138; height: 38
             label: "[medium]"
             active: jogPanel.jogSpeed === 1
             onClicked: jogPanel.jogSpeed = 1
         }
         TerminalButton {
+            id: btnFast
             x: 382; y: 58; width: 120; height: 38
             label: "[fast]"
             active: jogPanel.jogSpeed === 2
@@ -229,17 +262,20 @@ Item {
 
         // Enable / zero / capture ─────────────────────────────────────────────
         TerminalButton {
+            id: btnEnable
             x: 0; y: 222; width: 146; height: 45
             label:  "[enable]"
             active: Motor.enabled
             onClicked: Motor.toggleEnabled()
         }
         TerminalButton {
+            id: btnZero
             x: 158; y: 222; width: 110; height: 45
             label:  "[zero]"
             onClicked: Motor.zero()
         }
         TerminalButton {
+            id: btnJogCapture
             x: 642; y: 222; width: 300; height: 45
             label:  "[capture]"
             // TODO: trigger capture via ClearCore
@@ -286,12 +322,14 @@ Item {
         }
 
         TerminalButton {
+            id: btnColor
             x: 100; y: 58; width: 220; height: 38
             label:  "[color  r/g/b/c]"
             active: staticPanel.colorMode === 0
             onClicked: staticPanel.colorMode = 0
         }
         TerminalButton {
+            id: btnBw
             x: 332; y: 58; width: 180; height: 38
             label:  "[bw  single]"
             active: staticPanel.colorMode === 1
@@ -309,6 +347,7 @@ Item {
 
         // Capture button ──────────────────────────────────────────────────────
         TerminalButton {
+            id: btnStaticCapture
             x: 0; y: 160; width: 300; height: 72
             label:    "[  capture  ]"
             fontSize: Theme.fontH2

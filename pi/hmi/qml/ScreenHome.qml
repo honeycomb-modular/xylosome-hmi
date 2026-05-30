@@ -18,6 +18,20 @@ Item {
     id: root
     width: 960; height: 540
 
+    // ── Touch-free focus ────────────────────────────────────────────────────────
+    // Encoder/keyboard moves the cursor through the nav rows; enter activates the
+    // focused row; back pops to the previous screen.
+    property var focusController: homeFocus
+    function focusBack() { root.StackView.view.pop() }
+
+    FocusController {
+        id: homeFocus
+        targets: [navCapture, navPresets, navDevices, navSettings, navMetadata]
+        onActivated: function(item) { item.clicked() }
+    }
+
+    FocusIndicator { target: homeFocus.current }
+
     // ── Header ────────────────────────────────────────────────────────────────
 
     BackButton { x: 18; y: 16 }
@@ -58,28 +72,33 @@ Item {
     // 5 rows, stride 57 px, starting at y=149.
 
     NavRow {
+        id: navCapture
         x: 18; y: 149; width: 924
         rowNum: "01"; rowName: "capture modes";      rowDesc: "jog · static · program scan"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCapture.qml"))
     }
     NavRow {
+        id: navPresets
         x: 18; y: 206; width: 924
         rowNum: "02"; rowName: "presets";            rowDesc: "saved capture configurations"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "presets" })
     }
     NavRow {
+        id: navDevices
         x: 18; y: 263; width: 924
         rowNum: "03"; rowName: "connected devices";  rowDesc: "clearcore · teensy · camera"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPlaceholder.qml"),
                                             { screenTitle: "connected devices" })
     }
     NavRow {
+        id: navSettings
         x: 18; y: 320; width: 924
         rowNum: "04"; rowName: "settings";           rowDesc: "network, calibration, camera, axis"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
     }
     NavRow {
+        id: navMetadata
         x: 18; y: 377; width: 924
         rowNum: "05"; rowName: "metadata";           rowDesc: "trigger recorder — svg export"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))

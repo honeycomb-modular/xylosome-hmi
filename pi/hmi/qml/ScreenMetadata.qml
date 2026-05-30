@@ -73,6 +73,18 @@ Item {
     readonly property var chColors: ["#CC4444", "#44CC44", "#4488CC", "#AAAAAA"]
     readonly property var chNames:  ["R", "G", "B", "C"]
 
+    // ── Touch-free focus ────────────────────────────────────────────────────────
+    property var focusController: metaFocus
+    function focusBack() { root.StackView.view.pop() }
+
+    FocusController {
+        id: metaFocus
+        targets: [testTriggerBtn, exportBtn]
+        onActivated: function(item) { item.clicked() }
+    }
+
+    FocusIndicator { target: metaFocus.current }
+
     // ── Header ────────────────────────────────────────────────────────────────
 
     BackButton { x: 18; y: 16 }
@@ -307,6 +319,7 @@ Item {
     // ── Buttons ───────────────────────────────────────────────────────────────
 
     TerminalButton {
+        id: testTriggerBtn
         x: 9; y: 463
         width: 200; height: 39
         label:  "[test trigger]"
@@ -315,6 +328,7 @@ Item {
     }
 
     TerminalButton {
+        id: exportBtn
         x: 220; y: 463
         width: 180; height: 39
         label:  "[export svg]"

@@ -17,6 +17,35 @@ Item {
     id: root
     width: 960; height: 540
 
+    // ── Touch-free focus ────────────────────────────────────────────────────────
+    // Two focusable controls: brightness (enter → rotate adjusts the value) and
+    // the fw.version row (enter → plays the easter-egg clip). Back returns to menu.
+    property var focusController: setFocus
+    function focusBack() { root.StackView.view.pop() }
+
+    FocusController {
+        id: setFocus
+        targets: [brightnessFocus, fwVersionFocus]
+        onActivated: function(item) {
+            if (item === brightnessFocus) setFocus.editing = true
+            else if (item === fwVersionFocus)
+                Motor.playVideo("/home/hoyte/TheOdyssey_IMAX-Trailer-3_4K_51_prores.mp4")
+        }
+        onAdjust: function(delta) {
+            var b = Math.max(20, Math.min(255, root.brightness + delta * 5))
+            root.brightness = b
+            brightnessSlider.value = b
+        }
+        onConfirmed: setFocus.editing = false
+        onCanceled:  setFocus.editing = false
+    }
+
+    FocusIndicator { target: setFocus.current }
+
+    // Invisible focus regions (no MouseArea → touch passes through to widgets).
+    Item { id: brightnessFocus; x: 9;  y: 93;  width: 942; height: 26 }
+    Item { id: fwVersionFocus;  x: 9;  y: 335; width: 788; height: 29 }
+
     // ── Header ────────────────────────────────────────────────────────────────
 
     BackButton { x: 18; y: 16 }

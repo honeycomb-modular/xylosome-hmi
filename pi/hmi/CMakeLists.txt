@@ -49,6 +49,8 @@ qt_add_qml_module(xylosome_hmi
         qml/LabelledValue.qml
         qml/TerminalButton.qml
         qml/BackButton.qml
+        qml/FocusController.qml
+        qml/FocusIndicator.qml
         # ── Screens ──
         qml/ScreenSplash.qml
         qml/ScreenHome.qml

@@ -68,6 +68,224 @@ Item {
 
     onIsPlayingChanged: Motor.sequencePlaying = isPlaying
 
+    // ── Touch-free focus ────────────────────────────────────────────────────────
+    // Sections: spline editor · dial · settings · execute · home. The encoder
+    // cycles between them; enter acts on buttons. Entering the spline editor
+    // descends through edit levels:
+    //   "box"   — rotate drags the green bar (aspect/duration)
+    //   "scrub" — a red cursor rides the curve; enter grabs a node (or inserts
+    //             one on empty curve) and descends to "node"
+    //   "node"  — rotate moves the grabbed node up/down; enter drops it → "scrub"
+    // Back climbs one level (node→scrub→box→section). The [home] button jumps
+    // fully out while editing.
+    property var    focusController: scanFocus
+    property string editTarget:   "none"    // none | spline | dial
+    property string splineLevel:  "none"    // none | box | scrub | node
+    property real   scrubNx:       0.5       // red scrub cursor position (0..1)
+    property int    activeNodeIdx: -1        // node being adjusted at "node" level
+    property int    hoverNodeIdx:  -1        // node under the scrub cursor at "scrub"
+    property int    dialSel:        0        // dial edit: 0 none · 1 start hand · 2 end hand
+    property string dialLevel:    "none"    // dial edit: none | select | move
+
+    FocusController {
+        id: scanFocus
+        targets: [canvas, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
+        index: 4   // default focus on [execute]
+        onActivated: function(item) {
+            if (item === canvas) root.enterSplineEditing()
+            else if (item === motorCircle) root.enterDialEditing()
+            else if (item === resetCurveBtn || item === settingsBtn
+                     || item === playBtn || item === resetBtn)
+                item.clicked()
+        }
+        onAdjust:    function(delta) { root.editAdjust(delta) }
+        onConfirmed: root.editConfirm()
+        onCanceled:  root.editCancel()
+    }
+
+    // Context action (pendant BTN1 / Delete key): erase the node under the red
+    // cursor while editing the curve. Endpoints and the 3-node minimum are
+    // protected by deleteNode().
+    function focusContext() {
+        if (!scanFocus.editing) return
+        if (root.splineLevel !== "scrub" && root.splineLevel !== "node") return
+        var idx = (root.splineLevel === "node") ? root.activeNodeIdx
+                                                 : root.nearestNodeIdx(root.scrubNx, 0.02)
+        if (idx < 0) return
+        root.deleteNode(idx)
+        root.activeNodeIdx = -1
+        root.splineLevel   = "scrub"
+        root.hoverNodeIdx  = root.nearestNodeIdx(root.scrubNx, 0.02)
+        root.scheduleRepaint()
+    }
+
+    // Flatten the curve to three evenly-spaced nodes on the zero (centre) axis.
+    function resetCurve() {
+        nodeModel.clear()
+        nodeModel.append({ nx: 0.0, ny: 0.5, locked: true  })
+        nodeModel.append({ nx: 0.5, ny: 0.5, locked: false })
+        nodeModel.append({ nx: 1.0, ny: 0.5, locked: true  })
+        root.activeNodeIdx = -1
+        root.hoverNodeIdx  = -1
+        root.scheduleRepaint()
+        root.pushNodesToMotor()
+    }
+
+    // Brackets frame the focused section when navigating; during spline editing
+    // they frame the green bar at "box" level and hand off to the red cursor /
+    // node highlight at deeper levels.
+    FocusIndicator {
+        target: scanFocus.editing ? (root.splineLevel === "box" ? handle : null)
+                                   : scanFocus.current
+    }
+
+    // ── Spline edit-level helpers ───────────────────────────────────────────────
+    function nearestNodeIdx(nx, thresh) {
+        var best = -1, bd = thresh
+        for (var i = 0; i < nodeModel.count; i++) {
+            var d = Math.abs(nodeModel.get(i).nx - nx)
+            if (d < bd) { bd = d; best = i }
+        }
+        return best
+    }
+
+    function enterSplineEditing() {
+        scanFocus.editing = true
+        root.editTarget   = "spline"
+        root.splineLevel  = "box"
+        root.scheduleRepaint()
+    }
+
+    function exitSplineEditing() {
+        scanFocus.editing  = false
+        root.editTarget    = "none"
+        root.splineLevel   = "none"
+        root.activeNodeIdx = -1
+        root.hoverNodeIdx  = -1
+        root.scheduleRepaint()
+    }
+
+    // ── Edit dispatch — routes encoder turn/enter/back to the active editor ─────
+    function editAdjust(d) {
+        if (root.editTarget === "spline")    root.splineAdjust(d)
+        else if (root.editTarget === "dial") root.dialAdjust(d)
+    }
+    function editConfirm() {
+        if (root.editTarget === "spline")    root.splineConfirm()
+        else if (root.editTarget === "dial") root.dialConfirm()
+    }
+    function editCancel() {
+        if (root.editTarget === "spline")    root.splineCancel()
+        else if (root.editTarget === "dial") root.dialCancel()
+    }
+
+    // ── Dial editing — select a hand, rotate to move it ─────────────────────────
+    // enter on the dial selects the start hand; rotate moves it; enter advances to
+    // the end hand; enter again (or back from start) exits. Back steps one level.
+    function enterDialEditing() {
+        scanFocus.editing = true
+        root.editTarget   = "dial"
+        root.dialLevel    = "select"   // first choose which hand
+        root.dialSel      = 1
+        root.scheduleRepaint()
+    }
+    function exitDialEditing() {
+        scanFocus.editing = false
+        root.editTarget   = "none"
+        root.dialLevel    = "none"
+        root.dialSel      = 0
+        root.scheduleRepaint()
+    }
+    function dialAdjust(d) {
+        if (root.dialLevel === "select") {
+            // rotate to choose which hand (start / end)
+            if (d > 0)      root.dialSel = 2
+            else if (d < 0) root.dialSel = 1
+            root.scheduleRepaint()
+            return
+        }
+        // "move": rotate moves the selected hand
+        var step = 2   // degrees per detent
+        if (root.dialSel === 1)
+            root.hand1Angle = Math.max(0, Math.min(root.hand2Angle - 10, root.hand1Angle + d * step))
+        else if (root.dialSel === 2)
+            root.hand2Angle = Math.min(360, Math.max(root.hand1Angle + 10, root.hand2Angle + d * step))
+        // Keep boxW in sync with the arc, same as the hand-tip drag handlers.
+        var arc = root.hand2Angle - root.hand1Angle
+        root._dialDriving = true
+        root.boxW = Math.max(root.boxMinW, Math.min(root.canvasW - 45,
+                              Math.round(arc * (root.canvasW - 45) / 180)))
+        root._dialDriving = false
+        root.scheduleRepaint()
+        Motor.seqBoxW = root.boxW
+    }
+    function dialConfirm() {
+        if (root.dialLevel === "select")    root.dialLevel = "move"   // pick hand → move it
+        else if (root.dialLevel === "move") root.dialLevel = "select" // done → reselect
+    }
+    function dialCancel() {
+        if (root.dialLevel === "move")        root.dialLevel = "select"
+        else if (root.dialLevel === "select") root.exitDialEditing()
+    }
+
+    function splineAdjust(d) {
+        if (root.splineLevel === "box") {
+            root.boxW = Math.max(root.boxMinW, Math.min(root.canvasW - 45, root.boxW + d * 12))
+            Motor.seqBoxW = root.boxW
+            root.scheduleRepaint()
+        } else if (root.splineLevel === "scrub") {
+            root.scrubNx = Math.max(0, Math.min(1, root.scrubNx + d * (1 / 60)))
+            root.hoverNodeIdx = root.nearestNodeIdx(root.scrubNx, 0.02)
+            root.scheduleRepaint()
+        } else if (root.splineLevel === "node" && root.activeNodeIdx >= 0) {
+            var nd = nodeModel.get(root.activeNodeIdx)
+            // Rotate up (negative delta) raises the node (ny decreases toward 0).
+            var ny = Math.max(0.01, Math.min(0.99, nd.ny - d * 0.02))
+            nodeModel.setProperty(root.activeNodeIdx, "ny", ny)
+            root.pushNodesToMotor()
+            root.scheduleRepaint()
+        }
+    }
+
+    function splineConfirm() {
+        if (root.splineLevel === "box") {
+            root.splineLevel  = "scrub"
+            root.hoverNodeIdx = root.nearestNodeIdx(root.scrubNx, 0.02)
+            root.scheduleRepaint()
+        } else if (root.splineLevel === "scrub") {
+            var hit = root.nearestNodeIdx(root.scrubNx, 0.02)
+            if (hit >= 0) {
+                root.deleteNode(hit)                           // enter on a node → erase it
+                root.hoverNodeIdx = root.nearestNodeIdx(root.scrubNx, 0.02)
+                // stay at scrub level
+            } else {
+                var f = root.findOnCurve(root.scrubNx * root.boxW)
+                root.insertNode(f.seg, f.nx, f.ny)             // empty curve → add + grab
+                root.activeNodeIdx = f.seg + 1
+                root.splineLevel = "node"
+            }
+            root.scheduleRepaint()
+        } else if (root.splineLevel === "node") {
+            root.activeNodeIdx = -1                            // drop, back to scrub
+            root.splineLevel   = "scrub"
+            root.hoverNodeIdx   = root.nearestNodeIdx(root.scrubNx, 0.02)
+            root.scheduleRepaint()
+        }
+    }
+
+    function splineCancel() {
+        if (root.splineLevel === "node") {
+            root.activeNodeIdx = -1
+            root.splineLevel   = "scrub"
+            root.scheduleRepaint()
+        } else if (root.splineLevel === "scrub") {
+            root.splineLevel = "box"
+            root.scheduleRepaint()
+        } else if (root.splineLevel === "box") {
+            root.exitSplineEditing()
+        }
+    }
+
     // ── Sync functions (called from main.qml Connections) ─────────────────────
 
     function syncNodes(nodesArr) {
@@ -323,7 +541,7 @@ Item {
             ctx.setLineDash([2, 4])
             ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(bw, zeroY); ctx.stroke()
             ctx.setLineDash([])
-            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px sans-serif"; ctx.textAlign = "right"
+            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px " + Theme.fontFamilyMono; ctx.textAlign = "right"
             ctx.fillText("time", bw - 6, zeroY - 5)
             ctx.restore()
 
@@ -333,7 +551,7 @@ Item {
             ctx.setLineDash([2, 4])
             ctx.beginPath(); ctx.moveTo(bw/2, 0); ctx.lineTo(bw/2, ch); ctx.stroke()
             ctx.setLineDash([])
-            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px sans-serif"; ctx.textAlign = "center"
+            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px " + Theme.fontFamilyMono; ctx.textAlign = "center"
             ctx.translate(bw/2 - 9, 16); ctx.rotate(-Math.PI / 2)
             ctx.fillText("speed", 0, 0)
             ctx.restore()
@@ -355,9 +573,18 @@ Item {
                 ctx.restore()
             }
 
+            // Scrub cursor — red vertical line during spline edit (scrub/node levels)
+            if (root.splineLevel === "scrub" || root.splineLevel === "node") {
+                var scrubPx = root.pxOfNx(root.scrubNx)
+                ctx.save()
+                ctx.strokeStyle = Theme.danger.toString(); ctx.lineWidth = 1; ctx.globalAlpha = 0.9
+                ctx.beginPath(); ctx.moveTo(scrubPx, 0); ctx.lineTo(scrubPx, ch); ctx.stroke()
+                ctx.restore()
+            }
+
             // Info overlay (bottom-right of box)
             ctx.save()
-            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px sans-serif"
+            ctx.fillStyle = Theme.colorTextDim.toString(); ctx.font = "12px " + Theme.fontFamilyMono
             ctx.textAlign = "right"; ctx.globalAlpha = 1.0
             var arcDeg     = root.arcDegrees
             var realAvgSpd = Math.abs(root.avgVelocity()) * root.maxSpeed
@@ -371,7 +598,7 @@ Item {
                 var chNames  = ["R", "G", "B", "C"]
                 var chColors = ["#CC4444", "#44CC44", "#4488CC", "#AAAAAA"]
                 ctx.fillStyle = chColors[root.currentPass]
-                ctx.font      = "13px monospace"
+                ctx.font      = "13px " + Theme.fontFamilyMono
                 ctx.fillText("PASS " + (root.currentPass + 1) + " / 4  " + chNames[root.currentPass],
                              bw - 8, ch - 56)
             }
@@ -428,8 +655,13 @@ Item {
 
             Rectangle {
                 anchors.centerIn: parent
-                width: nodeItem.nodeSz; height: nodeItem.nodeSz
-                radius: 1; color: Theme.accent
+                readonly property bool isActive: nodeItem.nodeIndex === root.activeNodeIdx
+                readonly property bool isHover:  root.splineLevel === "scrub"
+                                                 && nodeItem.nodeIndex === root.hoverNodeIdx
+                width:  isActive ? nodeItem.nodeSz + 4 : nodeItem.nodeSz
+                height: isActive ? nodeItem.nodeSz + 4 : nodeItem.nodeSz
+                radius: 1
+                color:  (isActive || isHover) ? Theme.danger : Theme.accent
             }
 
             MouseArea {
@@ -479,6 +711,18 @@ Item {
         }
     }
 
+    // ── Reset curve button — inside the curve window, bottom-left ───────────────
+    TerminalButton {
+        id: resetCurveBtn
+        x: root.canvasX + 8
+        y: root.canvasH - 34
+        width: 150; height: 26
+        z: 50
+        fontSize: Theme.fontMonoS
+        label: "[reset curve]"
+        onClicked: root.resetCurve()
+    }
+
     // ── Divider ───────────────────────────────────────────────────────────────
     Hairline { x: 0; y: 270; width: 960 }
 
@@ -486,15 +730,15 @@ Item {
 
     Text {
         x: 18; y: 292
-        text:  "XYLOSOME"
-        color: Theme.colorText
+        text:  "XYLOSOME_01"
+        color: "#C8C8C8"                        // slightly greyer than primary text
         font { family: Theme.fontFamily; pixelSize: Theme.fontH1; weight: Font.Medium }
     }
 
     Text {
         x: 18; y: 338
         text:  "temporal scanning unit"
-        color: Theme.colorTextDim
+        color: "#5E5E5E"                        // a bit darker than colorTextDim
         font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
     }
 
@@ -578,7 +822,7 @@ Item {
             readonly property real handLen: motorCircle.r + 6
             readonly property real gapPx:   10    // ~3 mm gap from centre
             width: 2;  height: handLen - gapPx
-            color: Theme.accent
+            color: (root.editTarget === "dial" && root.dialSel === 1) ? Theme.danger : Theme.accent
             x: motorCircle.cx - 1
             y: motorCircle.cy - handLen
             transform: Rotation {
@@ -593,7 +837,7 @@ Item {
             readonly property real handLen: motorCircle.r + 6
             readonly property real gapPx:   10
             width: 2;  height: handLen - gapPx
-            color: Theme.accent
+            color: (root.editTarget === "dial" && root.dialSel === 2) ? Theme.danger : Theme.accent
             x: motorCircle.cx - 1
             y: motorCircle.cy - handLen
             transform: Rotation {
@@ -687,12 +931,34 @@ Item {
         }
     }
 
+    // ── FOV readout — degrees the camera travels (end − start position) ────────
+    // Full camera rotation = 360°. FOV = hand2Angle (end) − hand1Angle (start).
+    Column {
+        id: fovReadout
+        spacing: 2
+        anchors.left: motorCircle.right
+        anchors.leftMargin: 8
+        anchors.verticalCenter: motorCircle.verticalCenter
+
+        Text {
+            text:  "fov"
+            color: Theme.colorTextDim
+            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+        }
+        Text {
+            text:  Math.round(root.hand2Angle - root.hand1Angle) + "°"
+            color: Theme.colorText
+            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH2 }
+        }
+    }
+
     // ── Bottom panel — text buttons ───────────────────────────────────────────
     // [settings] left  |  [execute]/[pause]/[resume] and [home]/[ready] right.
     // [execute] → green solid while running; blinks green/grey when paused.
     // [home]/[ready] reflects root.homed — bind to Motor.homed when available.
 
     TerminalButton {
+        id: settingsBtn
         x: 18
         anchors { bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
@@ -745,6 +1011,8 @@ Item {
         label:  root.homed ? "[ready]" : "[home]"
         active: root.homed
         onClicked: {
+            // While editing the spline, [home] is the "jump all the way out" shortcut.
+            if (scanFocus.editing) { root.exitSplineEditing(); return }
             playheadTimer.stop()
             root.isPlaying    = false
             root.execState    = "idle"
