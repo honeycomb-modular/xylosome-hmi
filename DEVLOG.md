@@ -281,7 +281,7 @@ ClearCore programming is not in scope for current sprint.
 | Build ClearCore TCP client layer | High | Largest outstanding gap |
 | Replace MotorModel.tick() with real telemetry | High | Depends on TCP client |
 | Implement ScreenCamera | Medium | Camera: Dalsa Piranha 2 via Teledyne frame grabber |
-| Implement focus cursor in QML | High | Required for touch-free operation |
+| ~~Implement focus cursor in QML~~ | ✅ done 2026-05-29 | Corner-bracket FocusIndicator + FocusController across all screens |
 | Resolve TBD gesture mappings (mode select, preset actions) | Medium | Before disabling touch |
 | Clarify ClearCore TCP protocol | Open question | Defines Pi ↔ ClearCore API layer |
 
@@ -296,3 +296,65 @@ ssh -o PubkeyAuthentication=no hoyte@192.168.10.2 \
 ```
 
 Remote path: `/home/hoyte/xylosome-hmi/` (hyphen). Restart target: `tigervnc`.
+
+---
+
+## 2026-05-29 — Touch-free focus navigation + spline/dial encoder editing
+
+Committed as `cb216b3` (pushed to origin/main). Builds and links clean on Pi 4.
+
+### Pi 4 networking (fixed)
+- VS Code Remote-SSH failed with "XHR failed" — Pi had **no default route** (static
+  `192.168.10.2`, no gateway). Fixed at runtime:
+  `sudo ip route add default via 192.168.10.3` (Mac's address on that link) +
+  `echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf`.
+- ⚠️ **Runtime-only — vanishes on reboot.** Still need a persistent config
+  (dhcpcd.conf / NetworkManager) so the Pi keeps internet across reboots.
+- Pi 4 hostname confirmed: **`xylosome-pi`**.
+
+### Focus system (new)
+- `qml/FocusController.qml` — non-visual per-screen focus state: ordered `targets`,
+  `index`, plus an `editing` mode that redirects rotate/enter/back to
+  `adjust(±1)` / `confirmed()` / `canceled()` signals.
+- `qml/FocusIndicator.qml` — animated corner-bracket cursor (camera-AF style),
+  binds to the focused item via mapToItem, accent green.
+- `main.qml` — keyboard input router maps to the pendant grammar:
+  arrows = JOG, Enter = click, Esc/Backspace = back, **Delete = BTN1 context**.
+  Screens opt in via `property var focusController` (+ optional `focusBack()` /
+  `focusContext()`). Transport-agnostic — Teensy drops in later unchanged.
+- Wired into: Home (nav rows), Scan (sections), Settings (brightness + easter egg),
+  Capture (tabs + per-mode buttons, dynamic targets), Metadata (2 buttons),
+  Placeholder (back only). Splash/Live left out (Splash auto-advances; Live retired).
+
+### ScreenScan spline editor — multi-level encoder editing
+- Enter on the spline section descends: **aspect** (rotate drags green bar) →
+  **scrub** (red cursor rides curve) → **node** (rotate moves grabbed node up/down).
+  Back climbs one level; `[home]` jumps fully out.
+- Scrub + enter on **empty curve** → add node + grab to drag.
+  Scrub + enter on an **existing node** → erase it. (Endpoints + 3-node min protected.)
+- BTN1 / Delete = context erase of the node under the cursor.
+- New **`[reset curve]`** button, bottom-left inside the curve window — flattens to
+  3 evenly-spaced nodes on the centre axis. Also a focus target.
+
+### ScreenScan dial — encoder editing
+- Focus dial → enter → **select** (rotate picks start/end hand, highlights red) →
+  enter → **move** (rotate moves that hand). Back: move→select→exit.
+- Movement: both directions within one turn; hands keep min 10° gap, stay 0–360°,
+  boxW/aspect/fov kept in sync (start hand floor = 12 o'clock, by design).
+
+### Other
+- `fov` readout added beside the dial (= hand2 − hand1).
+- Title `XYLOSOME` → `XYLOSOME_01`, shade `#C8C8C8`; subtitle darkened to `#5E5E5E`.
+- Canvas overlay fonts switched from hardcoded sans-serif/monospace to
+  `Theme.fontFamilyMono` — UI now uniformly Courier.
+
+### Next time
+- **Blinking cursor for the dial select/move state.** Right now the selected hand
+  turns solid red in BOTH select and move levels, so the two modes look the same at
+  a glance. Make the hand **blink while in "select"** and **solid while in "move"**
+  (reuse the `blinkTimer` pattern already in ScreenScan, gated on
+  `editTarget === "dial" && dialLevel === "select"`). Optional: tiny "select/move"
+  label near the dial.
+- Persistent Pi 4 route/DNS (see networking note above).
+- Still the big one: **ClearCore TCP client + protocol** — gates real motion,
+  telemetry, and wiring the pendant serial bridge.
