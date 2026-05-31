@@ -5,14 +5,13 @@
 // compositing over the 8K scan.
 //
 // Layout (960×540):
-//   y=0   header  (BackButton, title, hairline)
+//   y=0   header  (title, hairline)
 //   y=80  pass timing table  (4 rows × 46px + header)
 //   y=305 hairline
 //   y=318 speed curve canvas  (110px, full-width minus margins)
 //   y=435 session summary line
 //   y=455 hairline
-//   y=468 buttons  ([test trigger]  [export svg])
-//   y=484 footer hairline + text
+//   y=463 buttons  ([test trigger]  [export svg] ............ [back])
 
 import QtQuick
 import QtQuick.Controls
@@ -79,7 +78,7 @@ Item {
 
     FocusController {
         id: metaFocus
-        targets: [testTriggerBtn, exportBtn]
+        targets: [testTriggerBtn, exportBtn, backBtn]
         onActivated: function(item) { item.clicked() }
     }
 
@@ -87,19 +86,10 @@ Item {
 
     // ── Header ────────────────────────────────────────────────────────────────
 
-    BackButton { x: 18; y: 16 }
-
     Text {
-        x: 124; y: 25
+        x: 18; y: 25
         text:  "metadata"
         color: Theme.colorText
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
-    }
-
-    Text {
-        anchors { right: parent.right; rightMargin: 9; top: parent.top; topMargin: 29 }
-        text:  "// infuser.rec"
-        color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
@@ -350,17 +340,15 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
 
-    // ── Footer ────────────────────────────────────────────────────────────────
+    // ── [back] — bottom-right, aligned with the action buttons ──────────────────
 
-    Hairline {
-        anchors { bottom: parent.bottom; bottomMargin: 29; left: parent.left; leftMargin: 9 }
-        width: 942
-    }
-
-    Text {
-        anchors { bottom: parent.bottom; bottomMargin: 7; left: parent.left; leftMargin: 9 }
-        text:  "metadata.infuser — temporal forensics"
-        color: Theme.colorTextFaint
-        font { family: Theme.fontFamily; pixelSize: Theme.fontLabel }
+    TerminalButton {
+        id: backBtn
+        anchors { right: parent.right; rightMargin: 18 }
+        y: 463
+        width: 130; height: 39
+        label:  "[back]"
+        active: false
+        onClicked: root.StackView.view.pop()
     }
 }

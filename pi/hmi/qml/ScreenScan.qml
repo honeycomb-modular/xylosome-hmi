@@ -43,6 +43,7 @@ Item {
     // Execute button state machine: "idle" | "running" | "paused"
     property string execState:    "idle"
     property bool   blinkVisible: true        // drives [resume] blink
+    property bool   dialBlinkOn:  true        // drives the dial "select" hand blink
     property bool   homed:        false       // bind to Motor.homed when C++ side adds it
     property bool   _dialDriving: false       // breaks boxW ↔ angle feedback loop
     readonly property real arcDegrees: Math.max(10, hand2Angle - hand1Angle)
@@ -822,7 +823,12 @@ Item {
             readonly property real handLen: motorCircle.r + 6
             readonly property real gapPx:   10    // ~3 mm gap from centre
             width: 2;  height: handLen - gapPx
-            color: (root.editTarget === "dial" && root.dialSel === 1) ? Theme.danger : Theme.accent
+            // Selected hand: blinks while in "select", solid red while in "move".
+            color: (root.editTarget === "dial" && root.dialSel === 1)
+                   ? (root.dialLevel === "select"
+                      ? (root.dialBlinkOn ? Theme.danger : Theme.accent)
+                      : Theme.danger)
+                   : Theme.accent
             x: motorCircle.cx - 1
             y: motorCircle.cy - handLen
             transform: Rotation {
@@ -837,7 +843,12 @@ Item {
             readonly property real handLen: motorCircle.r + 6
             readonly property real gapPx:   10
             width: 2;  height: handLen - gapPx
-            color: (root.editTarget === "dial" && root.dialSel === 2) ? Theme.danger : Theme.accent
+            // Selected hand: blinks while in "select", solid red while in "move".
+            color: (root.editTarget === "dial" && root.dialSel === 2)
+                   ? (root.dialLevel === "select"
+                      ? (root.dialBlinkOn ? Theme.danger : Theme.accent)
+                      : Theme.danger)
+                   : Theme.accent
             x: motorCircle.cx - 1
             y: motorCircle.cy - handLen
             transform: Rotation {
@@ -1079,6 +1090,16 @@ Item {
         repeat:   true
         running:  root.execState === "paused"
         onTriggered: root.blinkVisible = !root.blinkVisible
+    }
+
+    // Dial blink — pulses the candidate hand while choosing (select level only).
+    Timer {
+        id:       dialBlinkTimer
+        interval: 400
+        repeat:   true
+        running:  root.editTarget === "dial" && root.dialLevel === "select"
+        onTriggered: root.dialBlinkOn = !root.dialBlinkOn
+        onRunningChanged: if (!running) root.dialBlinkOn = true
     }
 
     onPlayheadXChanged:  root.scheduleRepaint()

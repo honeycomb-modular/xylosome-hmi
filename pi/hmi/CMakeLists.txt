@@ -51,6 +51,7 @@ qt_add_qml_module(xylosome_hmi
         qml/BackButton.qml
         qml/FocusController.qml
         qml/FocusIndicator.qml
+        qml/ChoiceList.qml
         # ── Screens ──
         qml/ScreenSplash.qml
         qml/ScreenHome.qml
@@ -60,6 +61,16 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenSettings.qml
         qml/ScreenMetadata.qml
         qml/ScreenPlaceholder.qml
+        # ── Settings sub-pages ──
+        qml/ScreenNetwork.qml
+        qml/ScreenCamera.qml
+        qml/ScreenAxis.qml
+        qml/ScreenCalibration.qml
+        qml/ScreenDisplay.qml
+        qml/ScreenSystem.qml
+        # ── Menu targets ──
+        qml/ScreenPresets.qml
+        qml/ScreenDevices.qml
     RESOURCES
         HMLOGO.png
         qml_bg.png

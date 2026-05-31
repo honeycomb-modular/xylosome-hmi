@@ -37,9 +37,10 @@ Item {
         index: 1   // start on the active "jog" tab
         targets: {
             var t = [tabProgram, tabJog, tabStatic]
-            if (root.activeMode === 0)      return t.concat([btnOpenScan])
-            else if (root.activeMode === 1) return t.concat([btnSlow, btnMed, btnFast, btnEnable, btnZero, btnJogCapture])
-            else                            return t.concat([btnColor, btnBw, btnStaticCapture])
+            if (root.activeMode === 0)      t = t.concat([btnOpenScan])
+            else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnEnable, btnZero, btnJogCapture])
+            else                            t = t.concat([btnColor, btnBw, btnStaticCapture])
+            return t.concat([backBtn])
         }
         onActivated: function(item) {
             if (item === tabProgram)     root.activeMode = 0
@@ -53,19 +54,10 @@ Item {
 
     // ── Header ────────────────────────────────────────────────────────────────
 
-    BackButton { x: 18; y: 16 }
-
     Text {
-        x: 124; y: 25
+        x: 18; y: 25
         text:  "capture.modes"
         color: Theme.colorText
-        font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
-    }
-
-    Text {
-        anchors { right: parent.right; rightMargin: 9; top: parent.top; topMargin: 29 }
-        text:  "// program · jog · static"
-        color: Theme.colorTextDim
         font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
     }
 
@@ -356,17 +348,17 @@ Item {
         }
     }
 
-    // ── Footer ────────────────────────────────────────────────────────────────
+    // ── Bottom bar — [back] ─────────────────────────────────────────────────────
 
-    Hairline {
-        anchors { bottom: parent.bottom; bottomMargin: 29; left: parent.left; leftMargin: 9 }
-        width: 942
-    }
+    Hairline { x: 0; y: 462; width: 960 }
 
-    Text {
-        anchors { bottom: parent.bottom; bottomMargin: 7; left: parent.left; leftMargin: 9 }
-        text: "jog + static: stubs — pending clearcore tcp layer"
-        color: Theme.colorTextFaint
-        font { family: Theme.fontFamily; pixelSize: Theme.fontLabel }
+    TerminalButton {
+        id: backBtn
+        x: 18
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label:  "[back]"
+        active: false
+        onClicked: root.StackView.view.pop()
     }
 }

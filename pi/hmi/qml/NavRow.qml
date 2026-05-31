@@ -39,8 +39,9 @@ Item {
         font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
     }
 
-    // ── Row number  (faint, fixed position) ──────────────────────────────────
+    // ── Row number  (faint, fixed position) — hidden when rowNum is empty ─────
     Text {
+        visible: root.rowNum !== ""
         anchors {
             left:           parent.left
             leftMargin:     32
@@ -52,10 +53,11 @@ Item {
     }
 
     // ── Row name ──────────────────────────────────────────────────────────────
+    // Shifts left into the number's slot when no number is shown.
     Text {
         anchors {
             left:           parent.left
-            leftMargin:     79
+            leftMargin:     root.rowNum !== "" ? 79 : 32
             verticalCenter: parent.verticalCenter
         }
         text:  root.rowName

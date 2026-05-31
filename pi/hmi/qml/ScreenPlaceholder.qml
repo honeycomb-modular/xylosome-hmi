@@ -7,6 +7,7 @@
 //                       { screenTitle: "presets" })
 
 import QtQuick
+import QtQuick.Controls
 import XylosomeHMI 1.0
 
 Item {
@@ -16,24 +17,24 @@ Item {
     // Injected by StackView when pushed with properties.
     property string screenTitle: "placeholder"
 
-    // Nothing focusable here yet — back returns to the menu.
+    // Touch-free focus — only the [back] button is focusable here.
+    property var focusController: phFocus
     function focusBack() { root.StackView.view.pop() }
+
+    FocusController {
+        id: phFocus
+        targets: [backBtn]
+        onActivated: function(item) { item.clicked() }
+    }
+
+    FocusIndicator { target: phFocus.current }
 
     // ── Header ────────────────────────────────────────────────────────────────
 
-    BackButton { x: 18; y: 16 }
-
     Text {
-        x: 124; y: 25
+        x: 18; y: 25
         text:  root.screenTitle
         color: Theme.colorText
-        font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
-    }
-
-    Text {
-        anchors { right: parent.right; rightMargin: 9; top: parent.top; topMargin: 29 }
-        text:  "// not yet implemented"
-        color: Theme.colorTextDim
         font { family: Theme.fontFamily; pixelSize: Theme.fontBody }
     }
 
@@ -48,17 +49,17 @@ Item {
         font { family: Theme.fontFamily; pixelSize: Theme.fontH2 }
     }
 
-    // ── Footer ────────────────────────────────────────────────────────────────
+    // ── Bottom bar — [back] ─────────────────────────────────────────────────────
 
-    Hairline {
-        anchors { bottom: parent.bottom; bottomMargin: 29; left: parent.left; leftMargin: 9 }
-        width: 942
-    }
+    Hairline { x: 0; y: 462; width: 960 }
 
-    Text {
-        anchors { bottom: parent.bottom; bottomMargin: 7; left: parent.left; leftMargin: 9 }
-        text:  root.screenTitle + ".placeholder"
-        color: Theme.colorTextFaint
-        font { family: Theme.fontFamily; pixelSize: Theme.fontLabel }
+    TerminalButton {
+        id: backBtn
+        x: 18
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label:  "[back]"
+        active: false
+        onClicked: root.StackView.view.pop()
     }
 }
