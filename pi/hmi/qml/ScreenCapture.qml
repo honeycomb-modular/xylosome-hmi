@@ -6,7 +6,9 @@
 //   jog          — manual axis movement at selectable speed, with capture trigger
 //   static       — motor stationary, color (4-pass r/g/b/c) or bw (single pass)
 //
-// Jog and static captures are stubs until the ClearCore TCP layer is implemented.
+// Each panel uses one aligned grid: dim label column at x=0, controls from x=110,
+// laid out top-to-bottom in workflow order. Jog/static captures are stubs until
+// the ClearCore TCP layer exists.
 
 import QtQuick
 import QtQuick.Controls
@@ -19,9 +21,12 @@ Item {
     // 0 = program scan, 1 = jog, 2 = static
     property int activeMode: 1
 
+    // shared layout for the panels
+    readonly property int labelX:  0
+    readonly property int ctlX:    110
+    readonly property int btnH:    44
+
     // ── Touch-free focus ────────────────────────────────────────────────────────
-    // Cursor cycles the 3 mode buttons plus the buttons of the visible panel, then
-    // [back]. The hold-to-jog pads are excluded (they need press-and-hold).
     property var focusController: capFocus
     function focusBack() { root.StackView.view.pop() }
 
@@ -45,8 +50,6 @@ Item {
         color: Theme.colorText
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
-
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── Mode button row ─────────────────────────────────────────────────────────
     TerminalButton {
@@ -84,14 +87,14 @@ Item {
         visible: root.activeMode === 0
 
         Text {
-            x: 0; y: 10
+            x: root.labelX; y: 10
             text: "velocity curve controls scan axis timing."
             color: Theme.colorTextDim
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
         Text {
-            x: 0; y: 36
-            text: "4-pass r/g/b/c sequence — edit curve on the main scan screen."
+            x: root.labelX; y: 38
+            text: "4-pass r/g/b/c sequence — edit the curve on the main scan screen."
             color: Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
@@ -99,14 +102,14 @@ Item {
         TerminalButton {
             id: btnOpenScan
             controller: capFocus
-            x: 0; y: 90; width: 220; height: Theme.bottomBtnH
+            x: root.labelX; y: 92; width: 220; height: root.btnH
             label: "[open scan editor]"
             onClicked: root.StackView.view.pop(null)   // back to ScreenScan (stack root)
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Panel 1 — jog
+    // Panel 1 — jog   (workflow top→bottom: status · speed · move · enable/zero · capture)
     // ═══════════════════════════════════════════════════════════════════════════
     Item {
         id: jogPanel
@@ -116,123 +119,97 @@ Item {
         property int jogSpeed: 1   // 0=slow, 1=medium, 2=fast
         readonly property var speedValues: [5, 30, 120]
 
+        // status — position
         Text {
-            x: 0; y: 6
-            text: "position"
-            color: Theme.colorTextDim
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+            x: root.labelX; y: 16; text: "position"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
         Text {
-            x: 140; y: 0
-            text: Motor.position.toFixed(1).padStart(8)
-            color: Theme.accent
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
+            x: 150; y: 4; text: Motor.position.toFixed(1)
+            color: Theme.accent; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {
-            x: 440; y: 8
-            text: "deg"
-            color: Theme.colorTextDim
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+            x: 300; y: 16; text: "deg"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
 
+        // speed
         Text {
-            x: 0; y: 68
-            text: "speed"
-            color: Theme.colorTextDim
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+            x: root.labelX; y: 82; text: "speed"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        }
+        TerminalButton {
+            id: btnSlow; controller: capFocus
+            x: root.ctlX; y: 70; width: 120; height: root.btnH
+            label: "[slow]";   active: jogPanel.jogSpeed === 0; onClicked: jogPanel.jogSpeed = 0
+        }
+        TerminalButton {
+            id: btnMed; controller: capFocus
+            x: 242; y: 70; width: 120; height: root.btnH
+            label: "[medium]"; active: jogPanel.jogSpeed === 1; onClicked: jogPanel.jogSpeed = 1
+        }
+        TerminalButton {
+            id: btnFast; controller: capFocus
+            x: 374; y: 70; width: 120; height: root.btnH
+            label: "[fast]";   active: jogPanel.jogSpeed === 2; onClicked: jogPanel.jogSpeed = 2
         }
 
-        TerminalButton {
-            id: btnSlow
-            controller: capFocus
-            x: 100; y: 58; width: 120; height: 40
-            label: "[slow]"
-            active: jogPanel.jogSpeed === 0
-            onClicked: jogPanel.jogSpeed = 0
+        // move — hold-to-jog pads, grouped side by side (press-and-hold; not focusable)
+        Text {
+            x: root.labelX; y: 140; text: "jog"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
-        TerminalButton {
-            id: btnMed
-            controller: capFocus
-            x: 232; y: 58; width: 138; height: 40
-            label: "[medium]"
-            active: jogPanel.jogSpeed === 1
-            onClicked: jogPanel.jogSpeed = 1
-        }
-        TerminalButton {
-            id: btnFast
-            controller: capFocus
-            x: 382; y: 58; width: 120; height: 40
-            label: "[fast]"
-            active: jogPanel.jogSpeed === 2
-            onClicked: jogPanel.jogSpeed = 2
-        }
-
-        // Hold-to-jog pads — same panel/border/accent vocabulary as buttons,
-        // but press-and-hold (excluded from cursor focus until ClearCore exists).
         Rectangle {
-            x: 0; y: 120; width: 300; height: 72
-            color: Theme.panel
+            x: root.ctlX; y: 126; width: 210; height: 56
+            color: Theme.panel; radius: 2; border.width: 1
             border.color: jogLeftArea.containsPress ? Theme.accent : Theme.border
-            border.width: 1; radius: 2
             Text {
-                anchors.centerIn: parent
-                text: "[←  jog left  ]"
+                anchors.centerIn: parent; text: "[←  jog left]"
                 color: jogLeftArea.containsPress ? Theme.accent : Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
             }
             MouseArea {
-                id: jogLeftArea
-                anchors.fill: parent
+                id: jogLeftArea; anchors.fill: parent
                 onPressed:  { Motor.mode = 1; Motor.setpoint = -jogPanel.speedValues[jogPanel.jogSpeed] }
                 onReleased: Motor.setpoint = 0
             }
         }
-
         Rectangle {
-            x: 642; y: 120; width: 300; height: 72
-            color: Theme.panel
+            x: 332; y: 126; width: 210; height: 56
+            color: Theme.panel; radius: 2; border.width: 1
             border.color: jogRightArea.containsPress ? Theme.accent : Theme.border
-            border.width: 1; radius: 2
             Text {
-                anchors.centerIn: parent
-                text: "[  jog right  →]"
+                anchors.centerIn: parent; text: "[jog right  →]"
                 color: jogRightArea.containsPress ? Theme.accent : Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
             }
             MouseArea {
-                id: jogRightArea
-                anchors.fill: parent
+                id: jogRightArea; anchors.fill: parent
                 onPressed:  { Motor.mode = 1; Motor.setpoint = jogPanel.speedValues[jogPanel.jogSpeed] }
                 onReleased: Motor.setpoint = 0
             }
         }
 
+        // axis state (left)  ·  capture (right, primary action)
         TerminalButton {
-            id: btnEnable
-            controller: capFocus
-            x: 0; y: 222; width: 146; height: Theme.bottomBtnH
-            label:  "[enable]"
-            active: Motor.enabled
-            onClicked: Motor.toggleEnabled()
+            id: btnEnable; controller: capFocus
+            x: root.ctlX; y: 202; width: 120; height: root.btnH
+            label: "[enable]"; active: Motor.enabled; onClicked: Motor.toggleEnabled()
         }
         TerminalButton {
-            id: btnZero
-            controller: capFocus
-            x: 158; y: 222; width: 110; height: Theme.bottomBtnH
-            label:  "[zero]"
-            onClicked: Motor.zero()
+            id: btnZero; controller: capFocus
+            x: 242; y: 202; width: 120; height: root.btnH
+            label: "[zero]"; onClicked: Motor.zero()
         }
         TerminalButton {
-            id: btnJogCapture
-            controller: capFocus
-            x: 642; y: 222; width: 300; height: Theme.bottomBtnH
-            label:  "[capture]"
-            onClicked: console.log("jog capture — TODO")
+            id: btnJogCapture; controller: capFocus
+            x: 614; y: 202; width: 300; height: root.btnH
+            label: "[capture]"; onClicked: console.log("jog capture — TODO")
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Panel 2 — static
+    // Panel 2 — static  (status · mode · note · capture)
     // ═══════════════════════════════════════════════════════════════════════════
     Item {
         id: staticPanel
@@ -242,50 +219,35 @@ Item {
         property int colorMode: 0   // 0=color (r/g/b/c), 1=bw (single pass)
 
         Text {
-            x: 0; y: 6
-            text: "position"
-            color: Theme.colorTextDim
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+            x: root.labelX; y: 16; text: "position"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
         Text {
-            x: 140; y: 0
-            text: Motor.position.toFixed(1).padStart(8)
-            color: Theme.accent
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
+            x: 150; y: 4; text: Motor.position.toFixed(1)
+            color: Theme.accent; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {
-            x: 440; y: 8
-            text: "deg"
-            color: Theme.colorTextDim
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+            x: 300; y: 16; text: "deg"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
 
         Text {
-            x: 0; y: 68
-            text: "mode"
-            color: Theme.colorTextDim
-            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
-        }
-
-        TerminalButton {
-            id: btnColor
-            controller: capFocus
-            x: 100; y: 58; width: 220; height: 40
-            label:  "[color  r/g/b/c]"
-            active: staticPanel.colorMode === 0
-            onClicked: staticPanel.colorMode = 0
+            x: root.labelX; y: 82; text: "mode"
+            color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
         TerminalButton {
-            id: btnBw
-            controller: capFocus
-            x: 332; y: 58; width: 180; height: 40
-            label:  "[bw  single]"
-            active: staticPanel.colorMode === 1
-            onClicked: staticPanel.colorMode = 1
+            id: btnColor; controller: capFocus
+            x: root.ctlX; y: 70; width: 220; height: root.btnH
+            label: "[color  r/g/b/c]"; active: staticPanel.colorMode === 0; onClicked: staticPanel.colorMode = 0
+        }
+        TerminalButton {
+            id: btnBw; controller: capFocus
+            x: 342; y: 70; width: 180; height: root.btnH
+            label: "[bw  single]"; active: staticPanel.colorMode === 1; onClicked: staticPanel.colorMode = 1
         }
 
         Text {
-            x: 0; y: 112
+            x: root.labelX; y: 140
             text: staticPanel.colorMode === 0
                   ? "motor stationary — 4-pass r/g/b/c filter wheel sequence"
                   : "motor stationary — single pass, no filter"
@@ -294,17 +256,14 @@ Item {
         }
 
         TerminalButton {
-            id: btnStaticCapture
-            controller: capFocus
-            x: 0; y: 160; width: 300; height: Theme.bottomBtnH
-            label:    "[capture]"
+            id: btnStaticCapture; controller: capFocus
+            x: 614; y: 202; width: 300; height: root.btnH
+            label: "[capture]"
             onClicked: console.log("static capture mode=" + staticPanel.colorMode + " — TODO")
         }
     }
 
-    // ── Bottom bar — [back] ─────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
-
+    // ── [back] ────────────────────────────────────────────────────────────────
     TerminalButton {
         id: backBtn
         controller: capFocus

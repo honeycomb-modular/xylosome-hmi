@@ -27,8 +27,6 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
-
     // ── Empty state ─────────────────────────────────────────────────────────────
     Text {
         x: Theme.marginX; y: Theme.contentTop
@@ -48,9 +46,7 @@ Item {
         onClicked: console.log("[presets] new preset — TODO (no storage yet)")
     }
 
-    // ── Bottom bar — [back] ──────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
-
+    // ── [back] ────────────────────────────────────────────────────────────────
     TerminalButton {
         id: backBtn
         controller: pFocus

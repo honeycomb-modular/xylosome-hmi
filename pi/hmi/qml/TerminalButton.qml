@@ -16,13 +16,15 @@ Rectangle {
     id: root
 
     property string label:       "button"
-    property bool   active:      false   // shows accent border + text when true
-    // Focus: when this button is the focus controller's current target, its
-    // border goes accent (the unified "selected button" look).
+    // Two orthogonal signals so they never read as the same thing:
+    //   active   = selected / on  → solid (dim) accent FILL
+    //   focused  = cursor is here → bright accent BORDER (2 px)
+    property bool   active:      false
     property var    controller:  null
     readonly property bool focused: controller ? controller.current === root : false
-    property color  borderColor: (active || focused) ? Theme.accent : Theme.border
-    property color  textColor:   active ? Theme.accent : Theme.colorText
+    property color  fillColor:   active  ? Theme.accentDim : Theme.panel
+    property color  borderColor: focused ? Theme.accent    : Theme.border
+    property color  textColor:   Theme.colorText
     property int    fontSize:    Theme.fontBody
 
     signal clicked()
@@ -30,9 +32,9 @@ Rectangle {
     width:  146
     height: 45
 
-    color:         Theme.panel
+    color:         fillColor
     border.color:  borderColor
-    border.width:  1
+    border.width:  focused ? 2 : 1
     radius:        2
 
     Text {

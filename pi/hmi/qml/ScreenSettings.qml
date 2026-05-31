@@ -27,8 +27,6 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
-
     // ── Category rows ───────────────────────────────────────────────────────────
     NavRow {
         id: rowNetwork
@@ -73,9 +71,7 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSystem.qml"))
     }
 
-    // ── Bottom bar — [back] ──────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
-
+    // ── [back] ────────────────────────────────────────────────────────────────
     TerminalButton {
         id: backBtn
         controller: setFocus

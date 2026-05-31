@@ -56,9 +56,7 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))
     }
 
-    // ── Bottom bar — [back] ───────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
-
+    // ── [back] ────────────────────────────────────────────────────────────────
     TerminalButton {
         id: backBtn
         controller: homeFocus

@@ -54,7 +54,7 @@ QtObject {
     readonly property int contentW:    924     // 960 - 2*marginX
     readonly property int titleY:       25     // screen title baseline-ish
     readonly property int hairlineTopY: 63     // header divider
-    readonly property int contentTop:   88     // first list row y
+    readonly property int contentTop:   72     // first list row y (no header rule)
     readonly property int rowStride:    52     // vertical distance between list rows
     readonly property int rowHeight:    44     // row visual / touch height
     readonly property int bottomBarY:  462     // bottom-bar divider

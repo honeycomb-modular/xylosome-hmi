@@ -84,8 +84,6 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
-
     // ── Rows ──────────────────────────────────────────────────────────────────
     Repeater {
         id: rowRepeater
@@ -138,9 +136,7 @@ Item {
         }
     }
 
-    // ── Bottom bar — [back] ──────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
-
+    // ── [back] ────────────────────────────────────────────────────────────────
     TerminalButton {
         id: backBtn
         controller: listFocus

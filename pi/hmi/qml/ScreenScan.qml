@@ -88,12 +88,22 @@ Item {
     property int    dialSel:        0        // dial edit: 0 none · 1 start hand · 2 end hand
     property string dialLevel:    "none"    // dial edit: none | select | move
 
+    // Invisible geometry proxy for the spline EDIT BOX (x:0..boxW). The focus
+    // brackets frame this — just the editable box, not the full canvas + rainbow
+    // void — and because its width tracks boxW the brackets follow the box as the
+    // aspect changes.
+    Item {
+        id: splineBox
+        x: root.canvasX; y: root.canvasY
+        width: root.boxW; height: root.canvasH
+    }
+
     FocusController {
         id: scanFocus
-        targets: [canvas, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
+        targets: [splineBox, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
         index: 4   // default focus on [execute]
         onActivated: function(item) {
-            if (item === canvas) root.enterSplineEditing()
+            if (item === splineBox) root.enterSplineEditing()
             else if (item === motorCircle) root.enterDialEditing()
             else if (item === resetCurveBtn || item === settingsBtn
                      || item === playBtn || item === resetBtn)
@@ -139,9 +149,10 @@ Item {
     // and the box handle while editing. Buttons show focus via their own accent
     // border (TerminalButton.controller), so they're excluded here.
     FocusIndicator {
+        inset: true   // brackets sit just inside the box edges (clear of the resize bar)
         target: scanFocus.editing
-                ? (root.splineLevel === "box" ? handle : null)
-                : ((scanFocus.current === canvas || scanFocus.current === motorCircle)
+                ? (root.splineLevel === "box" ? splineBox : null)
+                : ((scanFocus.current === splineBox || scanFocus.current === motorCircle)
                    ? scanFocus.current : null)
     }
 
@@ -700,7 +711,13 @@ Item {
         y: root.canvasY
         width: 39; height: root.canvasH
 
-        Rectangle { anchors.fill: parent; color: Theme.accent; radius: 0 }
+        // Grab-bar brightens while the aspect level is active, so it reads as the
+        // live control (vs. the dimmer resting state at section focus).
+        Rectangle {
+            anchors.fill: parent
+            radius: 0
+            color: root.splineLevel === "box" ? Qt.lighter(Theme.accent, 1.4) : Theme.accent
+        }
 
         MouseArea {
             anchors.fill: parent

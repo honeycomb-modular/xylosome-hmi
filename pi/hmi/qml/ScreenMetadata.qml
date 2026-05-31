@@ -91,8 +91,6 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 9; y: 63; width: 942 }
-
     // ── Section label ─────────────────────────────────────────────────────────
 
     Text {
@@ -301,8 +299,6 @@ Item {
         color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
-
-    Hairline { x: 9; y: 452; width: 942 }
 
     // ── Buttons ───────────────────────────────────────────────────────────────
 
