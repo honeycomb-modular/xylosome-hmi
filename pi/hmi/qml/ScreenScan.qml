@@ -70,23 +70,23 @@ Item {
     onIsPlayingChanged: Motor.sequencePlaying = isPlaying
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
-    // Sections: spline editor · dial · settings · execute · home. The encoder
-    // cycles between them; enter acts on buttons. Entering the spline editor
-    // descends through edit levels:
-    //   "box"   — rotate drags the green bar (aspect/duration)
-    //   "scrub" — a red cursor rides the curve; enter grabs a node (or inserts
-    //             one on empty curve) and descends to "node"
-    //   "node"  — rotate moves the grabbed node up/down; enter drops it → "scrub"
-    // Back climbs one level (node→scrub→box→section). The [home] button jumps
-    // fully out while editing.
+    // Top-level sections (cursor cycles): spline box · aspect bar · reset · dial ·
+    // settings · execute · home. The aspect bar (green resize bar) is its own
+    // section now — a sibling of the spline box, not a sub-level. Editing:
+    //   spline → "scrub" (red cursor) → "node" (move grabbed node)
+    //   aspect → rotate slides the bar (box width / aspect)
+    //   dial   → select hand → move hand
     property var    focusController: scanFocus
-    property string editTarget:   "none"    // none | spline | dial
-    property string splineLevel:  "none"    // none | box | scrub | node
+    property string editTarget:   "none"    // none | spline | aspect | dial
+    property string splineLevel:  "none"    // none | scrub | node
     property real   scrubNx:       0.5       // red scrub cursor position (0..1)
     property int    activeNodeIdx: -1        // node being adjusted at "node" level
     property int    hoverNodeIdx:  -1        // node under the scrub cursor at "scrub"
     property int    dialSel:        0        // dial edit: 0 none · 1 start hand · 2 end hand
     property string dialLevel:    "none"    // dial edit: none | select | move
+    // The aspect bar shows ↔ arrows when it's the focused section or being slid.
+    readonly property bool aspectActive: (scanFocus.current === handle && !scanFocus.editing)
+                                         || root.editTarget === "aspect"
 
     // Invisible geometry proxy for the spline EDIT BOX (x:0..boxW). The focus
     // brackets frame this — just the editable box, not the full canvas + rainbow
@@ -100,10 +100,11 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
-        index: 4   // default focus on [execute]
+        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
+        index: 5   // default focus on [execute]
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
+            else if (item === handle) root.enterAspectEditing()
             else if (item === motorCircle) root.enterDialEditing()
             else if (item === resetCurveBtn || item === settingsBtn
                      || item === playBtn || item === resetBtn)
@@ -142,16 +143,15 @@ Item {
         root.pushNodesToMotor()
     }
 
-    // Brackets frame the focused section when navigating; during spline editing
-    // they frame the green bar at "box" level and hand off to the red cursor /
-    // node highlight at deeper levels.
-    // Corner brackets are reserved for the graphic objects (spline canvas, dial)
-    // and the box handle while editing. Buttons show focus via their own accent
-    // border (TerminalButton.controller), so they're excluded here.
+    // Corner brackets are reserved for the graphic sections (spline box, dial) at
+    // section focus. The aspect bar uses ↔ arrows, buttons use their own accent
+    // border, and edit modes use the red cursor / nodes / hands.
     FocusIndicator {
         inset: true   // brackets sit just inside the box edges (clear of the resize bar)
+        // Brackets only for the graphic sections (spline box, dial) at section focus.
+        // The aspect bar shows ↔ arrows instead; edit modes use red cursor/nodes/hands.
         target: scanFocus.editing
-                ? (root.splineLevel === "box" ? splineBox : null)
+                ? null
                 : ((scanFocus.current === splineBox || scanFocus.current === motorCircle)
                    ? scanFocus.current : null)
     }
@@ -169,7 +169,25 @@ Item {
     function enterSplineEditing() {
         scanFocus.editing = true
         root.editTarget   = "spline"
-        root.splineLevel  = "box"
+        root.splineLevel  = "scrub"     // straight into curve scrubbing
+        root.hoverNodeIdx = root.nearestNodeIdx(root.scrubNx, 0.02)
+        root.scheduleRepaint()
+    }
+
+    // ── Aspect editing — slide the green bar (box width / aspect) ───────────────
+    function enterAspectEditing() {
+        scanFocus.editing = true
+        root.editTarget   = "aspect"
+        root.scheduleRepaint()
+    }
+    function exitAspectEditing() {
+        scanFocus.editing = false
+        root.editTarget   = "none"
+        root.scheduleRepaint()
+    }
+    function aspectAdjust(d) {
+        root.boxW = Math.max(root.boxMinW, Math.min(root.canvasW - 45, root.boxW + d * 12))
+        Motor.seqBoxW = root.boxW
         root.scheduleRepaint()
     }
 
@@ -184,16 +202,19 @@ Item {
 
     // ── Edit dispatch — routes encoder turn/enter/back to the active editor ─────
     function editAdjust(d) {
-        if (root.editTarget === "spline")    root.splineAdjust(d)
-        else if (root.editTarget === "dial") root.dialAdjust(d)
+        if (root.editTarget === "spline")      root.splineAdjust(d)
+        else if (root.editTarget === "aspect") root.aspectAdjust(d)
+        else if (root.editTarget === "dial")   root.dialAdjust(d)
     }
     function editConfirm() {
-        if (root.editTarget === "spline")    root.splineConfirm()
-        else if (root.editTarget === "dial") root.dialConfirm()
+        if (root.editTarget === "spline")      root.splineConfirm()
+        else if (root.editTarget === "aspect") root.exitAspectEditing()
+        else if (root.editTarget === "dial")   root.dialConfirm()
     }
     function editCancel() {
-        if (root.editTarget === "spline")    root.splineCancel()
-        else if (root.editTarget === "dial") root.dialCancel()
+        if (root.editTarget === "spline")      root.splineCancel()
+        else if (root.editTarget === "aspect") root.exitAspectEditing()
+        else if (root.editTarget === "dial")   root.dialCancel()
     }
 
     // ── Dial editing — select a hand, rotate to move it ─────────────────────────
@@ -246,11 +267,7 @@ Item {
     }
 
     function splineAdjust(d) {
-        if (root.splineLevel === "box") {
-            root.boxW = Math.max(root.boxMinW, Math.min(root.canvasW - 45, root.boxW + d * 12))
-            Motor.seqBoxW = root.boxW
-            root.scheduleRepaint()
-        } else if (root.splineLevel === "scrub") {
+        if (root.splineLevel === "scrub") {
             root.scrubNx = Math.max(0, Math.min(1, root.scrubNx + d * (1 / 60)))
             root.hoverNodeIdx = root.nearestNodeIdx(root.scrubNx, 0.02)
             root.scheduleRepaint()
@@ -265,11 +282,7 @@ Item {
     }
 
     function splineConfirm() {
-        if (root.splineLevel === "box") {
-            root.splineLevel  = "scrub"
-            root.hoverNodeIdx = root.nearestNodeIdx(root.scrubNx, 0.02)
-            root.scheduleRepaint()
-        } else if (root.splineLevel === "scrub") {
+        if (root.splineLevel === "scrub") {
             var hit = root.nearestNodeIdx(root.scrubNx, 0.02)
             if (hit >= 0) {
                 root.deleteNode(hit)                           // enter on a node → erase it
@@ -296,9 +309,6 @@ Item {
             root.splineLevel   = "scrub"
             root.scheduleRepaint()
         } else if (root.splineLevel === "scrub") {
-            root.splineLevel = "box"
-            root.scheduleRepaint()
-        } else if (root.splineLevel === "box") {
             root.exitSplineEditing()
         }
     }
@@ -711,12 +721,36 @@ Item {
         y: root.canvasY
         width: 39; height: root.canvasH
 
-        // Grab-bar brightens while the aspect level is active, so it reads as the
-        // live control (vs. the dimmer resting state at section focus).
+        // Grey bar; brightens slightly while you're actively sliding it.
         Rectangle {
             anchors.fill: parent
             radius: 0
-            color: root.splineLevel === "box" ? Qt.lighter(Theme.accent, 1.4) : Theme.accent
+            color: root.editTarget === "aspect" ? Qt.lighter(Theme.colorTextFaint, 1.5)
+                                                 : Theme.colorTextFaint
+        }
+
+        // A tall black triangle (base on the left edge, apex mid-right) appears
+        // when the bar is the focused section or being slid — a grab/move cue.
+        Canvas {
+            id: aspectGlyph
+            anchors.fill: parent
+            // Always-visible wedge: dim (recessed) at rest, green when the bar is
+            // the focused section or being slid.
+            property bool armed: root.aspectActive
+            onArmedChanged: requestPaint()
+            Component.onCompleted: requestPaint()
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                var lpad = 2   // hairline gap on the left, separating it from the spline box
+                ctx.fillStyle = (armed ? Theme.accent : Theme.bg).toString()
+                ctx.beginPath()
+                ctx.moveTo(lpad, 0)
+                ctx.lineTo(width, height / 2)
+                ctx.lineTo(lpad, height)
+                ctx.closePath()
+                ctx.fill()
+            }
         }
 
         MouseArea {
