@@ -47,4 +47,21 @@ QtObject {
     // Falls back to Roboto or Liberation Sans if Montserrat is absent.
     readonly property string fontFamily:     "Courier New, Courier, DejaVu Sans Mono, Liberation Mono, monospace"
     readonly property string fontFamilyMono: "Courier New, Courier, DejaVu Sans Mono, Liberation Mono, monospace"
+
+    // ── Layout grid ─────────────────────────────────────────────────────────────
+    // Single source of truth for screen geometry so every page lines up.
+    readonly property int marginX:      18     // standard left/right content margin
+    readonly property int contentW:    924     // 960 - 2*marginX
+    readonly property int titleY:       25     // screen title baseline-ish
+    readonly property int hairlineTopY: 63     // header divider
+    readonly property int contentTop:   88     // first list row y
+    readonly property int rowStride:    52     // vertical distance between list rows
+    readonly property int rowHeight:    44     // row visual / touch height
+    readonly property int bottomBarY:  462     // bottom-bar divider
+    readonly property int bottomBtnW:  130     // standard [back]/action button width
+    readonly property int bottomBtnH:   45
+
+    // ── Focus visuals ───────────────────────────────────────────────────────────
+    readonly property int  focusBarW:    3      // left accent bar on focused rows
+    readonly property real focusFillOpacity: 0.12
 }

@@ -52,8 +52,6 @@ Item {
         }
     }
 
-    FocusIndicator { target: listFocus.current }
-
     ListModel { id: rowModel }
 
     function rebuildTargets() {
@@ -80,13 +78,13 @@ Item {
 
     // ── Title ─────────────────────────────────────────────────────────────────
     Text {
-        x: 18; y: 25
+        x: Theme.marginX; y: Theme.titleY
         text:  root.title
         color: Theme.colorText
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 9; y: 63; width: 942 }
+    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── Rows ──────────────────────────────────────────────────────────────────
     Repeater {
@@ -99,23 +97,40 @@ Item {
             id: rowItem
             property int rowIndex: index
             readonly property bool editable: model.optsJson !== ""
+            readonly property bool focused:  listFocus.current === rowItem
 
-            x: 30; y: 90 + index * 44; width: 900; height: 36
+            x: Theme.marginX
+            y: Theme.contentTop + index * Theme.rowStride
+            width: Theme.contentW; height: Theme.rowHeight
+
+            // Unified focus treatment (matches NavRow).
+            Rectangle {
+                anchors.fill: parent
+                color:   Theme.accent
+                opacity: rowItem.focused ? Theme.focusFillOpacity : 0
+                visible: rowItem.focused
+            }
+            Rectangle {
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width:   Theme.focusBarW
+                color:   Theme.accent
+                visible: rowItem.focused
+            }
 
             Text {
-                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
                 text:  model.key
                 color: Theme.colorTextDim
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
             Text {
-                anchors { left: parent.left; leftMargin: 280; verticalCenter: parent.verticalCenter }
+                anchors { left: parent.left; leftMargin: 288; verticalCenter: parent.verticalCenter }
                 text:  "="
                 color: Theme.colorTextFaint
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
             Text {
-                anchors { left: parent.left; leftMargin: 314; verticalCenter: parent.verticalCenter }
+                anchors { left: parent.left; leftMargin: 322; verticalCenter: parent.verticalCenter }
                 text:  model.value
                 color: rowItem.editable ? Theme.accent : Theme.colorTextDim
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
@@ -124,13 +139,14 @@ Item {
     }
 
     // ── Bottom bar — [back] ──────────────────────────────────────────────────────
-    Hairline { x: 0; y: 462; width: 960 }
+    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: backBtn
-        x: 18
+        controller: listFocus
+        x: Theme.marginX
         anchors { bottom: parent.bottom; bottomMargin: 18 }
-        width: 130; height: 45
+        width: Theme.bottomBtnW; height: Theme.bottomBtnH
         label:  "[back]"
         active: false
         onClicked: root.StackView.view.pop()

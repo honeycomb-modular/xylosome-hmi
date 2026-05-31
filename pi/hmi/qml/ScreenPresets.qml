@@ -19,21 +19,19 @@ Item {
         onActivated: function(item) { item.clicked() }
     }
 
-    FocusIndicator { target: pFocus.current }
-
     // ── Title ─────────────────────────────────────────────────────────────────
     Text {
-        x: 18; y: 25
+        x: Theme.marginX; y: Theme.titleY
         text:  "presets"
         color: Theme.colorText
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 9; y: 63; width: 942 }
+    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── Empty state ─────────────────────────────────────────────────────────────
     Text {
-        x: 30; y: 96
+        x: Theme.marginX; y: Theme.contentTop
         text:  "// no presets saved"
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
@@ -41,8 +39,9 @@ Item {
 
     TerminalButton {
         id: newBtn
-        x: 30; y: 140
-        width: 200; height: 45
+        controller: pFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride
+        width: 200; height: Theme.bottomBtnH
         label:  "[new preset]"
         active: false
         // Stub — capture-recipe save/load not yet implemented.
@@ -50,13 +49,14 @@ Item {
     }
 
     // ── Bottom bar — [back] ──────────────────────────────────────────────────────
-    Hairline { x: 0; y: 462; width: 960 }
+    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: backBtn
-        x: 18
+        controller: pFocus
+        x: Theme.marginX
         anchors { bottom: parent.bottom; bottomMargin: 18 }
-        width: 130; height: 45
+        width: Theme.bottomBtnW; height: Theme.bottomBtnH
         label:  "[back]"
         active: false
         onClicked: root.StackView.view.pop()

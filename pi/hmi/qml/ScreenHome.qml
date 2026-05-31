@@ -1,9 +1,6 @@
 // ScreenHome.qml — XYLOSOME navigation menu.
-// Pure routing screen: just the choices of next pages (with their sub-menu
-// hints) and a [back] button. No title, no numbering, no status footer —
-// styled to feel coherent with ScreenScan.
-//
-// Accessed from ScreenScan via the [settings] button.
+// Pure routing screen: the choices (with sub-menu hints) and a [back] button.
+// Uses the shared grid + focus vocabulary (NavRow / TerminalButton).
 
 import QtQuick
 import QtQuick.Controls
@@ -13,9 +10,6 @@ Item {
     id: root
     width: 960; height: 540
 
-    // ── Touch-free focus ────────────────────────────────────────────────────────
-    // Encoder/keyboard moves the cursor through the choices and the [back] button;
-    // enter activates; back also returns to the previous screen.
     property var focusController: homeFocus
     function focusBack() { root.StackView.view.pop() }
 
@@ -25,51 +19,52 @@ Item {
         onActivated: function(item) { item.clicked() }
     }
 
-    FocusIndicator { target: homeFocus.current }
-
     // ── Choices ─────────────────────────────────────────────────────────────────
-    // 5 rows, stride 64 px, vertically balanced above the bottom bar.
-
     NavRow {
         id: navCapture
-        x: 30; y: 96; width: 900
-        rowNum: ""; rowName: "capture modes";      rowDesc: "jog · static · program scan"
+        controller: homeFocus
+        x: Theme.marginX; y: Theme.contentTop; width: Theme.contentW
+        rowName: "capture modes";     rowDesc: "jog · static · program scan"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCapture.qml"))
     }
     NavRow {
         id: navPresets
-        x: 30; y: 160; width: 900
-        rowNum: ""; rowName: "presets";            rowDesc: "saved capture configurations"
+        controller: homeFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride; width: Theme.contentW
+        rowName: "presets";           rowDesc: "saved capture configurations"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPresets.qml"))
     }
     NavRow {
         id: navDevices
-        x: 30; y: 224; width: 900
-        rowNum: ""; rowName: "connected devices";  rowDesc: "clearcore · teensy · camera"
+        controller: homeFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 2; width: Theme.contentW
+        rowName: "connected devices"; rowDesc: "clearcore · teensy · camera"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenDevices.qml"))
     }
     NavRow {
         id: navSettings
-        x: 30; y: 288; width: 900
-        rowNum: ""; rowName: "settings";           rowDesc: "network, calibration, camera, axis"
+        controller: homeFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 3; width: Theme.contentW
+        rowName: "settings";          rowDesc: "network, calibration, camera, axis"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSettings.qml"))
     }
     NavRow {
         id: navMetadata
-        x: 30; y: 352; width: 900
-        rowNum: ""; rowName: "metadata";           rowDesc: "trigger recorder — svg export"
+        controller: homeFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 4; width: Theme.contentW
+        rowName: "metadata";          rowDesc: "trigger recorder — svg export"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenMetadata.qml"))
     }
 
-    // ── Bottom bar — [back], ScreenScan style ────────────────────────────────────
-
-    Hairline { x: 0; y: 462; width: 960 }
+    // ── Bottom bar — [back] ───────────────────────────────────────────────────────
+    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: backBtn
-        x: 18
+        controller: homeFocus
+        x: Theme.marginX
         anchors { bottom: parent.bottom; bottomMargin: 18 }
-        width: 130; height: 45
+        width: Theme.bottomBtnW; height: Theme.bottomBtnH
         label:  "[back]"
         active: false
         onClicked: root.StackView.view.pop()

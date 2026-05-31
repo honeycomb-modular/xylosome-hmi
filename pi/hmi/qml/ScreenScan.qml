@@ -135,9 +135,14 @@ Item {
     // Brackets frame the focused section when navigating; during spline editing
     // they frame the green bar at "box" level and hand off to the red cursor /
     // node highlight at deeper levels.
+    // Corner brackets are reserved for the graphic objects (spline canvas, dial)
+    // and the box handle while editing. Buttons show focus via their own accent
+    // border (TerminalButton.controller), so they're excluded here.
     FocusIndicator {
-        target: scanFocus.editing ? (root.splineLevel === "box" ? handle : null)
-                                   : scanFocus.current
+        target: scanFocus.editing
+                ? (root.splineLevel === "box" ? handle : null)
+                : ((scanFocus.current === canvas || scanFocus.current === motorCircle)
+                   ? scanFocus.current : null)
     }
 
     // ── Spline edit-level helpers ───────────────────────────────────────────────
@@ -715,6 +720,7 @@ Item {
     // ── Reset curve button — inside the curve window, bottom-left ───────────────
     TerminalButton {
         id: resetCurveBtn
+        controller: scanFocus
         x: root.canvasX + 8
         y: root.canvasH - 34
         width: 150; height: 26
@@ -970,6 +976,7 @@ Item {
 
     TerminalButton {
         id: settingsBtn
+        controller: scanFocus
         x: 18
         anchors { bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
@@ -980,6 +987,7 @@ Item {
 
     TerminalButton {
         id: playBtn
+        controller: scanFocus
         anchors { right: parent.right; rightMargin: 18 + 130 + 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         // Label cycles: [execute] → [pause] → [resume] (blinking)
@@ -1017,6 +1025,7 @@ Item {
 
     TerminalButton {
         id: resetBtn
+        controller: scanFocus
         anchors { right: parent.right; rightMargin: 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         label:  root.homed ? "[ready]" : "[home]"

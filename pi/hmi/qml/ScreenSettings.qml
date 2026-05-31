@@ -19,64 +19,69 @@ Item {
         onActivated: function(item) { item.clicked() }
     }
 
-    FocusIndicator { target: setFocus.current }
-
     // ── Title ─────────────────────────────────────────────────────────────────
     Text {
-        x: 18; y: 25
+        x: Theme.marginX; y: Theme.titleY
         text:  "settings"
         color: Theme.colorText
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
     }
 
-    Hairline { x: 9; y: 63; width: 942 }
+    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── Category rows ───────────────────────────────────────────────────────────
     NavRow {
         id: rowNetwork
-        x: 30; y: 88; width: 900
-        rowNum: ""; rowName: "network";       rowDesc: "wifi · ip · server · clearcore link"
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop; width: Theme.contentW
+        rowName: "network";       rowDesc: "wifi · ip · server · clearcore link"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenNetwork.qml"))
     }
     NavRow {
         id: rowCamera
-        x: 30; y: 140; width: 900
-        rowNum: ""; rowName: "camera";        rowDesc: "line rate · tdi · exposure · gain"
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride; width: Theme.contentW
+        rowName: "camera";        rowDesc: "line rate · tdi · exposure · gain"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCamera.qml"))
     }
     NavRow {
         id: rowAxis
-        x: 30; y: 192; width: 900
-        rowNum: ""; rowName: "axis / motion"; rowDesc: "gear · speed · accel · homing"
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 2; width: Theme.contentW
+        rowName: "axis / motion"; rowDesc: "gear · speed · accel · homing"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenAxis.qml"))
     }
     NavRow {
         id: rowCalibration
-        x: 30; y: 244; width: 900
-        rowNum: ""; rowName: "calibration";   rowDesc: "homing offset · zero · touch"
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 3; width: Theme.contentW
+        rowName: "calibration";   rowDesc: "homing offset · zero · touch"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCalibration.qml"))
     }
     NavRow {
         id: rowDisplay
-        x: 30; y: 296; width: 900
-        rowNum: ""; rowName: "display";       rowDesc: "brightness · blanking"
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 4; width: Theme.contentW
+        rowName: "display";       rowDesc: "brightness · blanking"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenDisplay.qml"))
     }
     NavRow {
         id: rowSystem
-        x: 30; y: 348; width: 900
-        rowNum: ""; rowName: "system";        rowDesc: "firmware · platform"
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 5; width: Theme.contentW
+        rowName: "system";        rowDesc: "firmware · platform"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSystem.qml"))
     }
 
     // ── Bottom bar — [back] ──────────────────────────────────────────────────────
-    Hairline { x: 0; y: 462; width: 960 }
+    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: backBtn
-        x: 18
+        controller: setFocus
+        x: Theme.marginX
         anchors { bottom: parent.bottom; bottomMargin: 18 }
-        width: 130; height: 45
+        width: Theme.bottomBtnW; height: Theme.bottomBtnH
         label:  "[back]"
         active: false
         onClicked: root.StackView.view.pop()

@@ -82,8 +82,6 @@ Item {
         onActivated: function(item) { item.clicked() }
     }
 
-    FocusIndicator { target: metaFocus.current }
-
     // ── Header ────────────────────────────────────────────────────────────────
 
     Text {
@@ -310,6 +308,7 @@ Item {
 
     TerminalButton {
         id: testTriggerBtn
+        controller: metaFocus
         x: 9; y: 463
         width: 200; height: 39
         label:  "[test trigger]"
@@ -319,6 +318,7 @@ Item {
 
     TerminalButton {
         id: exportBtn
+        controller: metaFocus
         x: 220; y: 463
         width: 180; height: 39
         label:  "[export svg]"
@@ -344,6 +344,7 @@ Item {
 
     TerminalButton {
         id: backBtn
+        controller: metaFocus
         anchors { right: parent.right; rightMargin: 18 }
         y: 463
         width: 130; height: 39

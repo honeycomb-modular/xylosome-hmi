@@ -17,7 +17,11 @@ Rectangle {
 
     property string label:       "button"
     property bool   active:      false   // shows accent border + text when true
-    property color  borderColor: active ? Theme.accent : Theme.border
+    // Focus: when this button is the focus controller's current target, its
+    // border goes accent (the unified "selected button" look).
+    property var    controller:  null
+    readonly property bool focused: controller ? controller.current === root : false
+    property color  borderColor: (active || focused) ? Theme.accent : Theme.border
     property color  textColor:   active ? Theme.accent : Theme.colorText
     property int    fontSize:    Theme.fontBody
 
