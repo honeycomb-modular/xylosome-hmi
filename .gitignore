@@ -1,21 +1,25 @@
-.platformio/
-.pio/
+# Build artifacts
 build/
-*.o
-*.a
-*.bin
-*.elf
-*.hex
-cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-Makefile
-.DS_Store
-.vscode/
-.idea/
-*.swp
-__pycache__/
-*.pyc
-*.out
-git_push.sh
-git_push_full.sh
+*.qmlc
+*.jsc
+
+# Stray metadata exports (live in ~/xylosome_exports, not the repo)
+xylosome_*.svg
+
+# Home-directory junk that must never be committed
+.CFUserTextEncoding
+.adobe/
+.android/
+.arduinoIDE/
+.aspera/
+.bash_history
+.bash_sessions/
+.claude.json
+.config/
+.cups/
+.flexlmrc
+.lesshst
+.oracle_jre_usage/
+.ssh/
+.wokwi/
+.zprofile

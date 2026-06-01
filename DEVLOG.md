@@ -358,3 +358,36 @@ Committed as `cb216b3` (pushed to origin/main). Builds and links clean on Pi 4.
 - Persistent Pi 4 route/DNS (see networking note above).
 - Still the big one: **ClearCore TCP client + protocol** — gates real motion,
   telemetry, and wiring the pendant serial bridge.
+
+---
+
+## 2026-06-01 — Cross-machine handoff + GitHub is stale (NOT pushed)
+
+> Read this before the Pi 5 transfer.
+
+### Working across machines — the key fact
+Hoyte works from **both a Mac and a Windows PC**, on the same iCloud-synced folder.
+Every Claude session is blind to every other one (Mac session ≠ PC session). **The
+handoff documents are the bridge** — `docs/workshop_pi5_bringup.md` and
+`docs/power_budget_hmi.md` were written deliberately so the plan survives the jump
+between machines. Keep them current; for any cross-machine work, write the doc first
+so the next session/machine can pick it up. Don't hand a Mac terminal command to a
+session that might be on the PC — prefer machine-agnostic steps or GUI tools.
+
+### GitHub sync state — local is AHEAD, GitHub is stale
+- Local/iCloud is **source of truth**: ~15 commits of Pi 4 work (through `ecaf0fc`)
+  exist only locally. Local repo has **no remote-tracking refs** — it has never
+  successfully pushed/fetched. The old DEVLOG "pushed to origin/main" note (2026-05-29)
+  never actually landed.
+- GitHub `honeycomb-modular/xylosome-hmi` still has only the **1-commit OLD flat
+  layout** (root `qml/` + `src/`, no `pi/hmi/`, no firmware/electronics/docs).
+- The Pi 5 runbook §3.2 pulls code from GitHub → **local must be pushed first or the
+  Pi 5 transfer pulls stale code.**
+
+### To push (must run on a machine with Hoyte's GitHub creds — Mac, or PC GitHub Desktop)
+Easiest: **GitHub Desktop** → open the folder → **Push origin** (no terminal).
+Terminal alternative: `git fetch origin` then
+`git merge-base --is-ancestor origin/main HEAD && echo FAST_FORWARD_OK || echo DIVERGED`
+→ if FAST_FORWARD_OK: `git push -u origin main`; if DIVERGED: `git push -u origin main --force`
+(remote's lone commit is the obsolete snapshot — safe to overwrite, 0 forks/collaborators).
+A Claude session can read the files but cannot authenticate the push.

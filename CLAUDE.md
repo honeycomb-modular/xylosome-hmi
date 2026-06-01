@@ -5,6 +5,7 @@ Behavioral guidelines for AI coding sessions on this project.
 ## Project context — read these first
 
 Before touching any code, read:
+- `WORKFLOW.md` — **how Hoyte works across his Mac + PC, and why GitHub (not iCloud) is the source of truth. Read this before moving any code between machines or to a Pi.**
 - `SESSION_NOTES.md` — Pi 4 vs Pi 5 targets, deploy sequences, SSH/build commands
 - `DEVLOG.md` — session history, what's done, outstanding items
 - `pi/hmi/METADATA_INFUSER.md` — metadata infuser spec and implementation notes
