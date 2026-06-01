@@ -1,4 +1,6 @@
-// teensy_pendant.ino
+// teensy_pendant.ino - XYLOSOME pendant controller
+// USB CDC serial to the Pi @ 115200. One ASCII line per event:
+//   READY, BTN1 DOWN/UP, BTN2 DOWN/UP, ENC_SW DOWN/UP, JOG 1, JOG -1
 #include <Bounce2.h>
 #include <Encoder.h>
 
@@ -8,13 +10,12 @@ static constexpr int PIN_ENC_A  = 4;
 static constexpr int PIN_ENC_B  = 5;
 static constexpr int PIN_ENC_SW = 6;
 
-Encoder jog(PIN_ENC_A, PIN_ENC_B);
+static constexpr long COUNTS_PER_DETENT = 2;  // 61C11 = ~2; two JOGs/click -> 4
+
+Encoder jog(PIN_ENC_B, PIN_ENC_A);  // B,A so clockwise = +1
 static long encLast = 0;
 
-Bounce btn1;
-Bounce btn2;
-Bounce encSw;
-
+Bounce btn1, btn2, encSw;
 static constexpr unsigned int DEBOUNCE_MS = 5;
 
 void setup() {
@@ -29,23 +30,15 @@ void setup() {
 }
 
 void loop() {
-    btn1.update();
-    btn2.update();
-    encSw.update();
-
+    btn1.update(); btn2.update(); encSw.update();
     if (btn1.fell())  Serial.println("BTN1 DOWN");
     if (btn1.rose())  Serial.println("BTN1 UP");
     if (btn2.fell())  Serial.println("BTN2 DOWN");
     if (btn2.rose())  Serial.println("BTN2 UP");
     if (encSw.fell()) Serial.println("ENC_SW DOWN");
     if (encSw.rose()) Serial.println("ENC_SW UP");
-
-    // Grayhill 61C11 = 2 quadrature pulses per detent
     long raw = jog.read();
     long delta = raw - encLast;
-    if (abs(delta) >= 2) {
-        Serial.print("JOG ");
-        Serial.println(delta > 0 ? 1 : -1);
-        encLast = raw;
-    }
+    while (delta >=  COUNTS_PER_DETENT) { Serial.println("JOG 1");  encLast += COUNTS_PER_DETENT; delta -= COUNTS_PER_DETENT; }
+    while (delta <= -COUNTS_PER_DETENT) { Serial.println("JOG -1"); encLast -= COUNTS_PER_DETENT; delta += COUNTS_PER_DETENT; }
 }
