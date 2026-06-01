@@ -51,11 +51,20 @@ void PendantReader::parseLine(const QString &line)
     if (parts[0] == "JOG" && parts.size() == 2) {
         bool ok; int delta = parts[1].toInt(&ok);
         if (ok) {
-            emit jogEvent(delta);
-            m_selectedRow = (m_selectedRow + delta + m_rowCount) % m_rowCount;
-            emit selectedRowChanged();
-            m_jogTotal += delta;
-            emit jogTotalChanged();
+            if (delta == m_lastDelta) {
+                m_sameCount++;
+                if (m_sameCount >= 2) {
+                    m_sameCount = 0;
+                    emit jogEvent(delta);
+                    m_selectedRow = (m_selectedRow + delta + m_rowCount) % m_rowCount;
+                    emit selectedRowChanged();
+                    m_jogTotal += delta;
+                    emit jogTotalChanged();
+                }
+            } else {
+                m_lastDelta = delta;
+                m_sameCount = 1;
+            }
         }
         return;
     }

@@ -10,7 +10,7 @@ set(CMAKE_AUTOMOC ON)
 # QHttpServer is optional (Qt ≥ 6.4, needs qt6-httpserver-dev on Pi).
 # The build falls back to the built-in QTcpServer-based server if absent.
 # ──────────────────────────────────────────────────────────────────────────────
-find_package(Qt6 REQUIRED COMPONENTS Core Quick Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Quick Network SerialPort)
 find_package(Qt6 OPTIONAL_COMPONENTS HttpServer)
 
 qt_standard_project_setup(REQUIRES 6.2)
@@ -33,6 +33,8 @@ qt_add_executable(xylosome_hmi
     src/MotorModel.cpp
     src/HttpServer.h
     src/HttpServer.cpp
+    src/PendantReader.h
+    src/PendantReader.cpp 
 )
 
 qt_add_qml_module(xylosome_hmi
@@ -66,6 +68,7 @@ target_link_libraries(xylosome_hmi PRIVATE
     Qt6::Core
     Qt6::Quick
     Qt6::Network
+    Qt6::SerialPort
 )
 
 if(TARGET Qt6::HttpServer)

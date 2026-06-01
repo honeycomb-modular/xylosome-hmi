@@ -24,6 +24,7 @@
 #include <QCursor>
 
 #include "MotorModel.h"
+#include "PendantReader.h"
 #include "HttpServer.h"
 
 int main(int argc, char *argv[])
@@ -42,7 +43,12 @@ int main(int argc, char *argv[])
     // ── 1. Motor model ────────────────────────────────────────────────────────
     MotorModel motor;
 
-    // ── 2. HTTP server ────────────────────────────────────────────────────────
+    // ── 2. Pendant reader ────────────────────────────────────────────────────────
+    PendantReader pendant;
+    qmlRegisterSingletonInstance<PendantReader>("XylosomeHMI", 1, 0, "Pendant", &pendant);
+    pendant.start();
+
+    // ── 3. HTTP server ────────────────────────────────────────────────────────
     // Default port 8080 (no root required).
     // To bind :80 on Pi without root:
     //   sudo setcap cap_net_bind_service+ep ./xylosome_hmi

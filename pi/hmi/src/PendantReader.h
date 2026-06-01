@@ -29,5 +29,7 @@ private:
     QByteArray   m_buffer;
     int          m_selectedRow = 0;
     int          m_jogTotal    = 0;
+    int          m_lastDelta   = 0;
+    int          m_sameCount   = 0;
     int          m_rowCount    = 5;
 };
