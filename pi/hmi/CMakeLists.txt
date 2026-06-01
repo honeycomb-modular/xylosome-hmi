@@ -10,15 +10,13 @@ set(CMAKE_AUTOMOC ON)
 # QHttpServer is optional (Qt ≥ 6.4, needs qt6-httpserver-dev on Pi).
 # The build falls back to the built-in QTcpServer-based server if absent.
 # ──────────────────────────────────────────────────────────────────────────────
-find_package(Qt6 REQUIRED COMPONENTS Core Quick Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Network)
 find_package(Qt6 OPTIONAL_COMPONENTS HttpServer)
 
 qt_standard_project_setup(REQUIRES 6.2)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Mark Theme.qml as a QML singleton so it is accessible as Theme.ACCENT etc.
-# (qt_add_qml_module picks this up automatically in Qt ≥ 6.4; for 6.2/6.3 it
-# still works but the singleton pragma in Theme.qml does the heavy lifting.)
 # ──────────────────────────────────────────────────────────────────────────────
 set_source_files_properties(qml/Theme.qml PROPERTIES
     QT_QML_SINGLETON_TYPE TRUE
@@ -35,6 +33,8 @@ qt_add_executable(xylosome_hmi
     src/HttpServer.cpp
     src/MetadataRecorder.h
     src/MetadataRecorder.cpp
+    src/PendantReader.h
+    src/PendantReader.cpp
 )
 
 qt_add_qml_module(xylosome_hmi
@@ -81,6 +81,7 @@ qt_add_qml_module(xylosome_hmi
 # ──────────────────────────────────────────────────────────────────────────────
 target_link_libraries(xylosome_hmi PRIVATE
     Qt6::Core
+    Qt6::Gui
     Qt6::Quick
     Qt6::Network
 )
