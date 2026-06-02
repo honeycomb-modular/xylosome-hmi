@@ -60,9 +60,13 @@ these Grayhill optical encoders (detent ring vs code-disc alignment), NOT
 wiring/ground/solder/layout. Spec: 62AG22 = 16 detents / 16 PPR.
 
 Consequence: perfectly even 1:1 per click is not recoverable in software - the
-dead click carries no real-time signal, and capping the double to hide it makes
-the count DRIFT. The firmware keeps the count exact (never drifts) and spreads
-the double into two quick steps (MIN_GAP_MS). The lone dead click stays inert.
+dead click carries no real-time signal. There are two trades; we chose FEEL:
+  - position-exact: emit every count (the double jumps/spreads 2). Never drifts
+    but overshoots on the double click - rejected, the 2-forward hurt precision.
+  - feel-first (CURRENT): emit ONE step per detent landing, cap the double to a
+    single step (no 2-forward jump). The dead click stays inert, and absolute
+    position can drift slightly over a long continuous spin. Chosen because menu
+    nav wants an even one-step-per-click feel, not exact tracking.
 For textbook dead-even 1:1 a properly-aligned encoder is needed; an EC11 is
 electrically a drop-in but does NOT match this enclosure cutout (Grayhill =
 3/8"-32 bushing + 1/4" shaft; EC11 = M7 bushing + 6 mm shaft).
