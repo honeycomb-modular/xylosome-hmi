@@ -12,6 +12,58 @@ line scanner camera, pendant controls (Teensy 4.1 + Grayhill encoder + 3 buttons
 
 ---
 
+## 🔌 GARAGE BENCH — Windows PC ⇄ Pi 5 (READ FIRST when "can't reach the Pi")
+
+This is the **day-to-day connection in the garage**, NOT the Mac/192.168.2.2 path.
+
+- **PC `Ethernet` adapter = STATIC `192.168.10.1` /24, no gateway** — a direct wired link to the Pi.
+- **Pi 5 (`xylosome-pi`) = `192.168.10.3` on eth0.** Connect: `ssh -o PubkeyAuthentication=no hoyte@192.168.10.3` (password auth — the `PubkeyAuthentication=no` flag matters, same as Pi 4).
+- Pi is ALSO on Wi-Fi (`192.168.4.x`) — that's its internet path.
+- Pi powered by the **PoE+ HAT**. After a reboot it can take ~1 min to answer; `arp -a -N 192.168.10.1` should list `192.168.10.3`. Empty arp cache ≠ Pi offline — just `ssh` it.
+
+### Pi has no internet (THE recurring one — "the Pi's not on the internet")
+The Pi keeps a wired default route via eth0 → `192.168.10.1` (the PC, which does NOT route to the internet), and it beats the Wi-Fi route. Kill it **on the Pi**:
+```
+sudo ip route del default via 192.168.10.1 dev eth0
+```
+Then `ping 8.8.8.8`, `git pull`, NTP all work (internet goes out wlan0).
+
+### When `ssh hoyte@192.168.10.3` times out (after a Pi reboot, or a cable bumped during housing work):
+`Connection timed out` / `Destination host unreachable` = **network, not password** — SSH never reached the login prompt, so retyping the password does nothing.
+
+1. PC `ipconfig` → the **Ethernet** adapter must read `192.168.10.1`. If it lost it, re-set that static IP.
+2. PC `arp -a` → under the `192.168.10.1` interface. **No `192.168.10.3` line = the Pi is off the link.**
+3. **Reseat the Ethernet** at the Pi / PoE-HAT and at the switch.
+4. On the Pi (USB keyboard → `Ctrl+Alt+F2` → login `hoyte`): `ip a`.
+   If eth0 has no `192.168.10.3`:
+   - quick (reachable immediately): `sudo ip addr add 192.168.10.3/24 dev eth0`
+   - persist: fix `/etc/netplan/*-eth0.yaml` (static `192.168.10.3/24`, **no gateway line**) → `sudo netplan apply`
+
+### ✅ SOLVED 2026-06-04 — "eth0 has no IP after every reboot" (duplicate NM profile)
+**Root cause:** there were **two NetworkManager profiles both named `eth0`** (a leftover merged from Pi 4 sessions), and **both had `autoconnect = no`**. So on every boot NM activated *neither* profile, eth0 came up with no IPv4, and the PC couldn't reach `192.168.10.3`. It was never the cable, the switch, or PoE — those were red herrings (the PHY link/green light is up regardless of whether NM assigned an address).
+
+**Permanent fix (run once, over SSH):**
+```
+# 1. list profiles — look for two ethernet rows both named eth0
+nmcli -f NAME,UUID,TYPE,DEVICE,AUTOCONNECT connection show
+# 2. delete the stale duplicate (the one with DEVICE = --)
+sudo nmcli connection delete <STALE-UUID>
+# 3. make the real one static + auto-connect on boot (use its UUID)
+sudo nmcli connection modify <GOOD-UUID> ipv4.method manual ipv4.addresses 192.168.10.3/24 ipv4.gateway "" connection.autoconnect yes
+sudo nmcli connection up <GOOD-UUID>
+```
+Then `sudo reboot` and `ssh hoyte@192.168.10.3` — confirmed it now comes back on its own. The `connection.autoconnect yes` is the bit that was missing.
+
+**If locked out again (recovery via monitor + USB keyboard on the Pi):**
+1. `Ctrl+Alt+F2` → login `hoyte`. Console font tiny? `sudo setfont Lat15-Terminus32x16` (no desktop exists — this Pi is a labwc kiosk, `Ctrl+Alt+F1` just returns to the HMI).
+2. `ip a` → if eth0 shows only an `inet6 … scope link` line and **no `inet`**, it has no IPv4.
+3. Temp IP to get SSH back immediately: `sudo ip addr add 192.168.10.3/24 dev eth0`
+4. SSH in from the PC and apply the permanent fix above.
+
+**Handy: find the Pi on a link with no known IP (IPv6 neighbor trick).** Set PC Ethernet to *Automatic* (it takes APIPA `169.254.x.x`), then `netsh interface ipv6 show neighbors interface=15` — the Pi shows as a `fe80::…` neighbor with a Pi-OUI MAC (`88:a2:9e`, `d8:3a:dd`, `2c:cf:67`, `dc:a6:32`, `b8:27:eb`). Set the PC **back to static `192.168.10.1/24`, no gateway** when done.
+
+---
+
 ## Pi 4 — current dev unit ⬅️ active
 
 - **IP**: 192.168.10.2
@@ -144,14 +196,18 @@ xylosome_pi/
 
 ## Display: WaveShare 5.5" AMOLED (HDMI)
 
-Physical: 1080×1920 portrait. Logical after transform+scale: 853×480 landscape.
+Physical: 1080×1920 portrait. Logical after transform 270 + scale 2.0: **960×540 landscape**.
+(Scale 2.25 → 853×480 but pushes the bottom button row off-screen — **use 2.0**.)
 
-### labwc autostart (~/.config/labwc/autostart)
+### labwc autostart (~/.config/labwc/autostart) — actual current contents
 ```bash
-wlr-randr --output HDMI-A-1 --transform 270 --scale 2.25
-sleep 0.5
-QT_WAYLAND_SHELL_INTEGRATION=xdg-shell /home/hoyte/xylosome_pi/build/xylosome_hmi -platform wayland &
+swaybg -c '#000000' &
+sleep 2 && WAYLAND_DISPLAY=wayland-0 wlr-randr --output HDMI-A-1 --transform 270 --scale 2.0 &
+sleep 1 && XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland /home/hoyte/xylosome-hmi/pi/hmi/build/xylosome_hmi &
 ```
+
+> ⚠️ **HDMI port name matters.** The `wlr-randr` line targets a specific output by name. The plug currently sits on the port that enumerates as **`HDMI-A-1`**. If you move the micro-HDMI plug to the *other* Pi port it becomes **`HDMI-A-2`**, the line silently fails, and the screen comes up portrait + tiny. Fix: `sed -i 's/HDMI-A-[12]/HDMI-A-<new>/' ~/.config/labwc/autostart`.
+> To check the live output name + current transform: `WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 wlr-randr`. Apply a change live (no reboot): same command + `--output HDMI-A-1 --transform 270 --scale 2.0`.
 
 ### Touch calibration
 Device: Waveshare  Waveshare, /dev/input/event5, usb:0712:000a
