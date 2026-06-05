@@ -391,3 +391,54 @@ Terminal alternative: `git fetch origin` then
 → if FAST_FORWARD_OK: `git push -u origin main`; if DIVERGED: `git push -u origin main --force`
 (remote's lone commit is the obsolete snapshot — safe to overwrite, 0 forks/collaborators).
 A Claude session can read the files but cannot authenticate the push.
+
+---
+
+## 2026-06-05 — Execute button UI + pendant grammar finalised ✅
+
+Working from **bench PC** (Windows), deployed to **Pi 5 at 192.168.10.3** via scp + ninja.
+
+> ⚠️ Pi 5 SSH address confirmed as `hoyte@192.168.10.3` from bench PC.
+> Pi 4 is retired — do not use.
+
+### ScreenScan — execute button redesign
+
+- **Swapped button positions**: `[home/ready]` is now second from right; `[execute]` is
+  rightmost (far right), pointing toward the physical BTN1 on the enclosure.
+- **Execute is always red**: permanent red border (`Theme.danger`), dark red fill
+  (`#6B2020`) while running or during blink-on phase of pause.
+- **Red pointer line**: 1px red `Rectangle` from the right edge of the execute button
+  to the right screen edge, vertically centred on the button — physically points at BTN1.
+- **Execute removed from encoder focus chain**: `controller: null` on `playBtn`.
+  Encoder cannot land on or activate execute.
+- **`btn1Execute()`** added to ScreenScan — the only entry point for execute.
+
+### Pendant grammar finalised
+
+| Input | Mode | Action |
+|---|---|---|
+| ENC rotate | any | moveNext / movePrev |
+| ENC push | navigating | `fc.enter()` → activate focused item |
+| ENC push | editing | `focusContext()` → `editConfirm()` (advance spline/dial/aspect) |
+| BTN2 | editing | climb one edit level (`editCancel`) |
+| BTN2 | navigating | `focusBack()` if defined |
+| BTN1 | any | `btn1Execute()` → fire execute — outside focus chain |
+
+`main.qml` pendant router updated to reflect this. Key sim: Enter = ENC push,
+Esc = BTN2, Delete = BTN1.
+
+### PendantReader — already implemented ✅
+
+`PendantReader.cpp/.h` and wiring in `main.cpp` were already in the C:\dev repo.
+BTN1 → `Key_Delete` → `btn1Execute()` chain confirmed working on Pi 5.
+Device: `/dev/ttyACM0` (Teensy 4.1 USB CDC).
+
+### Workflow note
+
+**C:\dev\xylosome-hmi is the working git clone on PC — always edit here, never iCloud.**
+iCloud copy is stale and should only be read, never used as a base for edits.
+Deploy from C:\dev:
+```
+scp "C:\dev\xylosome-hmi\pi\hmi\qml\ScreenScan.qml" "C:\dev\xylosome-hmi\pi\hmi\qml\main.qml" hoyte@192.168.10.3:/home/hoyte/xylosome-hmi/pi/hmi/qml/
+ssh hoyte@192.168.10.3 "cd /home/hoyte/xylosome-hmi/pi/hmi/build && ninja && sudo reboot"
+```

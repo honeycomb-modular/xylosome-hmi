@@ -100,14 +100,13 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
-        index: 5   // default focus on [execute]
+        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn]
+        index: 5   // default focus on [home/ready]
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
             else if (item === handle) root.enterAspectEditing()
             else if (item === motorCircle) root.enterDialEditing()
-            else if (item === resetCurveBtn || item === settingsBtn
-                     || item === playBtn || item === resetBtn)
+            else if (item === resetCurveBtn || item === settingsBtn || item === resetBtn)
                 item.clicked()
         }
         onAdjust:    function(delta) { root.editAdjust(delta) }
@@ -115,20 +114,17 @@ Item {
         onCanceled:  root.editCancel()
     }
 
-    // Context action (pendant BTN1 / Delete key): erase the node under the red
-    // cursor while editing the curve. Endpoints and the 3-node minimum are
-    // protected by deleteNode().
+    // ENC push in editing mode — confirm / advance the active editor one level.
+    // (Navigation-mode ENC push is handled by main.qml → fc.enter().)
     function focusContext() {
         if (!scanFocus.editing) return
-        if (root.splineLevel !== "scrub" && root.splineLevel !== "node") return
-        var idx = (root.splineLevel === "node") ? root.activeNodeIdx
-                                                 : root.nearestNodeIdx(root.scrubNx, 0.02)
-        if (idx < 0) return
-        root.deleteNode(idx)
-        root.activeNodeIdx = -1
-        root.splineLevel   = "scrub"
-        root.hoverNodeIdx  = root.nearestNodeIdx(root.scrubNx, 0.02)
-        root.scheduleRepaint()
+        root.editConfirm()
+    }
+
+    // BTN1 — dedicated execute toggle. Not reachable via encoder.
+    // Called by main.qml on Qt.Key_Delete (keyboard sim).
+    function btn1Execute() {
+        playBtn.clicked()
     }
 
     // Flatten the curve to three evenly-spaced nodes on the zero (centre) axis.
@@ -1021,8 +1017,9 @@ Item {
     }
 
     // ── Bottom panel — text buttons ───────────────────────────────────────────
-    // [settings] left  |  [execute]/[pause]/[resume] and [home]/[ready] right.
-    // [execute] → green solid while running; blinks green/grey when paused.
+    // [settings] left  |  [home]/[ready]  [execute]/[pause]/[resume] right.
+    // [execute] → always red border; red fill while running; blinks red/dark when paused.
+    //             BTN1-only — not in encoder focus chain.
     // [home]/[ready] reflects root.homed — bind to Motor.homed when available.
 
     TerminalButton {
@@ -1036,17 +1033,32 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
     }
 
+    // Red pointer line: right edge of execute → right screen edge, at button centre.
+    // Points physically at the BTN1 button on the pendant enclosure.
+    Rectangle {
+        id: executePointerLine
+        anchors {
+            left:           playBtn.right
+            right:          parent.right
+            verticalCenter: playBtn.verticalCenter
+        }
+        height: 1
+        color:  Theme.danger
+    }
+
     TerminalButton {
         id: playBtn
-        controller: scanFocus
-        anchors { right: parent.right; rightMargin: 18 + 130 + 18; bottom: parent.bottom; bottomMargin: 18 }
+        controller: null    // BTN1-only — not reachable via encoder focus
+        anchors { right: parent.right; rightMargin: 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         // Label cycles: [execute] → [pause] → [resume] (blinking)
         label:  root.execState === "idle"    ? "[execute]" :
                 root.execState === "running" ? "[pause]"   : "[resume]"
-        // Active (green) when running, or when paused + blink phase is ON
-        active: root.execState === "running" ||
-                (root.execState === "paused" && root.blinkVisible)
+        // Always red border; red fill when running or paused+blink-on
+        borderColor: Theme.danger
+        fillColor:   (root.execState === "running" ||
+                      (root.execState === "paused" && root.blinkVisible))
+                     ? "#6B2020" : Theme.panel
         onClicked: {
             if (root.execState === "idle") {
                 root.playheadX    = 0
@@ -1077,7 +1089,7 @@ Item {
     TerminalButton {
         id: resetBtn
         controller: scanFocus
-        anchors { right: parent.right; rightMargin: 18; bottom: parent.bottom; bottomMargin: 18 }
+        anchors { right: parent.right; rightMargin: 18 + 130 + 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         label:  root.homed ? "[ready]" : "[home]"
         active: root.homed
