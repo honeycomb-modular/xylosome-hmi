@@ -528,11 +528,17 @@ Item {
                 var stride = 4   // 3 px line + 1 px gap
                 ctx.save()
                 ctx.globalAlpha = 0.9
+                var bwMode = (Motor.colorMode === 1)
                 for (var ry = 0; ry < ch; ry += stride) {
                     var li = Math.floor(ry / stride)
                     var ci = ((li * 1664525 + 1013904223) ^ (li * 22695477)) % palette.length
                     if (ci < 0) ci += palette.length
-                    ctx.fillStyle = palette[ci]
+                    if (bwMode) {
+                        var gray = 18 + (ci * 3) % 55   // 18–73: dark textured mono
+                        ctx.fillStyle = "rgb(" + gray + "," + gray + "," + gray + ")"
+                    } else {
+                        ctx.fillStyle = palette[ci]
+                    }
                     ctx.fillRect(voidX, ry, voidW, 3)
                 }
                 ctx.restore()
@@ -1016,6 +1022,17 @@ Item {
         }
     }
 
+    // ── BW / Color mode indicator ─────────────────────────────────────────────
+    // Just under the rainbow canvas, flush right. "color" or "monochrome" in dim grey.
+    Text {
+        id: colorModeIndicator
+        anchors { right: parent.right; rightMargin: 18 }
+        y: 278   // just below the canvas hairline at y=270
+        text:  Motor.colorMode === 0 ? "color" : "monochrome"
+        color: Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+
     // ── Bottom panel — text buttons ───────────────────────────────────────────
     // [settings] left  |  [home]/[ready]  [execute]/[pause]/[resume] right.
     // [execute] → always red border; red fill while running; blinks red/dark when paused.
@@ -1066,10 +1083,10 @@ Item {
                 root.execState    = "running"
                 root.blinkVisible = true
                 root.homed        = false
-                root.inMultiPass  = true
                 root.currentPass  = 0
+                root.inMultiPass  = Motor.colorMode === 0   // color→4 passes, bw→single
                 Recorder.startSession()    // snapshot curve + boxW
-                Recorder.startPass(0)      // t_start for R pass
+                Recorder.startPass(0)      // t_start for first (or only) pass
                 playheadTimer.start()
             } else if (root.execState === "running") {
                 playheadTimer.stop()
@@ -1144,7 +1161,9 @@ Item {
                         playheadTimer.stop()
                     }
                 } else {
-                    // Single-pass fallback (shouldn't happen in normal use)
+                    // BW single-pass complete
+                    Recorder.endPass(root.currentPass)
+                    Recorder.commitSession()
                     root.playheadX    = -1
                     root.isPlaying    = false
                     root.execState    = "idle"
@@ -1176,6 +1195,11 @@ Item {
 
     onPlayheadXChanged:  root.scheduleRepaint()
     onCurrentPassChanged: root.scheduleRepaint()
+
+    Connections {
+        target: Motor
+        function onColorModeChanged() { root.scheduleRepaint() }
+    }
 
     Timer {
         id: repaintTimer

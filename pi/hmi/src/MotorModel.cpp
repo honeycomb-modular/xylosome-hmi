@@ -119,6 +119,13 @@ void MotorModel::setSeqBoxW(int w) {
     emit seqBoxWChanged();
 }
 
+void MotorModel::setColorMode(int c) {
+    if (m_colorMode == c) return;
+    m_colorMode = c;
+    emit colorModeChanged();
+    qDebug() << "[motor] colorMode =" << (c == 0 ? "COLOR" : "BW");
+}
+
 void MotorModel::playVideo(const QString &path) {
     qDebug() << "[motor] playVideo:" << path;
     QProcess::startDetached(QStringLiteral("mpv"), {

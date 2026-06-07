@@ -42,6 +42,8 @@ class MotorModel : public QObject
     Q_PROPERTY(bool         sequencePlaying READ sequencePlaying WRITE setSequencePlaying NOTIFY sequencePlayingChanged)
     Q_PROPERTY(QVariantList nodes           READ nodes           WRITE setNodes           NOTIFY nodesChanged)
     Q_PROPERTY(int          seqBoxW         READ seqBoxW         WRITE setSeqBoxW         NOTIFY seqBoxWChanged)
+    // 0 = full color (4-pass R/G/B/C), 1 = BW (single pass)
+    Q_PROPERTY(int          colorMode       READ colorMode       WRITE setColorMode       NOTIFY colorModeChanged)
 
     // ── QML convenience ───────────────────────────────────────────────────────
     Q_PROPERTY(QString modeName READ modeName NOTIFY modeChanged)
@@ -63,6 +65,7 @@ public:
     bool         sequencePlaying() const { return m_sequencePlaying; }
     QVariantList nodes()           const { return m_nodes; }
     int          seqBoxW()         const { return m_seqBoxW; }
+    int          colorMode()       const { return m_colorMode; }
     QString    modeName()        const;
 
     // ── Setters (also callable from QML via the property write path) ──────────
@@ -72,6 +75,7 @@ public:
     void setSequencePlaying(bool p);
     void setNodes(const QVariantList &nodes);
     void setSeqBoxW(int w);
+    void setColorMode(int c);
 
     // ── Invokable actions (called directly from QML or HttpServer) ────────────
     Q_INVOKABLE void toggleEnabled();
@@ -94,6 +98,7 @@ signals:
     void sequencePlayingChanged();
     void nodesChanged();
     void seqBoxWChanged();
+    void colorModeChanged();
 
 private slots:
     void tick();   // 10 Hz mock dynamics — swap for real UART rx in Phase 6
@@ -109,6 +114,7 @@ private:
     bool         m_sequencePlaying  = false;
     QVariantList m_nodes;            // initialised in constructor
     int          m_seqBoxW          = 520;
+    int          m_colorMode        = 0;   // 0=color, 1=BW
 
     QTimer m_timer;
 };
