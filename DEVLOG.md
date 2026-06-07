@@ -433,6 +433,37 @@ Esc = BTN2, Delete = BTN1.
 BTN1 → `Key_Delete` → `btn1Execute()` chain confirmed working on Pi 5.
 Device: `/dev/ttyACM0` (Teensy 4.1 USB CDC).
 
+---
+
+## 2026-06-05 (continued) — ClearCore protocol review + settings + BW/Color mode
+
+### ClearCore protocol — MotorService 0.14.05
+
+Read and analysed `maxsalow/motorservice_0.14.05`. Key facts:
+- **Binary TCP on port 23** (raw, not HTTP). Frame: `0xAA 0x55` | cmd(1) | msgId(1) | len(2) | payload | CRC16-CCITT(2)
+- **WebSocket on port 8888** (same binary commands wrapped in WS frames)
+- **Default ClearCore IP: 192.168.1.100** (corrected in ScreenNetwork)
+- Status broadcast: `CMD_SET_BROADCAST` enables 50 ms `RESP_BROADCAST_STATUS` pushes
+- Trajectory: `TRAJECTORY_INIT` → `TRAJECTORY_APPEND` (chunks of `{timeMs, positionDeg}`) → `TRAJECTORY_COMPLETE` → motor executes
+- Active axis: M1 (Panasonic MINAS A6, 3.0:1 gearbox, 10 000 pulses/rev)
+- Colorwheel: `CMD_COLORWHEEL_GOTO_COLOR` (0=Clear, 1=Blue, 2=Green, 3=Red) — Pi can command directly
+
+### Settings screens updated
+
+- **ScreenAxis**: added `active.axis`, corrected `gear.ratio` to 3.0, added `home.speed` (cyclable), added `spline.interval` (cyclable), updated `motion.bus` with port 23
+- **ScreenNetwork**: corrected `clearcore.ip` to 192.168.1.100, split into `clearcore.port` (23) and `clearcore.ws` (8888)
+- **ScreenCapture (program panel)**: added BW/Color toggle matching static panel style
+
+### BW / Color mode (Motor.colorMode) ✅
+
+- `Motor.colorMode` (int, 0=COLOR/1=BW) added as Q_PROPERTY to MotorModel — shared singleton, survives screen navigation
+- ScreenCapture: both program and static panels read/write `Motor.colorMode` (one global setting)
+- ScreenScan execute: `inMultiPass = Motor.colorMode === 0` — color = 4-pass R/G/B/C, BW = single pass with proper Recorder commit
+- ScreenScan canvas: rainbow void goes monochrome (dark textured grey stripes, same rhythm) when BW mode active. Repaints via `Connections { target: Motor; onColorModeChanged: scheduleRepaint() }`
+- ScreenScan indicator: single dim text "color" / "monochrome" just below the canvas hairline, flush right
+
+**Commit: b3aeda1** — pushed to `honeycomb-modular/xylosome-hmi` main.
+
 ### Workflow note
 
 **C:\dev\xylosome-hmi is the working git clone on PC — always edit here, never iCloud.**
