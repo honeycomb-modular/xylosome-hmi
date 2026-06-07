@@ -473,3 +473,22 @@ Deploy from C:\dev:
 scp "C:\dev\xylosome-hmi\pi\hmi\qml\ScreenScan.qml" "C:\dev\xylosome-hmi\pi\hmi\qml\main.qml" hoyte@192.168.10.3:/home/hoyte/xylosome-hmi/pi/hmi/qml/
 ssh hoyte@192.168.10.3 "cd /home/hoyte/xylosome-hmi/pi/hmi/build && ninja && sudo reboot"
 ```
+
+---
+
+## 2026-06-05 (continued) — Presets + QSettings persistence ✅
+
+### Presets system
+- `ScreenScan`: `[save]` and `[presets]` buttons (in encoder focus chain, below mode indicator)
+- `[save]` greys out to `[saved]` after saving; reactivates on any setting change (dirty tracking via `_settingsDirty` / `_suppressDirty` flags)
+- `MotorModel.savePreset(hand1, hand2)` — snapshots colorMode + boxW + hand angles + nodes → `Motor.presets` list, newest first
+- `MotorModel.loadPreset(index)` — restores colorMode, seqBoxW, nodes; ScreenScan re-syncs on StackView.Active via `StackView.onStatusChanged`
+- `MotorModel.deletePreset(index)` — BTN1 while a preset row is focused in ScreenPresets
+- `ScreenPresets` — real list with NavRow-style rows showing name + mode + arc + boxW; empty state message
+
+### QSettings persistence (Pi: ~/.config/xylosome/XYLOSOME.conf)
+- **Scan state** (colorMode, seqBoxW, nodes): auto-saved with 1-second debounce after any change. Pi boots back to last-used settings.
+- **Presets**: written to disk immediately on every save/delete. Survive power off.
+- **Not yet persistent — build soon:**
+  - ⚠️ `hand1Angle` / `hand2Angle` (FOV start/end position) — currently QML-only state in ScreenScan. On load, arc width is correct (derived from boxW) but absolute start position resets to 0°. **Fix: add `Motor.hand1Angle` + `Motor.hand2Angle` as Q_PROPERTY, sync from ScreenScan dial drag handlers, persist via QSettings.** Medium priority — affects reproducibility of exact scan positioning.
+  - ⚠️ Settings screen values (axis speed, home speed, ClearCore IP, etc.) — currently static data in ChoiceList QML files. Needs a backing C++ model with QSettings. Lower priority.

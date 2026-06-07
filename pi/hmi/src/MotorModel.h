@@ -44,6 +44,8 @@ class MotorModel : public QObject
     Q_PROPERTY(int          seqBoxW         READ seqBoxW         WRITE setSeqBoxW         NOTIFY seqBoxWChanged)
     // 0 = full color (4-pass R/G/B/C), 1 = BW (single pass)
     Q_PROPERTY(int          colorMode       READ colorMode       WRITE setColorMode       NOTIFY colorModeChanged)
+    // Saved capture recipes — each entry is a QVariantMap (name/colorMode/boxW/hand1/hand2/nodes)
+    Q_PROPERTY(QVariantList presets         READ presets                                  NOTIFY presetsChanged)
 
     // ── QML convenience ───────────────────────────────────────────────────────
     Q_PROPERTY(QString modeName READ modeName NOTIFY modeChanged)
@@ -66,6 +68,7 @@ public:
     QVariantList nodes()           const { return m_nodes; }
     int          seqBoxW()         const { return m_seqBoxW; }
     int          colorMode()       const { return m_colorMode; }
+    QVariantList presets()        const { return m_presets; }
     QString    modeName()        const;
 
     // ── Setters (also callable from QML via the property write path) ──────────
@@ -76,6 +79,10 @@ public:
     void setNodes(const QVariantList &nodes);
     void setSeqBoxW(int w);
     void setColorMode(int c);
+    // hand1/hand2 are QML-only state; caller passes them so the preset is complete.
+    Q_INVOKABLE void savePreset(double hand1Angle, double hand2Angle);
+    Q_INVOKABLE void loadPreset(int index);
+    Q_INVOKABLE void deletePreset(int index);
 
     // ── Invokable actions (called directly from QML or HttpServer) ────────────
     Q_INVOKABLE void toggleEnabled();
@@ -99,11 +106,19 @@ signals:
     void nodesChanged();
     void seqBoxWChanged();
     void colorModeChanged();
+    void presetsChanged();
 
 private slots:
-    void tick();   // 10 Hz mock dynamics — swap for real UART rx in Phase 6
+    void tick();               // 10 Hz mock dynamics — swap for real UART rx in Phase 6
+    void saveLastToSettings(); // debounced write of scan state (nodes/boxW/colorMode)
 
 private:
+    void loadFromSettings();       // called once at boot
+    void savePresetsToSettings();  // called on every savePreset / deletePreset
+
+    // Helper: serialise m_nodes (or any node list) to compact JSON string
+    static QString nodesToJson(const QVariantList &nodes);
+
     int    m_mode             = Position;
     double m_setpoint         = 0.0;
     bool   m_enabled          = false;
@@ -112,9 +127,11 @@ private:
     double m_current          = 0.0;
     double m_tempC            = 24.0;
     bool         m_sequencePlaying  = false;
-    QVariantList m_nodes;            // initialised in constructor
+    QVariantList m_nodes;            // initialised in constructor, overridden by QSettings
     int          m_seqBoxW          = 520;
     int          m_colorMode        = 0;   // 0=color, 1=BW
+    QVariantList m_presets;
 
     QTimer m_timer;
+    QTimer m_settingsTimer;  // 1-second debounce for scan-state writes
 };

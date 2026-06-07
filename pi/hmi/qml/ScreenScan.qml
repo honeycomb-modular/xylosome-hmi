@@ -45,7 +45,9 @@ Item {
     property bool   blinkVisible: true        // drives [resume] blink
     property bool   dialBlinkOn:  true        // drives the dial "select" hand blink
     property bool   homed:        false       // bind to Motor.homed when C++ side adds it
-    property bool   _dialDriving: false       // breaks boxW ↔ angle feedback loop
+    property bool   _dialDriving:    false     // breaks boxW ↔ angle feedback loop
+    property bool   _settingsDirty: true      // true = unsaved changes exist
+    property bool   _suppressDirty: false     // true = suppress dirty marking during sync/load
     readonly property real arcDegrees: Math.max(10, hand2Angle - hand1Angle)
     readonly property real maxSpeed:   100.0  // deg/s — Panasonic servo reference speed
 
@@ -100,13 +102,14 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn]
+        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn, btnSavePreset, btnPresets]
         index: 5   // default focus on [home/ready]
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
             else if (item === handle) root.enterAspectEditing()
             else if (item === motorCircle) root.enterDialEditing()
-            else if (item === resetCurveBtn || item === settingsBtn || item === resetBtn)
+            else if (item === resetCurveBtn || item === settingsBtn || item === resetBtn
+                     || item === btnSavePreset || item === btnPresets)
                 item.clicked()
         }
         onAdjust:    function(delta) { root.editAdjust(delta) }
@@ -484,6 +487,7 @@ Item {
     }
 
     function pushNodesToMotor() {
+        if (!root._suppressDirty) root._settingsDirty = true
         var arr = []
         for (var i = 0; i < nodeModel.count; i++)
             arr.push({"nx": nodeModel.get(i).nx, "ny": nodeModel.get(i).ny})
@@ -1022,15 +1026,42 @@ Item {
         }
     }
 
-    // ── BW / Color mode indicator ─────────────────────────────────────────────
-    // Just under the rainbow canvas, flush right. "color" or "monochrome" in dim grey.
+    // ── BW / Color mode indicator + preset buttons ────────────────────────────
+    // Just under the rainbow canvas, flush right.
     Text {
         id: colorModeIndicator
         anchors { right: parent.right; rightMargin: 18 }
-        y: 278   // just below the canvas hairline at y=270
+        y: 278
         text:  Motor.colorMode === 0 ? "color" : "monochrome"
         color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+
+    // [presets] and [save] — small, right-aligned, below the mode text
+    TerminalButton {
+        id: btnPresets
+        controller: scanFocus
+        anchors { right: parent.right; rightMargin: 18 }
+        y: 304
+        width: 100; height: 26
+        fontSize: Theme.fontMonoS
+        label: "[presets]"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPresets.qml"))
+    }
+    TerminalButton {
+        id: btnSavePreset
+        controller: scanFocus
+        anchors { right: btnPresets.left; rightMargin: 6 }
+        y: 304
+        width: 80; height: 26
+        fontSize: Theme.fontMonoS
+        label:   root._settingsDirty ? "[save]" : "[saved]"
+        opacity: root._settingsDirty ? 1.0 : 0.4
+        onClicked: {
+            if (!root._settingsDirty) return
+            Motor.savePreset(root.hand1Angle, root.hand2Angle)
+            root._settingsDirty = false
+        }
     }
 
     // ── Bottom panel — text buttons ───────────────────────────────────────────
@@ -1198,7 +1229,10 @@ Item {
 
     Connections {
         target: Motor
-        function onColorModeChanged() { root.scheduleRepaint() }
+        function onColorModeChanged() {
+            if (!root._suppressDirty) root._settingsDirty = true
+            root.scheduleRepaint()
+        }
     }
 
     Timer {
@@ -1208,11 +1242,27 @@ Item {
     }
     function scheduleRepaint() { if (!repaintTimer.running) repaintTimer.start() }
 
+    // Re-sync nodes and boxW when returning from a sub-screen (e.g. after loading a preset).
+    // _suppressDirty prevents the sync itself from marking dirty; we reset dirty after.
+    StackView.onStatusChanged: {
+        if (StackView.status === StackView.Active) {
+            root._suppressDirty = true
+            root.syncBoxW(Motor.seqBoxW)
+            root.syncNodes(Motor.nodes)
+            root._suppressDirty = false
+            root._settingsDirty = false
+        }
+    }
+
     Component.onCompleted: {
         root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)
         root.scheduleRepaint()
     }
+    onHand1AngleChanged: if (!root._suppressDirty) root._settingsDirty = true
+    onHand2AngleChanged: if (!root._suppressDirty) root._settingsDirty = true
+
     onBoxWChanged: {
+        if (!root._suppressDirty) root._settingsDirty = true
         // Only update hand2 when the handle bar is driving (not when dial is driving)
         if (!root._dialDriving)
             root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)
