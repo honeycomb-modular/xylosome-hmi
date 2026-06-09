@@ -1,0 +1,118 @@
+<svg viewBox="0 0 1480 1030" xmlns="http://www.w3.org/2000/svg" width="1480" height="1030" font-family="'DejaVu Sans Mono','Courier New',monospace">
+<defs>
+<marker id="aR" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#F87171"/></marker>
+<marker id="aG" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4ADE80"/></marker>
+<marker id="aB" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6FA8DC"/></marker>
+<marker id="aGr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#9AA0A6"/></marker>
+<marker id="aA" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#E0A75E"/></marker>
+<style>
+text{font-family:'DejaVu Sans Mono','Courier New',monospace}
+.t{fill:#ECECEC;font-size:14px}.s{fill:#8A8A8A;font-size:11px}.sm{fill:#8A8A8A;font-size:12px}
+.zl{fill:#7C7C7C;font-size:12px;letter-spacing:1px}.lab{fill:#B7B7B7;font-size:10.5px}
+.panel{fill:#0C0C0C;stroke:#1E1E1E;stroke-width:1}
+.box{fill:#141414;stroke:#2C2C2C;stroke-width:1}.bA{fill:#141414;stroke:#4ADE80;stroke-width:1.3}
+.eecat{stroke:#4ADE80;stroke-width:2.4;fill:none}.elan{stroke:#6FA8DC;stroke-width:1.6;fill:none}
+.eusb{stroke:#777;stroke-width:1.3;fill:none}.ecam{stroke:#E0A75E;stroke-width:1.8;fill:none}
+.esig{stroke:#F87171;stroke-width:1.6;fill:none;stroke-dasharray:7 4}.emech{stroke:#9AA0A6;stroke-width:2.4;fill:none}
+</style>
+</defs>
+<rect x="0" y="0" width="1480" height="1030" fill="#070707"/>
+
+<text x="40" y="44" class="t" font-size="22" fill="#4ADE80">XYLOSOME · Beckhoff EtherCAT Architecture</text>
+<text x="40" y="68" class="sm" fill="#888">Line-scan camera — StepperOnline servo + Beckhoff EtherCAT I/O — Pi HMI retained</text>
+
+<rect x="980" y="22" width="460" height="64" class="panel" rx="6"/>
+<line x1="995" y1="44" x2="1018" y2="44" class="eecat"/><text x="1024" y="48" class="lab">EtherCAT</text>
+<line x1="1150" y1="44" x2="1173" y2="44" class="elan"/><text x="1179" y="48" class="lab">Ethernet/TCP</text>
+<line x1="1330" y1="44" x2="1353" y2="44" class="eusb"/><text x="1359" y="48" class="lab">USB</text>
+<line x1="995" y1="68" x2="1018" y2="68" class="ecam"/><text x="1024" y="72" class="lab">CoaXPress/CLHS</text>
+<line x1="1150" y1="68" x2="1173" y2="68" class="esig"/><text x="1179" y="72" class="lab">trigger/encoder</text>
+<line x1="1330" y1="68" x2="1353" y2="68" class="emech"/><text x="1359" y="72" class="lab">motor</text>
+
+<rect x="40" y="100" width="300" height="232" class="panel" rx="6"/><text x="52" y="122" class="zl">OPERATOR</text>
+<rect x="372" y="100" width="360" height="232" class="panel" rx="6"/><text x="384" y="122" class="zl">CONTROLLER</text>
+<rect x="764" y="100" width="676" height="232" class="panel" rx="6"/><text x="776" y="122" class="zl">ACQUISITION · separate capture domain</text>
+
+<rect x="58" y="138" width="264" height="72" class="box" rx="3"/><text x="72" y="170" class="t">Raspberry Pi — HMI</text><text x="72" y="190" class="s">Qt/QML touchscreen</text>
+<rect x="58" y="230" width="264" height="64" class="box" rx="3"/><text x="72" y="258" class="t">Teensy pendant</text><text x="72" y="276" class="s">buttons + encoder</text>
+<line x1="190" y1="230" x2="190" y2="212" class="eusb" marker-end="url(#aGr)"/><text x="196" y="225" class="lab">USB</text>
+
+<rect x="390" y="150" width="320" height="150" class="bA" rx="3"/>
+<text x="404" y="182" class="t">Beckhoff C6920</text>
+<text x="404" y="202" class="s">headless Linux</text>
+<text x="404" y="220" class="s">EtherCAT master · sequence</text>
+<text x="404" y="238" class="s">TCP server (Pi + capture)</text>
+<text x="404" y="276" class="s" fill="#6FA8DC">&#9664; MAC2 / LAN</text>
+<text x="556" y="294" class="s" fill="#4ADE80">MAC1 / EtherCAT &#9660;</text>
+
+<rect x="908" y="138" width="300" height="62" class="box" rx="3"/><text x="922" y="164" class="t">Capture PC</text><text x="922" y="183" class="s">frame-grabber host · Sapera</text>
+<rect x="776" y="220" width="136" height="76" class="box" rx="3"/><text x="788" y="250" class="t" font-size="13">Dalsa Piranha HS</text><text x="788" y="268" class="s">line scan camera</text>
+<rect x="936" y="220" width="150" height="76" class="box" rx="3"/><text x="948" y="250" class="t" font-size="13">Teledyne OR-X4C0</text><text x="948" y="268" class="s">frame grabber (PCIe)</text>
+<rect x="936" y="302" width="150" height="26" class="box" rx="3"/><text x="948" y="320" class="t" font-size="12">breakout · trig/enc I/O</text>
+<text x="816" y="214" class="lab" fill="#E0A75E">CoaXPress / CLHS</text>
+<line x1="912" y1="256" x2="936" y2="256" class="ecam" marker-end="url(#aA)"/>
+<line x1="1011" y1="220" x2="1011" y2="200" class="eusb" marker-end="url(#aGr)"/><text x="1016" y="214" class="lab">PCIe</text>
+
+<line x1="322" y1="176" x2="388" y2="176" class="elan" marker-end="url(#aB)"/><text x="326" y="170" class="lab">Ethernet/TCP</text>
+<line x1="710" y1="174" x2="906" y2="170" class="elan" marker-end="url(#aB)"/><text x="744" y="164" class="lab">Ethernet/TCP</text>
+
+<path d="M540,300 L540,338 L60,338 L60,500" class="eecat"/><text x="546" y="322" class="lab" fill="#4ADE80">EtherCAT</text>
+
+<rect x="40" y="360" width="1400" height="372" class="panel" rx="6"/><text x="52" y="382" class="zl">MOTION + I/O · EtherCAT segment (MAC1)</text>
+
+<line x1="60" y1="500" x2="836" y2="500" class="eecat"/>
+
+<rect x="70" y="404" width="156" height="84" class="bA" rx="3"/><text x="82" y="432" class="t" font-size="13">A6-EC · 400 W</text><text x="82" y="450" class="s">EtherCAT servo drive</text><text x="82" y="466" class="s">CiA-402 · 17-bit abs</text>
+<line x1="148" y1="488" x2="148" y2="500" class="eecat"/>
+<rect x="250" y="404" width="96" height="84" class="bA" rx="3"/><text x="262" y="436" class="t" font-size="13">EK1100</text><text x="262" y="454" class="s">coupler</text>
+<line x1="298" y1="488" x2="298" y2="500" class="eecat"/>
+<rect x="360" y="404" width="80" height="84" class="box" rx="3"/><text x="370" y="434" class="t" font-size="13">EL7031</text><text x="370" y="452" class="s" font-size="10">stepper</text><line x1="400" y1="488" x2="400" y2="500" class="eecat"/>
+<rect x="446" y="404" width="80" height="84" class="box" rx="3"/><text x="456" y="434" class="t" font-size="13">EL2521</text><text x="456" y="452" class="s" font-size="10">pulse out</text><line x1="486" y1="488" x2="486" y2="500" class="eecat"/>
+<rect x="532" y="404" width="80" height="84" class="box" rx="3"/><text x="542" y="434" class="t" font-size="13">EL5152</text><text x="542" y="452" class="s" font-size="10">encoder in</text><line x1="572" y1="488" x2="572" y2="500" class="eecat"/>
+<rect x="618" y="404" width="80" height="84" class="box" rx="3"/><text x="628" y="434" class="t" font-size="13">EL2xxx</text><text x="628" y="452" class="s" font-size="10">digital out</text><line x1="658" y1="488" x2="658" y2="500" class="eecat"/>
+<rect x="704" y="404" width="80" height="84" class="box" rx="3"/><text x="714" y="434" class="t" font-size="13">EL1xxx</text><text x="714" y="452" class="s" font-size="10">digital in</text><line x1="744" y1="488" x2="744" y2="500" class="eecat"/>
+<rect x="790" y="404" width="80" height="84" class="box" rx="3"/><text x="800" y="434" class="t" font-size="13">EL9011</text><text x="800" y="452" class="s" font-size="10">end cap</text><line x1="830" y1="488" x2="830" y2="500" class="eecat"/>
+
+<path d="M70,460 L52,460 L52,566 L70,566" class="emech" marker-end="url(#aGr)"/>
+<rect x="70" y="548" width="156" height="46" class="box" rx="3"/><text x="82" y="576" class="t" font-size="13">Servo motor · 400 W</text>
+<line x1="148" y1="594" x2="148" y2="614" class="emech" marker-end="url(#aGr)"/>
+<rect x="70" y="614" width="156" height="44" class="box" rx="3"/><text x="82" y="641" class="t" font-size="13">50:1 harmonic drive</text>
+<line x1="148" y1="658" x2="148" y2="678" class="emech" marker-end="url(#aGr)"/>
+<rect x="70" y="678" width="200" height="42" fill="none" stroke="#4ADE80" stroke-dasharray="4 3" rx="3"/><text x="82" y="704" class="t" fill="#4ADE80">SCAN AXIS — line sweep</text>
+<text x="236" y="566" class="s" font-size="10">17-bit abs encoder &#8594;</text><text x="236" y="580" class="s" font-size="10">drive (EtherCAT)</text>
+
+<path d="M400,488 L400,548" class="emech" marker-end="url(#aGr)"/>
+<rect x="330" y="548" width="174" height="86" class="box" rx="3"/><text x="342" y="574" class="t" font-size="13">Filter wheel</text>
+<circle cx="350" cy="598" r="7" fill="#CC4444"/><text x="346" y="602" font-size="9" fill="#070707">R</text>
+<circle cx="378" cy="598" r="7" fill="#44CC44"/><text x="374" y="602" font-size="9" fill="#070707">G</text>
+<circle cx="406" cy="598" r="7" fill="#4488CC"/><text x="402" y="602" font-size="9" fill="#070707">B</text>
+<circle cx="434" cy="598" r="7" fill="#AAAAAA"/><text x="430" y="602" font-size="9" fill="#070707">C</text>
+<text x="342" y="624" class="s" font-size="10">4-pass · in camera optical path</text>
+
+<path d="M744,548 L744,490" class="emech" marker-end="url(#aGr)"/>
+<rect x="664" y="548" width="170" height="46" class="box" rx="3"/><text x="676" y="576" class="t" font-size="12">home · endstop · E-stop</text>
+
+<path d="M486,404 L486,348 L930,348 L936,314" class="esig" marker-end="url(#aR)"/>
+<text x="540" y="342" class="lab" fill="#F87171">line-trigger pulse · rate &#8733; curve  (creative axis)</text>
+<path d="M226,420 L240,420 L240,368 L930,368 L936,322" class="esig" marker-end="url(#aR)" opacity="0.8"/>
+<text x="540" y="382" class="lab" fill="#F87171" opacity="0.85">encoder-echo A/B · locked mode (optional)</text>
+<text x="628" y="470" class="s" font-size="10">&#8594; pass / index</text>
+
+<rect x="40" y="752" width="1400" height="92" class="panel" rx="6"/><text x="52" y="772" class="zl">POWER</text>
+<rect x="80" y="782" width="180" height="46" class="box" rx="3"/><text x="92" y="810" class="t" font-size="13">230 VAC · 1-phase</text>
+<text x="276" y="800" class="sm">&#8594; A6-EC servo drive</text>
+<rect x="560" y="782" width="170" height="46" class="box" rx="3"/><text x="572" y="810" class="t" font-size="13">24 VDC PSU</text>
+<text x="746" y="800" class="sm">&#8594; C6920 · EL terminals · filter-wheel stepper</text>
+
+<rect x="40" y="868" width="690" height="142" class="panel" rx="6"/><text x="56" y="892" class="t" fill="#4ADE80">THREE CONTROL AXES</text>
+<text x="56" y="918" class="sm" fill="#ECECEC">1 · motion speed — speed curve drives the servo</text>
+<text x="56" y="942" class="sm" fill="#ECECEC">2 · line rate — EL2521 pulse mapped to the curve</text>
+<text x="76" y="962" class="s">geometry &#8596; sampling : the new creative axis</text>
+<text x="56" y="986" class="sm" fill="#ECECEC">3 · exposure — set on camera, independent &#8594; brightness</text>
+
+<rect x="740" y="868" width="700" height="142" class="panel" rx="6"/><text x="756" y="892" class="t" fill="#F87171">OPEN ITEMS / TO VERIFY</text>
+<text x="756" y="918" class="sm">· gearhead &#8596; servo flange — fit / adapter plate</text>
+<text x="756" y="942" class="sm">· smooth CiA-402 — PREEMPT_RT or LinuxCNC-ethercat</text>
+<text x="756" y="966" class="sm">· A6-EC encoder-echo (A/B) output — for locked mode</text>
+<text x="756" y="990" class="sm">· capture PC hosts frame grabber (PCIe) — stays separate</text>
+</svg>
