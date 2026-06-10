@@ -621,3 +621,27 @@ The "skips every 4th click" is fixed. Full story in
   firmware since forever) → Rev C item; physical board silkscreen says
   "UI expansion board v.01" vs repo "Carrier Rev B" → verify before Rev C.
 - The stock `teensy_pendant.ino` (cap-the-double decode) is now legacy.
+
+---
+
+## 2026-06-10 (later still) — playhead double-writer bug + curve speed semantics
+
+### Playhead "erratic / starts on its own" — ROOT CAUSE FOUND
+`playBtn.onClicked` set `isPlaying` BEFORE `execState` → the synchronous
+signal chain (isPlaying → Motor.sequencePlaying → main.qml →
+`syncSequencePlaying`) saw execState still "idle" and started the LOCAL sim
+timer on every connected execute — two writers fighting over playheadX.
+Same path let a stale web-control browser tab start the playhead spontaneously.
+Fixes: syncSequencePlaying is now offline-only (`if (Beckhoff.connected)
+return`); playheadTimer self-stops if connected; status-mapping only moves the
+playhead while daemon state is running/paused; pass_end snaps playhead to 0
+(play → quick reset → play, per artist's spec — no more visible return sweep).
+
+### Curve center = STANDARD SCAN SPEED (artist's directive)
+The curve editor's center line no longer means speed 0. New mapping
+(`speedOfNy` in ScreenScan): center = `stdSpeedFactor × maxSpeed` (the rate
+for a normal undistorted image), top edge = maxSpeed, bottom edge = 0.
+**`stdSpeedFactor = 0.40` is a placeholder — calibrate on first real scans.**
+speedAtX, avgVelocity, buildProfile (→ xylod) and the local sim all inherit
+the mapping from the one function. Canvas axis labels ("time"/"speed")
+unchanged — rename to mark the std-speed line in a later pass if wanted.

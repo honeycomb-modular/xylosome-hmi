@@ -59,6 +59,18 @@ Item {
     readonly property real arcDegrees: Math.max(10, hand2Angle - hand1Angle)
     readonly property real maxSpeed:   100.0  // deg/s — Panasonic servo reference speed
 
+    // ── Curve speed semantics ─────────────────────────────────────────────────
+    // The CENTER LINE of the curve editor = the STANDARD scanning speed
+    // (stdSpeedFactor × maxSpeed — the rate for a normal, undistorted image).
+    // Drawing ABOVE center accelerates toward maxSpeed; BELOW center slows
+    // toward standstill. A flat center curve = a plain scan.
+    readonly property real stdSpeedFactor: 0.40   // TBD — calibrate on first real scans
+    function speedOfNy(ny) {
+        ny = Math.max(0, Math.min(1, ny))
+        if (ny <= 0.5) return stdSpeedFactor + (0.5 - ny) * 2.0 * (1.0 - stdSpeedFactor)
+        return stdSpeedFactor * (1.0 - (ny - 0.5) * 2.0)
+    }
+
     // ── Multi-pass state ──────────────────────────────────────────────────────
     // One execute = 4 sequential passes (R / G / B / C), same curve each time.
     property bool inMultiPass:  false
@@ -165,6 +177,7 @@ Item {
         }
         function onPassEnded(pass, tMs) {
             Recorder.endPass(pass)
+            root.playheadX = 0     // quick reset — ready for the next pass
         }
         function onSequenceDone(passes) {
             Recorder.commitSession()     // finalise + auto-export SVG
@@ -182,6 +195,10 @@ Item {
         // waits at 0 instead of replaying that return move.
         function onStatusChanged() {
             if (!root.isPlaying || !Beckhoff.connected || !root._seqPassSeen) return
+            // Move ONLY while a pass actually runs (or holds paused). Between
+            // passes (filter/reposition/settle) the playhead waits at 0 —
+            // play, quick reset, play again.
+            if (Beckhoff.state !== "running" && Beckhoff.state !== "paused") return
             var arc = root.hand2Angle - root.hand1Angle
             if (Math.abs(arc) < 0.001) return
             var f = (Beckhoff.positionDeg - root.hand1Angle) / arc
@@ -423,6 +440,11 @@ Item {
     }
 
     function syncSequencePlaying(playing) {
+        // Web-control sim sync is OFFLINE-ONLY. When the Beckhoff drives the
+        // motion, this path must never start the local playhead timer — it
+        // creates a second writer fighting the daemon's position (erratic
+        // playhead, spontaneous starts from stale browser tabs).
+        if (Beckhoff.connected) return
         if (playing && root.execState === "idle") {
             if (root.playheadX < 0) root.playheadX = 0
             root.isPlaying  = true
@@ -499,7 +521,7 @@ Item {
         var pt = evalSeg(seg, (lo + hi) * 0.5)
         var ph = root.canvasH - root.plotPadT - root.plotPadB
         var ny = (pt.y - root.plotPadT) / ph
-        return Math.min(1.0, Math.abs(0.5 - ny) * 2.0)
+        return root.speedOfNy(ny)
     }
 
     function avgVelocity() {
@@ -512,7 +534,7 @@ Item {
                 var p1 = evalSeg(i, (k + 1) / 40.0)
                 var dnx = (p1.x - p0.x) / root.boxW
                 var mny = ((p0.y - root.plotPadT) / ph + (p1.y - root.plotPadT) / ph) / 2.0
-                sv += (0.5 - mny) * Math.abs(dnx)
+                sv += root.speedOfNy(mny) * Math.abs(dnx)
                 sd += Math.abs(dnx)
             }
         }
@@ -1263,6 +1285,8 @@ Item {
         repeat:   true
         running:  false
         onTriggered: {
+            // Belt and braces: never run the local sim against the daemon.
+            if (Beckhoff.connected) { playheadTimer.stop(); return }
             // Physics: real velocity (deg/s) × pixels/deg × 16 ms/frame
             // → at avg ~0.3 speed factor, 90° arc ≈ 3 s per pass
             var arcDeg = root.arcDegrees
