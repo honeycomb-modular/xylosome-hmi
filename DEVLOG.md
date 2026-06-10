@@ -667,3 +667,6 @@ integration). Next idea (not built): encoder dial as pendant-native jog.
   (step 0.1°/1°/5° and velocity 5/30/120 °/s from the speed row); ENC push or
   BTN2 exits. Blocked while a scan runs; exits on mode/screen change.
   Offline: steps the mock model (Motor position mode).
+- **Verified by artist on Pi:** jog mode works — dial-jog steps, enable, home,
+  live position. Jog ledger CLOSED for sim; [capture] button still TODO
+  (capture-agent milestone).
