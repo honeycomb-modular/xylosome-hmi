@@ -90,10 +90,25 @@ c) **Levels clean, pattern persists at 5.00 V bench supply** → the internal
 d) Either way: keep T3's firmware corrections — they are right per datasheet
    regardless of outcome.
 
-## 6. Status
+## 6. Status — RESOLVED 2026-06-10 ✅
 
-- [ ] T1 voltages: A: ____ ____ ____ ____  B: ____ ____ ____ ____ (4 detents, mark the dead one)
-- [ ] T2 supply at encoder: ____ V
-- [ ] T3 applied + pattern re-test: ____
-- [ ] T4 bench 5.00 V: ____
-- [ ] Verdict + chosen fix: ____
+- [x] T1 (via firmware voltmeter, not DMM): **dead detent: A = 1558 mV** —
+  a half-open optical window, the marginal level the hypothesis predicted.
+  Clean lows 0–160 mV; strong highs ~3300 mV (with internal 22 k pull-ups).
+- [x] Verdict: **marginal analog level vs fixed digital threshold.** The old
+  "internal mechanical characteristic / unrecoverable" claim was wrong — the
+  signal exists, at a voltage the digital pin couldn't adjudicate.
+- [x] Fix applied: **Fix 2** (analog decode, jumpers D4→A0 / D5→A1, software
+  Schmitt at 700/1300 mV tuned to measured levels). Verified 1:1 — every
+  click one JOG, both directions, no dead click, no double.
+
+### Additional findings (same session)
+- **Carrier R1/R2 3V3 rail measures DEAD (floating).** Masked historically by
+  the old firmware's INPUT_PULLUP — the internal pull-ups were the system's
+  real pull-ups all along. The analog firmware now does this deliberately.
+  → Rev C: find why (trace, hole-46 tap, fab) or design it out.
+- **Board identity discrepancy:** physical silkscreen says
+  "XYLOSOME_01 UI expansion board v.01"; repo project says Pendant Carrier
+  Rev B. Verify the fabbed board matches the repo files before any Rev C work.
+- One lap-joint of the 5→15 jumper was cold on first attempt (lap joints onto
+  pin stubs steal heat) — reflowed.

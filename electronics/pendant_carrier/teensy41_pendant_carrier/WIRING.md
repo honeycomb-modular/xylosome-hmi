@@ -44,7 +44,14 @@ firmware/teensy_pendant/teensy_pendant.ino - USB CDC @115200.
 Polled full-quadrature decode (B,A order so CW=+1), position-correct + burst-spread.
 Protocol: READY, BTN1/2 DOWN/UP, ENC_SW DOWN/UP, JOG 1, JOG -1.
 
-## Encoder detent quirk (DO NOT re-troubleshoot as an electrical fault)
+## Encoder detent quirk — SUPERSEDED 2026-06-10, see ENCODER_DIAGNOSIS.md
+> The verdict below ("hardware characteristic, unrecoverable in software") was
+> WRONG. The dead click is a half-open optical window resting at ~1.5 V — a
+> marginal analog level the digital input can't adjudicate. It is fully
+> recoverable: analog decode with measured thresholds (teensy_pendant_analog)
+> achieves exact 1:1 per click. Kept below for history only.
+
+## (historical) Encoder detent quirk
 The Grayhill 62AG22 - AND the 61C11 test unit, identically - have detents that
 are mechanically OFFSET from the optical code by one position per cycle.
 Per 4 physical clicks the raw quadrature reads:

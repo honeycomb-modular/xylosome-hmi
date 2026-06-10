@@ -599,3 +599,25 @@ Everything from the 06-09 bench now survives reboot, no manual commands:
 - ARP gotcha seen twice now: Mac holds a stale entry for the Pi after Pi
   reboots → ping/ssh "timed out" despite healthy link.
   Fix: `sudo arp -d 192.168.10.3` (or .2.3) and retry.
+
+
+---
+
+## 2026-06-10 (later) — encoder dead-click SOLVED: 1:1 per click ✅
+
+The "skips every 4th click" is fixed. Full story in
+`electronics/.../ENCODER_DIAGNOSIS.md` + `ENCODER_FIXES.md`.
+
+- Root cause: at one detent per cycle the encoder's A channel rests at
+  **1558 mV** (half-open optical window) — dead zone for the digital input.
+  NOT wiring, NOT an unrecoverable mechanical trait (old WIRING.md verdict
+  superseded).
+- Fix deployed: **analog decode** — jumpers D4→A0, D5→A1 on the carrier
+  underside; `firmware/teensy_pendant/teensy_pendant_analog/` reads A/B via
+  ADC with software Schmitt at 700/1300 mV (tuned to measured levels).
+  Verified: every click = one JOG, both directions. Protocol to the Pi
+  unchanged — drop-in for the pendant.
+- Bonus findings: carrier R1/R2 3V3 rail is dead (masked by INPUT_PULLUP
+  firmware since forever) → Rev C item; physical board silkscreen says
+  "UI expansion board v.01" vs repo "Carrier Rev B" → verify before Rev C.
+- The stock `teensy_pendant.ino` (cap-the-double decode) is now legacy.

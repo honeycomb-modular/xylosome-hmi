@@ -36,9 +36,11 @@ static constexpr int AIN_ENC_A  = A0;   // pin 14 - jumpered to pin 4
 static constexpr int AIN_ENC_B  = A1;   // pin 15 - jumpered to pin 5
 
 // Software Schmitt trigger (millivolts, 3.3 V ADC reference)
-static constexpr int LOW_BELOW_MV  = 1200;  // below this  -> logic 0
-static constexpr int HIGH_ABOVE_MV = 2000;  // above this  -> logic 1
+static constexpr int LOW_BELOW_MV  = 700;   // below this  -> logic 0
+static constexpr int HIGH_ABOVE_MV = 1300;  // above this  -> logic 1
                                             // in between  -> hold last state
+// Tuned 2026-06-10 to measured levels: clean low 0-160 mV, WEAK high 1558 mV
+// (the historical "dead click" - a half-open optical window), strong high ~3300 mV.
 
 // Dwell after the last decoded state change that marks "landed on a detent".
 // Datasheet optical rise/fall is up to 30 ms - stay above it.
@@ -77,10 +79,11 @@ void setup() {
     btn2.attach(PIN_BTN2,    INPUT_PULLUP); btn2.interval(DEBOUNCE_MS);
     encSw.attach(PIN_ENC_SW, INPUT_PULLUP); encSw.interval(DEBOUNCE_MS);
 
-    // Digital views: plain INPUT - the carrier's 10k are the only pull-ups.
-    // (The old INPUT_PULLUP raised marginal lows; see ENCODER_FIXES.md Fix 0.)
-    pinMode(PIN_ENC_A, INPUT);
-    pinMode(PIN_ENC_B, INPUT);
+    // Internal pull-ups ARE the system's pull-ups: the carrier's R1/R2 3V3
+    // rail measures DEAD (floating) - masked for weeks by the old firmware's
+    // INPUT_PULLUP. See ENCODER_DIAGNOSIS.md findings + Rev C item.
+    pinMode(PIN_ENC_A, INPUT_PULLUP);
+    pinMode(PIN_ENC_B, INPUT_PULLUP);
     // Analog pins: disable the digital input buffer/keeper (Teensy 4.x needs
     // this for clean ADC readings on jumpered nets).
     pinMode(AIN_ENC_A, INPUT_DISABLE);
