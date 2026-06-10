@@ -35,6 +35,8 @@ qt_add_executable(xylosome_hmi
     src/MetadataRecorder.cpp
     src/PendantReader.h
     src/PendantReader.cpp
+    src/BeckhoffLink.h
+    src/BeckhoffLink.cpp
 )
 
 qt_add_qml_module(xylosome_hmi

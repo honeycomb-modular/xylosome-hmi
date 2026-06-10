@@ -492,3 +492,23 @@ ssh hoyte@192.168.10.3 "cd /home/hoyte/xylosome-hmi/pi/hmi/build && ninja && sud
 - **Not yet persistent — build soon:**
   - ⚠️ `hand1Angle` / `hand2Angle` (FOV start/end position) — currently QML-only state in ScreenScan. On load, arc width is correct (derived from boxW) but absolute start position resets to 0°. **Fix: add `Motor.hand1Angle` + `Motor.hand2Angle` as Q_PROPERTY, sync from ScreenScan dial drag handlers, persist via QSettings.** Medium priority — affects reproducibility of exact scan positioning.
   - ⚠️ Settings screen values (axis speed, home speed, ClearCore IP, etc.) — currently static data in ChoiceList QML files. Needs a backing C++ model with QSettings. Lower priority.
+
+---
+
+## 2026-06-09 — Beckhoff path: xylod daemon + HMI BeckhoffLink ✅
+
+Alternative controller path (C6920 + SOEM + A6-EC, per
+`docs/architecture/xylosome_beckhoff.svg`) implemented in software.
+**Full write-up: `BECKHOFF_PORT.md`** (root) — read that before committing.
+
+- NEW `beckhoff/` — `xylod` daemon (SOEM EtherCAT master, CiA-402 CSP @1 kHz,
+  4-pass sequencer, EL7031 filter wheel, EL2521 line trigger ∝ curve, DIO,
+  newline-JSON TCP server :5510, `--sim` mode), config, systemd unit,
+  `ec_scan` + `motor_test` bench tools, `PROTOCOL.md`, bring-up `README.md`.
+- `pi/hmi/` — new `BeckhoffLink` (QML singleton `Beckhoff`, auto-reconnect);
+  ScreenScan execute/pause/resume/home routed to the daemon when connected,
+  daemon events drive playhead + Recorder (real pass timing → metadata SVG);
+  offline = old local sim, unchanged. ScreenNetwork shows live beckhoff link.
+- Verified: compiles clean vs real SOEM v1.4.0; `--sim` end-to-end 4-pass +
+  BW + pause/resume over TCP. HMI not yet built on Pi — **clean rebuild**
+  (QML changed).

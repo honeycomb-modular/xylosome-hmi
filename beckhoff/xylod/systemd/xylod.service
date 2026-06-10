@@ -1,0 +1,17 @@
+[Unit]
+Description=XYLOSOME motion daemon (EtherCAT master + scan sequencer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xylod --config /etc/xylod.conf
+Restart=on-failure
+RestartSec=2
+# raw sockets for SOEM + RT scheduling for the 1 kHz loop
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN CAP_SYS_NICE
+LimitRTPRIO=70
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

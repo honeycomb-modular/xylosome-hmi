@@ -130,6 +130,69 @@ Item {
         playBtn.clicked()
     }
 
+    // ── Beckhoff (xylod) integration ──────────────────────────────────────────
+    // What the artist draws is what executes: sample the curve editor with the
+    // SAME evaluator the playhead sim uses (speedAtX), uniformly across the box.
+    function buildProfile() {
+        var n = 128, prof = []
+        for (var i = 0; i < n; i++)
+            prof.push(root.speedAtX(i / (n - 1) * root.boxW))
+        return prof
+    }
+    // Velocity floor — same floor the local sim applies (0.3 px / 16 ms frame),
+    // converted to output deg/s so real motion matches the on-screen physics.
+    function minVelDegS() {
+        return 0.3 * root.arcDegrees / root.boxW / 0.016
+    }
+
+    Connections {
+        target: Beckhoff
+        // daemon events replace the local playhead bookkeeping when connected
+        function onPassStarted(pass, tMs) {
+            root.currentPass = pass
+            root.playheadX = 0
+            Recorder.startPass(pass)
+        }
+        function onPassEnded(pass, tMs) {
+            Recorder.endPass(pass)
+        }
+        function onSequenceDone(passes) {
+            Recorder.commitSession()     // finalise + auto-export SVG
+            root.inMultiPass  = false
+            root.currentPass  = 0
+            root.playheadX    = -1
+            root.isPlaying    = false
+            root.execState    = "idle"
+            root.blinkVisible = true
+        }
+        function onProgressChanged() {
+            if (Beckhoff.running && root.isPlaying)
+                root.playheadX = Beckhoff.progress * root.boxW
+        }
+        function onFaulted(text) {
+            // kill the run UI — fault details live on the network/system screens
+            playheadTimer.stop()
+            root.inMultiPass  = false
+            root.currentPass  = 0
+            root.playheadX    = -1
+            root.isPlaying    = false
+            root.execState    = "idle"
+            root.blinkVisible = true
+        }
+        function onConnectedChanged() {
+            // link dropped mid-scan — don't leave the UI stuck in "running"
+            if (!Beckhoff.connected && root.isPlaying) {
+                playheadTimer.stop()
+                root.inMultiPass  = false
+                root.currentPass  = 0
+                root.playheadX    = -1
+                root.isPlaying    = false
+                root.execState    = "idle"
+                root.blinkVisible = true
+            }
+        }
+    }
+
     // Flatten the curve to three evenly-spaced nodes on the zero (centre) axis.
     function resetCurve() {
         nodeModel.clear()
@@ -1117,9 +1180,20 @@ Item {
                 root.currentPass  = 0
                 root.inMultiPass  = Motor.colorMode === 0   // color→4 passes, bw→single
                 Recorder.startSession()    // snapshot curve + boxW
-                Recorder.startPass(0)      // t_start for first (or only) pass
-                playheadTimer.start()
+                if (Beckhoff.connected) {
+                    // real motion — xylod runs the sequence; its pass_start /
+                    // pass_end / status events drive playhead + Recorder
+                    Beckhoff.executeScan(Motor.colorMode,
+                                         root.hand1Angle, root.hand2Angle,
+                                         root.maxSpeed, root.minVelDegS(),
+                                         root.buildProfile())
+                } else {
+                    // no controller — local playhead simulation (unchanged)
+                    Recorder.startPass(0)      // t_start for first (or only) pass
+                    playheadTimer.start()
+                }
             } else if (root.execState === "running") {
+                if (Beckhoff.connected) Beckhoff.pause()
                 playheadTimer.stop()
                 root.isPlaying = false
                 root.execState = "paused"
@@ -1129,7 +1203,8 @@ Item {
                 root.isPlaying  = true
                 root.execState  = "running"
                 root.blinkVisible = true
-                playheadTimer.start()
+                if (Beckhoff.connected) Beckhoff.resume()
+                else playheadTimer.start()
             }
         }
     }
@@ -1144,6 +1219,7 @@ Item {
         onClicked: {
             // While editing the spline, [home] is the "jump all the way out" shortcut.
             if (scanFocus.editing) { root.exitSplineEditing(); return }
+            if (Beckhoff.connected) { Beckhoff.stop(); Beckhoff.home() }
             playheadTimer.stop()
             root.isPlaying    = false
             root.execState    = "idle"
