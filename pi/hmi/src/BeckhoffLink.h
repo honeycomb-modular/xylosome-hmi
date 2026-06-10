@@ -73,6 +73,7 @@ public:
     Q_INVOKABLE void home();
     Q_INVOKABLE void enable(bool on);
     Q_INVOKABLE void jog(double velDegS);
+    Q_INVOKABLE void moveTo(double posDeg, double velDegS);   // absolute step moves (dial jog)
     Q_INVOKABLE void setFilter(int slot);
     Q_INVOKABLE void faultReset();
 

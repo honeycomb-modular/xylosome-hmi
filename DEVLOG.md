@@ -661,3 +661,9 @@ readout = real axis degrees (jog + static panels), status text shows
 live/offline. Safety: jog stops on mode switch or leaving the screen; pads
 locked while a scan sequence runs. [capture] button remains TODO (camera
 integration). Next idea (not built): encoder dial as pendant-native jog.
+- **Dial-jog added (pendant-native, no touch):** new [dial jog] target in the
+  jog panel focus chain. ENC push enters jog-edit (FocusController.editing);
+  each encoder click = one absolute step move via new `Beckhoff.moveTo()`
+  (step 0.1°/1°/5° and velocity 5/30/120 °/s from the speed row); ENC push or
+  BTN2 exits. Blocked while a scan runs; exits on mode/screen change.
+  Offline: steps the mock model (Motor position mode).

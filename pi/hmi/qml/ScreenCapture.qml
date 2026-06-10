@@ -21,11 +21,17 @@ Item {
     // 0 = program scan, 1 = jog, 2 = static
     property int activeMode: 1
 
-    // Safety: any mode change or leaving this screen stops a live jog.
-    onActiveModeChanged: if (Beckhoff.connected) Beckhoff.jog(0)
+    // Safety: any mode change or leaving this screen stops a live jog
+    // and drops out of dial-jog editing.
+    onActiveModeChanged: {
+        if (Beckhoff.connected) Beckhoff.jog(0)
+        root.exitDialJog()
+    }
     StackView.onStatusChanged: {
-        if (StackView.status !== StackView.Active && Beckhoff.connected)
-            Beckhoff.jog(0)
+        if (StackView.status !== StackView.Active) {
+            if (Beckhoff.connected) Beckhoff.jog(0)
+            root.exitDialJog()
+        }
     }
 
     // shared layout for the panels
@@ -43,11 +49,27 @@ Item {
         targets: {
             var t = [tabProgram, tabJog, tabStatic]
             if (root.activeMode === 0)      t = t.concat([btnProgColor, btnProgBw, btnOpenScan])
-            else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnEnable, btnZero, btnJogCapture])
+            else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnDialJog, btnEnable, btnZero, btnJogCapture])
             else                            t = t.concat([btnColor, btnBw, btnStaticCapture])
             return t.concat([backBtn])
         }
         onActivated: function(item) { if (item.clicked) item.clicked() }
+
+        // ── Dial-jog editing: ENC rotate = move the axis one step per click ──
+        onAdjust: function(delta) {
+            if (!jogPanel.dialJog) return
+            jogPanel.jogTarget += delta * jogPanel.stepValues[jogPanel.jogSpeed]
+            if (Beckhoff.connected)
+                Beckhoff.moveTo(jogPanel.jogTarget, jogPanel.speedValues[jogPanel.jogSpeed])
+            else { Motor.mode = 0; Motor.setpoint = jogPanel.jogTarget }
+        }
+        onConfirmed: root.exitDialJog()   // ENC push = done
+        onCanceled:  root.exitDialJog()   // BTN2     = done
+    }
+
+    function exitDialJog() {
+        jogPanel.dialJog = false
+        capFocus.editing = false
     }
 
     // ── Header ────────────────────────────────────────────────────────────────
@@ -149,7 +171,12 @@ Item {
         visible: root.activeMode === 1
 
         property int jogSpeed: 1   // 0=slow, 1=medium, 2=fast
-        readonly property var speedValues: [5, 30, 120]
+        readonly property var speedValues: [5, 30, 120]      // move velocity, deg/s
+        readonly property var stepValues:  [0.1, 1.0, 5.0]   // dial-jog step per click, deg
+
+        // dial-jog: encoder rotation moves the axis one step per click
+        property bool dialJog:   false
+        property real jogTarget: 0
 
         // status — position (real axis when the Beckhoff is connected)
         Text {
@@ -250,6 +277,24 @@ Item {
                     if (Beckhoff.connected) Beckhoff.jog(0)
                     else Motor.setpoint = 0
                 }
+            }
+        }
+
+        // dial-jog — pendant-native: focus, push to enter, each encoder click
+        // moves the axis one step (sized by the speed row), push/BTN2 to leave.
+        TerminalButton {
+            id: btnDialJog; controller: capFocus
+            x: 564; y: 126; width: 350; height: 56
+            label: jogPanel.dialJog
+                   ? "[dial: turn=move  push=done]"
+                   : "[dial jog  ±" + jogPanel.stepValues[jogPanel.jogSpeed].toFixed(1) + "°/click]"
+            active: jogPanel.dialJog
+            onClicked: {
+                if (Beckhoff.running) return            // not during a scan
+                jogPanel.jogTarget = Beckhoff.connected ? Beckhoff.positionDeg
+                                                        : Motor.position
+                jogPanel.dialJog = true
+                capFocus.editing = true
             }
         }
 

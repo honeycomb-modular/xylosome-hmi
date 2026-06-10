@@ -186,6 +186,12 @@ void BeckhoffLink::jog(double velDegS) {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("jog")},
               {QStringLiteral("velDegS"), velDegS}});
 }
+
+void BeckhoffLink::moveTo(double posDeg, double velDegS) {
+    sendJson({{QStringLiteral("cmd"), QStringLiteral("moveTo")},
+              {QStringLiteral("posDeg"), posDeg},
+              {QStringLiteral("velDegS"), velDegS}});
+}
 void BeckhoffLink::setFilter(int slot) {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("filter")},
               {QStringLiteral("slot"), slot}});
