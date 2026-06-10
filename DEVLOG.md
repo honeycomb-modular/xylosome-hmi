@@ -561,3 +561,14 @@ MAC1 — this is now the LAN port). **`enp4s0` is free = EtherCAT port** —
   the commanded path against its own curves. (2) Later, garage: xylod logs
   commanded vs actual axis position per pass (1 kHz) on the C6920 → true
   executed-trajectory verification once a real motor is in the loop.
+
+## 2026-06-09 (late) — JSON sidecar for motosome ✅ (built, untested on Pi)
+- MetadataRecorder: `setScanContext()` records arc/maxVel/minVel/profile at
+  execute; commitSession exports `xylosome_<date>_<time>.json` next to the SVG
+  (schema: format/version/nodes/profile/arc/colorMode/passes with abs+rel ms).
+- Fixed pre-existing export bug: SVG filename came from the FIRST session of
+  the app run while content was the LAST — later sessions overwrote earlier
+  files under the wrong name. Both exports now name from the session exported.
+- ScreenScan: profile built once per execute, shared by controller + recorder.
+- **Test on Pi:** rebuild, execute once, check ~/xylosome_exports/ for paired
+  .svg + .json with matching stems and sane pass timings.

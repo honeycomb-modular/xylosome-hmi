@@ -8,6 +8,9 @@
 #include <QTextStream>
 #include <QVariantMap>
 #include <QtMath>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 // ── Construction ──────────────────────────────────────────────────────────────
 
@@ -64,6 +67,18 @@ void MetadataRecorder::startSession()
     m_current.index       = m_triggers.size() + 1;
     m_current.nodes       = m_motor->nodes();
     m_current.boxW        = m_motor->seqBoxW();
+    m_current.colorMode   = m_motor->colorMode();
+}
+
+void MetadataRecorder::setScanContext(double hand1Deg, double hand2Deg,
+                                      double maxVelDegS, double minVelDegS,
+                                      const QVariantList &profile)
+{
+    m_current.hand1Deg   = hand1Deg;
+    m_current.hand2Deg   = hand2Deg;
+    m_current.maxVelDegS = maxVelDegS;
+    m_current.minVelDegS = minVelDegS;
+    m_current.profile    = profile;
 }
 
 void MetadataRecorder::startPass(int pass)
@@ -84,8 +99,9 @@ void MetadataRecorder::commitSession()
     emit triggerCountChanged();
     emit lastSummaryChanged();
 
-    // Auto-export SVG after every real execute session.
-    exportSvg("/home/hoyte/xylosome_exports");
+    // Auto-export SVG + JSON sidecar after every real execute session.
+    exportSvg(kAutoExportDir);
+    exportJson(kAutoExportDir);
 }
 
 // ── Simulate trigger (testing, no real execute needed) ────────────────────────
@@ -187,10 +203,13 @@ QString MetadataRecorder::exportSvg(const QString &directory)
     QDir dir(directory);
     if (!dir.exists()) dir.mkpath(".");
 
-    const TriggerRecord &first = m_triggers.first();
+    // Filename from the session being exported — buildSvg() renders
+    // m_triggers.last(), so name and content must agree (was .first(),
+    // which overwrote earlier files with later sessions' content).
+    const TriggerRecord &tr = m_triggers.last();
     QString filename = QString("xylosome_%1_%2.svg")
-        .arg(first.capturedAt.toString("yyyyMMdd"))
-        .arg(first.capturedAt.toString("HHmmss"));
+        .arg(tr.capturedAt.toString("yyyyMMdd"))
+        .arg(tr.capturedAt.toString("HHmmss"));
     QString fullPath = dir.filePath(filename);
 
     QFile f(fullPath);
@@ -198,6 +217,83 @@ QString MetadataRecorder::exportSvg(const QString &directory)
 
     QTextStream ts(&f);
     ts << buildSvg();
+    f.close();
+
+    return fullPath;
+}
+
+// ── JSON sidecar — machine-readable session record ───────────────────────────
+// Same stem as the SVG. Consumed by motosome to verify the commanded motion
+// path (curve + profile + arc + real pass timing) against its own curves.
+
+QString MetadataRecorder::buildJson() const
+{
+    if (m_triggers.isEmpty()) return {};
+    const TriggerRecord &t = m_triggers.last();
+    static const char *kChannels[4] = {"R", "G", "B", "C"};
+
+    QJsonObject root;
+    root[QStringLiteral("format")]      = QStringLiteral("xylosome-session");
+    root[QStringLiteral("version")]     = 1;
+    root[QStringLiteral("capturedAt")]  = t.capturedAt.toString(Qt::ISODateWithMs);
+    root[QStringLiteral("index")]       = t.index;
+    root[QStringLiteral("colorMode")]   = t.colorMode;     // 0 = color 4-pass, 1 = BW
+    root[QStringLiteral("boxW")]        = t.boxW;
+    root[QStringLiteral("arcStartDeg")] = t.hand1Deg;
+    root[QStringLiteral("arcEndDeg")]   = t.hand2Deg;
+    root[QStringLiteral("maxVelDegS")]  = t.maxVelDegS;
+    root[QStringLiteral("minVelDegS")]  = t.minVelDegS;
+
+    QJsonArray nodes;
+    for (const QVariant &n : t.nodes) {
+        const QVariantMap nm = n.toMap();
+        nodes.append(QJsonObject{{QStringLiteral("nx"), nm.value(QStringLiteral("nx")).toDouble()},
+                                 {QStringLiteral("ny"), nm.value(QStringLiteral("ny")).toDouble()}});
+    }
+    root[QStringLiteral("nodes")] = nodes;
+
+    QJsonArray profile;
+    for (const QVariant &v : t.profile) profile.append(v.toDouble());
+    root[QStringLiteral("profile")] = profile;             // 0..1, as sent to the controller
+
+    // Pass timing — absolute epoch ms + relative to first recorded pass start.
+    qint64 t0 = -1;
+    for (int i = 0; i < 4; i++)
+        if (t.passes[i].tStart_ms >= 0) { t0 = t.passes[i].tStart_ms; break; }
+    QJsonArray passes;
+    for (int i = 0; i < 4; i++) {
+        const PassRecord &p = t.passes[i];
+        if (p.tStart_ms < 0) continue;                     // BW: only pass 0 present
+        passes.append(QJsonObject{
+            {QStringLiteral("pass"),        i},
+            {QStringLiteral("channel"),     QString::fromLatin1(kChannels[i])},
+            {QStringLiteral("tStartMs"),    p.tStart_ms},
+            {QStringLiteral("tEndMs"),      p.tEnd_ms},
+            {QStringLiteral("tStartRelMs"), p.tStart_ms - t0},
+            {QStringLiteral("durationMs"),  p.duration_ms()},
+        });
+    }
+    root[QStringLiteral("passes")] = passes;
+
+    return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+QString MetadataRecorder::exportJson(const QString &directory)
+{
+    if (m_triggers.isEmpty()) return {};
+
+    QDir dir(directory);
+    if (!dir.exists()) dir.mkpath(".");
+
+    const TriggerRecord &tr = m_triggers.last();
+    QString fullPath = dir.filePath(QString("xylosome_%1_%2.json")
+        .arg(tr.capturedAt.toString("yyyyMMdd"))
+        .arg(tr.capturedAt.toString("HHmmss")));
+
+    QFile f(fullPath);
+    if (!f.open(QFile::WriteOnly | QFile::Text)) return {};
+    QTextStream ts(&f);
+    ts << buildJson();
     f.close();
 
     return fullPath;

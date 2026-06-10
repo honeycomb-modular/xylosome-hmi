@@ -1197,15 +1197,20 @@ Item {
                 root.homed        = false
                 root.currentPass  = 0
                 root.inMultiPass  = Motor.colorMode === 0   // color→4 passes, bw→single
-                Recorder.startSession()    // snapshot curve + boxW
+                Recorder.startSession()    // snapshot curve + boxW + colorMode
                 root._seqPassSeen = false
+                // One profile, three consumers: controller, recorder, and (via
+                // the JSON sidecar) motosome path verification.
+                var prof = root.buildProfile()
+                Recorder.setScanContext(root.hand1Angle, root.hand2Angle,
+                                        root.maxSpeed, root.minVelDegS(), prof)
                 if (Beckhoff.connected) {
                     // real motion — xylod runs the sequence; its pass_start /
                     // pass_end / status events drive playhead + Recorder
                     Beckhoff.executeScan(Motor.colorMode,
                                          root.hand1Angle, root.hand2Angle,
                                          root.maxSpeed, root.minVelDegS(),
-                                         root.buildProfile())
+                                         prof)
                 } else {
                     // no controller — local playhead simulation (unchanged)
                     Recorder.startPass(0)      // t_start for first (or only) pass

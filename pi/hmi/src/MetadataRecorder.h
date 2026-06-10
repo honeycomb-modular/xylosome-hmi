@@ -55,6 +55,14 @@ public:
         QVariantList nodes;             // speed curve at trigger time [{nx,ny},...]
         int          boxW   = 520;      // timeline width proxy for duration
         PassRecord   passes[4];         // 0=R  1=G  2=B  3=C
+        // Scan context (set via setScanContext at execute time) — what was
+        // actually commanded, for the JSON sidecar / motosome verification.
+        int          colorMode  = 0;    // 0 color (4-pass), 1 BW
+        double       hand1Deg   = 0.0;  // arc start, output degrees
+        double       hand2Deg   = 0.0;  // arc end
+        double       maxVelDegS = 0.0;
+        double       minVelDegS = 0.0;
+        QVariantList profile;           // speed samples 0..1 as sent to the controller
     };
 
     // ── Construction ───────────────────────────────────────────────────────────
@@ -68,9 +76,14 @@ public:
 
     // ── Real-time session API (called from ScreenSequences execute logic) ────────
     Q_INVOKABLE void startSession();        // snapshot curve; call on execute press
+    // Record the commanded scan parameters (call right after startSession).
+    // profile = the exact speed samples handed to the motion controller.
+    Q_INVOKABLE void setScanContext(double hand1Deg, double hand2Deg,
+                                    double maxVelDegS, double minVelDegS,
+                                    const QVariantList &profile);
     Q_INVOKABLE void startPass(int pass);   // record t_start; pass = 0..3
     Q_INVOKABLE void endPass(int pass);     // record t_end
-    Q_INVOKABLE void commitSession();       // finalise + auto-export SVG
+    Q_INVOKABLE void commitSession();       // finalise + auto-export SVG + JSON sidecar
 
     // ── Test / manual ─────────────────────────────────────────────────────────
     // Simulate a complete 4-pass session instantly (no real execute needed).
@@ -79,6 +92,10 @@ public:
     // Re-export the last committed session to the given directory.
     // Returns the full file path on success, empty string on failure.
     Q_INVOKABLE QString exportSvg(const QString &directory);
+
+    // JSON sidecar — same data machine-readable (motosome path verification).
+    // Same filename stem as the SVG, .json extension.
+    Q_INVOKABLE QString exportJson(const QString &directory);
 
     // Auto-export path (used by commitSession; same directory as manual export)
     static constexpr const char *kAutoExportDir = "/home/hoyte/xylosome_exports";
@@ -93,6 +110,7 @@ private:
     static QString           formatDuration(qint64 durationMs);
     static QVector<QPointF>  evalCatmullRom(const QVector<QPointF> &pts, int stepsPerSeg);
     QString                  buildSvg() const;
+    QString                  buildJson() const;
 
     // ── State ─────────────────────────────────────────────────────────────────
     MotorModel              *m_motor;
