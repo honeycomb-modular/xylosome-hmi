@@ -45,7 +45,9 @@ Item {
     property bool   blinkVisible: true        // drives [resume] blink
     property bool   dialBlinkOn:  true        // drives the dial "select" hand blink
     property bool   homed:        false       // bind to Motor.homed when C++ side adds it
-    property bool   _dialDriving: false       // breaks boxW ↔ angle feedback loop
+    property bool   _dialDriving:    false     // breaks boxW ↔ angle feedback loop
+    property bool   _settingsDirty: true      // true = unsaved changes exist
+    property bool   _suppressDirty: false     // true = suppress dirty marking during sync/load
     readonly property real arcDegrees: Math.max(10, hand2Angle - hand1Angle)
     readonly property real maxSpeed:   100.0  // deg/s — Panasonic servo reference speed
 
@@ -100,14 +102,14 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, playBtn, resetBtn]
-        index: 5   // default focus on [execute]
+        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn, btnSavePreset, btnPresets]
+        index: 5   // default focus on [home/ready]
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
             else if (item === handle) root.enterAspectEditing()
             else if (item === motorCircle) root.enterDialEditing()
-            else if (item === resetCurveBtn || item === settingsBtn
-                     || item === playBtn || item === resetBtn)
+            else if (item === resetCurveBtn || item === settingsBtn || item === resetBtn
+                     || item === btnSavePreset || item === btnPresets)
                 item.clicked()
         }
         onAdjust:    function(delta) { root.editAdjust(delta) }
@@ -115,20 +117,17 @@ Item {
         onCanceled:  root.editCancel()
     }
 
-    // Context action (pendant BTN1 / Delete key): erase the node under the red
-    // cursor while editing the curve. Endpoints and the 3-node minimum are
-    // protected by deleteNode().
+    // ENC push in editing mode — confirm / advance the active editor one level.
+    // (Navigation-mode ENC push is handled by main.qml → fc.enter().)
     function focusContext() {
         if (!scanFocus.editing) return
-        if (root.splineLevel !== "scrub" && root.splineLevel !== "node") return
-        var idx = (root.splineLevel === "node") ? root.activeNodeIdx
-                                                 : root.nearestNodeIdx(root.scrubNx, 0.02)
-        if (idx < 0) return
-        root.deleteNode(idx)
-        root.activeNodeIdx = -1
-        root.splineLevel   = "scrub"
-        root.hoverNodeIdx  = root.nearestNodeIdx(root.scrubNx, 0.02)
-        root.scheduleRepaint()
+        root.editConfirm()
+    }
+
+    // BTN1 — dedicated execute toggle. Not reachable via encoder.
+    // Called by main.qml on Qt.Key_Delete (keyboard sim).
+    function btn1Execute() {
+        playBtn.clicked()
     }
 
     // Flatten the curve to three evenly-spaced nodes on the zero (centre) axis.
@@ -488,6 +487,7 @@ Item {
     }
 
     function pushNodesToMotor() {
+        if (!root._suppressDirty) root._settingsDirty = true
         var arr = []
         for (var i = 0; i < nodeModel.count; i++)
             arr.push({"nx": nodeModel.get(i).nx, "ny": nodeModel.get(i).ny})
@@ -532,11 +532,17 @@ Item {
                 var stride = 4   // 3 px line + 1 px gap
                 ctx.save()
                 ctx.globalAlpha = 0.9
+                var bwMode = (Motor.colorMode === 1)
                 for (var ry = 0; ry < ch; ry += stride) {
                     var li = Math.floor(ry / stride)
                     var ci = ((li * 1664525 + 1013904223) ^ (li * 22695477)) % palette.length
                     if (ci < 0) ci += palette.length
-                    ctx.fillStyle = palette[ci]
+                    if (bwMode) {
+                        var gray = 18 + (ci * 3) % 55   // 18–73: dark textured mono
+                        ctx.fillStyle = "rgb(" + gray + "," + gray + "," + gray + ")"
+                    } else {
+                        ctx.fillStyle = palette[ci]
+                    }
                     ctx.fillRect(voidX, ry, voidW, 3)
                 }
                 ctx.restore()
@@ -1020,9 +1026,48 @@ Item {
         }
     }
 
+    // ── BW / Color mode indicator + preset buttons ────────────────────────────
+    // Just under the rainbow canvas, flush right.
+    Text {
+        id: colorModeIndicator
+        anchors { right: parent.right; rightMargin: 18 }
+        y: 278
+        text:  Motor.colorMode === 0 ? "color" : "monochrome"
+        color: Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+
+    // [presets] and [save] — small, right-aligned, below the mode text
+    TerminalButton {
+        id: btnPresets
+        controller: scanFocus
+        anchors { right: parent.right; rightMargin: 18 }
+        y: 304
+        width: 100; height: 26
+        fontSize: Theme.fontMonoS
+        label: "[presets]"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenPresets.qml"))
+    }
+    TerminalButton {
+        id: btnSavePreset
+        controller: scanFocus
+        anchors { right: btnPresets.left; rightMargin: 6 }
+        y: 304
+        width: 80; height: 26
+        fontSize: Theme.fontMonoS
+        label:   root._settingsDirty ? "[save]" : "[saved]"
+        opacity: root._settingsDirty ? 1.0 : 0.4
+        onClicked: {
+            if (!root._settingsDirty) return
+            Motor.savePreset(root.hand1Angle, root.hand2Angle)
+            root._settingsDirty = false
+        }
+    }
+
     // ── Bottom panel — text buttons ───────────────────────────────────────────
-    // [settings] left  |  [execute]/[pause]/[resume] and [home]/[ready] right.
-    // [execute] → green solid while running; blinks green/grey when paused.
+    // [settings] left  |  [home]/[ready]  [execute]/[pause]/[resume] right.
+    // [execute] → always red border; red fill while running; blinks red/dark when paused.
+    //             BTN1-only — not in encoder focus chain.
     // [home]/[ready] reflects root.homed — bind to Motor.homed when available.
 
     TerminalButton {
@@ -1036,17 +1081,32 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
     }
 
+    // Red pointer line: right edge of execute → right screen edge, at button centre.
+    // Points physically at the BTN1 button on the pendant enclosure.
+    Rectangle {
+        id: executePointerLine
+        anchors {
+            left:           playBtn.right
+            right:          parent.right
+            verticalCenter: playBtn.verticalCenter
+        }
+        height: 1
+        color:  Theme.danger
+    }
+
     TerminalButton {
         id: playBtn
-        controller: scanFocus
-        anchors { right: parent.right; rightMargin: 18 + 130 + 18; bottom: parent.bottom; bottomMargin: 18 }
+        controller: null    // BTN1-only — not reachable via encoder focus
+        anchors { right: parent.right; rightMargin: 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         // Label cycles: [execute] → [pause] → [resume] (blinking)
         label:  root.execState === "idle"    ? "[execute]" :
                 root.execState === "running" ? "[pause]"   : "[resume]"
-        // Active (green) when running, or when paused + blink phase is ON
-        active: root.execState === "running" ||
-                (root.execState === "paused" && root.blinkVisible)
+        // Always red border; red fill when running or paused+blink-on
+        borderColor: Theme.danger
+        fillColor:   (root.execState === "running" ||
+                      (root.execState === "paused" && root.blinkVisible))
+                     ? "#6B2020" : Theme.panel
         onClicked: {
             if (root.execState === "idle") {
                 root.playheadX    = 0
@@ -1054,10 +1114,10 @@ Item {
                 root.execState    = "running"
                 root.blinkVisible = true
                 root.homed        = false
-                root.inMultiPass  = true
                 root.currentPass  = 0
+                root.inMultiPass  = Motor.colorMode === 0   // color→4 passes, bw→single
                 Recorder.startSession()    // snapshot curve + boxW
-                Recorder.startPass(0)      // t_start for R pass
+                Recorder.startPass(0)      // t_start for first (or only) pass
                 playheadTimer.start()
             } else if (root.execState === "running") {
                 playheadTimer.stop()
@@ -1077,7 +1137,7 @@ Item {
     TerminalButton {
         id: resetBtn
         controller: scanFocus
-        anchors { right: parent.right; rightMargin: 18; bottom: parent.bottom; bottomMargin: 18 }
+        anchors { right: parent.right; rightMargin: 18 + 130 + 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         label:  root.homed ? "[ready]" : "[home]"
         active: root.homed
@@ -1132,7 +1192,9 @@ Item {
                         playheadTimer.stop()
                     }
                 } else {
-                    // Single-pass fallback (shouldn't happen in normal use)
+                    // BW single-pass complete
+                    Recorder.endPass(root.currentPass)
+                    Recorder.commitSession()
                     root.playheadX    = -1
                     root.isPlaying    = false
                     root.execState    = "idle"
@@ -1165,6 +1227,14 @@ Item {
     onPlayheadXChanged:  root.scheduleRepaint()
     onCurrentPassChanged: root.scheduleRepaint()
 
+    Connections {
+        target: Motor
+        function onColorModeChanged() {
+            if (!root._suppressDirty) root._settingsDirty = true
+            root.scheduleRepaint()
+        }
+    }
+
     Timer {
         id: repaintTimer
         interval: 16; repeat: false
@@ -1172,11 +1242,27 @@ Item {
     }
     function scheduleRepaint() { if (!repaintTimer.running) repaintTimer.start() }
 
+    // Re-sync nodes and boxW when returning from a sub-screen (e.g. after loading a preset).
+    // _suppressDirty prevents the sync itself from marking dirty; we reset dirty after.
+    StackView.onStatusChanged: {
+        if (StackView.status === StackView.Active) {
+            root._suppressDirty = true
+            root.syncBoxW(Motor.seqBoxW)
+            root.syncNodes(Motor.nodes)
+            root._suppressDirty = false
+            root._settingsDirty = false
+        }
+    }
+
     Component.onCompleted: {
         root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)
         root.scheduleRepaint()
     }
+    onHand1AngleChanged: if (!root._suppressDirty) root._settingsDirty = true
+    onHand2AngleChanged: if (!root._suppressDirty) root._settingsDirty = true
+
     onBoxWChanged: {
+        if (!root._suppressDirty) root._settingsDirty = true
         // Only update hand2 when the handle bar is driving (not when dial is driving)
         if (!root._dialDriving)
             root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)

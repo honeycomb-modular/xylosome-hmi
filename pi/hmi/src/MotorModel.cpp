@@ -14,6 +14,10 @@
 #include <cmath>
 #include <QDebug>
 #include <QProcess>
+#include <QSettings>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonDocument>
 
 // Helper to make a node QVariantMap
 static QVariantMap makeNode(double nx, double ny) {
@@ -26,7 +30,7 @@ static QVariantMap makeNode(double nx, double ny) {
 MotorModel::MotorModel(QObject *parent)
     : QObject(parent)
 {
-    // Default nodes — matches QML ListModel initial data
+    // Default nodes — overridden by loadFromSettings() if saved data exists
     m_nodes << makeNode(0.00, 0.52)
             << makeNode(0.27, 0.27)
             << makeNode(0.50, 0.63)
@@ -34,7 +38,14 @@ MotorModel::MotorModel(QObject *parent)
             << makeNode(1.00, 0.41);
 
     connect(&m_timer, &QTimer::timeout, this, &MotorModel::tick);
-    m_timer.start(100);   // 100 ms == 10 Hz, matches ESP32 motor_tick() cadence
+    m_timer.start(100);
+
+    // Debounced settings writer — scan state (nodes/boxW/colorMode)
+    m_settingsTimer.setInterval(1000);
+    m_settingsTimer.setSingleShot(true);
+    connect(&m_settingsTimer, &QTimer::timeout, this, &MotorModel::saveLastToSettings);
+
+    loadFromSettings();   // restore saved scan state + presets
 }
 
 QString MotorModel::modeName() const {
@@ -110,6 +121,7 @@ void MotorModel::setNodesFromJson(const QString &json) {
     { QVariantMap m = vl.last().toMap();  m[QStringLiteral("nx")] = 1.0; vl[vl.size()-1] = m; }
     m_nodes = vl;
     emit nodesChanged();
+    m_settingsTimer.start();
     qDebug() << "[motor] setNodesFromJson: loaded" << vl.size() << "nodes";
 }
 
@@ -117,6 +129,53 @@ void MotorModel::setSeqBoxW(int w) {
     if (m_seqBoxW == w) return;
     m_seqBoxW = w;
     emit seqBoxWChanged();
+    m_settingsTimer.start();
+}
+
+void MotorModel::setColorMode(int c) {
+    if (m_colorMode == c) return;
+    m_colorMode = c;
+    emit colorModeChanged();
+    m_settingsTimer.start();   // persist after brief settle
+    qDebug() << "[motor] colorMode =" << (c == 0 ? "COLOR" : "BW");
+}
+
+void MotorModel::savePreset(double hand1Angle, double hand2Angle) {
+    QVariantMap p;
+    p[QStringLiteral("name")]       = QStringLiteral("preset %1").arg(m_presets.size() + 1);
+    p[QStringLiteral("colorMode")]  = m_colorMode;
+    p[QStringLiteral("boxW")]       = m_seqBoxW;
+    p[QStringLiteral("hand1Angle")] = hand1Angle;
+    p[QStringLiteral("hand2Angle")] = hand2Angle;
+    p[QStringLiteral("nodes")]      = m_nodes;
+    m_presets.insert(0, p);   // newest first
+    emit presetsChanged();
+    savePresetsToSettings();
+    qDebug() << "[motor] preset saved:" << p[QStringLiteral("name")].toString();
+}
+
+void MotorModel::loadPreset(int index) {
+    if (index < 0 || index >= m_presets.size()) return;
+    const QVariantMap p = m_presets[index].toMap();
+
+    const int cm = p[QStringLiteral("colorMode")].toInt();
+    if (m_colorMode != cm) { m_colorMode = cm; emit colorModeChanged(); }
+
+    const int bw = p[QStringLiteral("boxW")].toInt();
+    if (m_seqBoxW != bw) { m_seqBoxW = bw; emit seqBoxWChanged(); }
+
+    const QVariantList nodes = p[QStringLiteral("nodes")].toList();
+    if (!nodes.isEmpty()) { m_nodes = nodes; emit nodesChanged(); }
+
+    qDebug() << "[motor] preset loaded:" << p[QStringLiteral("name")].toString();
+}
+
+void MotorModel::deletePreset(int index) {
+    if (index < 0 || index >= m_presets.size()) return;
+    m_presets.removeAt(index);
+    emit presetsChanged();
+    savePresetsToSettings();
+    qDebug() << "[motor] preset deleted, remaining:" << m_presets.size();
 }
 
 void MotorModel::playVideo(const QString &path) {
@@ -127,6 +186,106 @@ void MotorModel::playVideo(const QString &path) {
         QStringLiteral("--hwdec=auto"),
         path
     });
+}
+
+// ── QSettings persistence ─────────────────────────────────────────────────────
+
+QString MotorModel::nodesToJson(const QVariantList &nodes) {
+    QJsonArray arr;
+    for (const QVariant &n : nodes) {
+        const QVariantMap nm = n.toMap();
+        QJsonObject obj;
+        obj[QStringLiteral("nx")] = nm[QStringLiteral("nx")].toDouble();
+        obj[QStringLiteral("ny")] = nm[QStringLiteral("ny")].toDouble();
+        arr.append(obj);
+    }
+    return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
+}
+
+void MotorModel::loadFromSettings() {
+    QSettings s;
+
+    // ── Last scan state ───────────────────────────────────────────────────────
+    m_colorMode = s.value(QStringLiteral("last/colorMode"), 0).toInt();
+    m_seqBoxW   = s.value(QStringLiteral("last/seqBoxW"),  520).toInt();
+
+    const QString nodesJson = s.value(QStringLiteral("last/nodes")).toString();
+    if (!nodesJson.isEmpty()) {
+        const QJsonDocument doc = QJsonDocument::fromJson(nodesJson.toUtf8());
+        if (doc.isArray()) {
+            QVariantList vl;
+            for (const QJsonValue &v : doc.array()) {
+                QVariantMap m;
+                m[QStringLiteral("nx")] = v[QStringLiteral("nx")].toDouble();
+                m[QStringLiteral("ny")] = v[QStringLiteral("ny")].toDouble();
+                vl.append(m);
+            }
+            if (vl.size() >= 2) {
+                { QVariantMap m = vl.first().toMap(); m[QStringLiteral("nx")] = 0.0; vl[0] = m; }
+                { QVariantMap m = vl.last().toMap();  m[QStringLiteral("nx")] = 1.0; vl[vl.size()-1] = m; }
+                m_nodes = vl;
+            }
+        }
+    }
+
+    // ── Presets ───────────────────────────────────────────────────────────────
+    const int count = s.beginReadArray(QStringLiteral("presets"));
+    for (int i = 0; i < count; i++) {
+        s.setArrayIndex(i);
+        QVariantMap p;
+        p[QStringLiteral("name")]       = s.value(QStringLiteral("name")).toString();
+        p[QStringLiteral("colorMode")]  = s.value(QStringLiteral("colorMode"),  0).toInt();
+        p[QStringLiteral("boxW")]       = s.value(QStringLiteral("boxW"),      520).toInt();
+        p[QStringLiteral("hand1Angle")] = s.value(QStringLiteral("hand1Angle"), 0.0).toDouble();
+        p[QStringLiteral("hand2Angle")] = s.value(QStringLiteral("hand2Angle"), 90.0).toDouble();
+
+        const QString pj = s.value(QStringLiteral("nodes")).toString();
+        if (!pj.isEmpty()) {
+            const QJsonDocument doc = QJsonDocument::fromJson(pj.toUtf8());
+            if (doc.isArray()) {
+                QVariantList vl;
+                for (const QJsonValue &v : doc.array()) {
+                    QVariantMap m;
+                    m[QStringLiteral("nx")] = v[QStringLiteral("nx")].toDouble();
+                    m[QStringLiteral("ny")] = v[QStringLiteral("ny")].toDouble();
+                    vl.append(m);
+                }
+                p[QStringLiteral("nodes")] = vl;
+            }
+        }
+        m_presets.append(p);
+    }
+    s.endArray();
+
+    qInfo() << "[settings] loaded — colorMode" << m_colorMode
+            << "seqBoxW" << m_seqBoxW
+            << "nodes" << m_nodes.size()
+            << "presets" << m_presets.size();
+}
+
+void MotorModel::saveLastToSettings() {
+    QSettings s;
+    s.setValue(QStringLiteral("last/colorMode"), m_colorMode);
+    s.setValue(QStringLiteral("last/seqBoxW"),   m_seqBoxW);
+    s.setValue(QStringLiteral("last/nodes"),     nodesToJson(m_nodes));
+    qDebug() << "[settings] scan state saved";
+}
+
+void MotorModel::savePresetsToSettings() {
+    QSettings s;
+    s.beginWriteArray(QStringLiteral("presets"));
+    for (int i = 0; i < m_presets.size(); i++) {
+        s.setArrayIndex(i);
+        const QVariantMap p = m_presets[i].toMap();
+        s.setValue(QStringLiteral("name"),       p[QStringLiteral("name")]);
+        s.setValue(QStringLiteral("colorMode"),  p[QStringLiteral("colorMode")]);
+        s.setValue(QStringLiteral("boxW"),       p[QStringLiteral("boxW")]);
+        s.setValue(QStringLiteral("hand1Angle"), p[QStringLiteral("hand1Angle")]);
+        s.setValue(QStringLiteral("hand2Angle"), p[QStringLiteral("hand2Angle")]);
+        s.setValue(QStringLiteral("nodes"),      nodesToJson(p[QStringLiteral("nodes")].toList()));
+    }
+    s.endArray();
+    qDebug() << "[settings] presets saved —" << m_presets.size() << "entries";
 }
 
 // Direct port of state/motor.cpp :: motor_tick()

@@ -49,13 +49,18 @@ ApplicationWindow {
 
         // ── Pendant input router ────────────────────────────────────────────────
         // Maps keyboard keys to the focus grammar for dev/testing. The Teensy
-        // pendant will later feed the same three actions (JOG → next/prev,
-        // click → enter, BTN2 → back) via serial, with no change to the screens.
-        //   ↓ / → / Tab   → moveNext      ↑ / ← → movePrev
-        //   Enter / Space → enter         Esc / Backspace → back
-        // A screen opts in by exposing `property var focusController` and,
-        // optionally, a `focusBack()` function. Unhandled keys bubble here from
-        // the focused screen, which doesn't consume arrow/enter keys.
+        // pendant will later feed the same actions via serial, no screen changes needed.
+        //
+        // Pendant grammar:
+        //   ENC rotate       → moveNext / movePrev
+        //   ENC push         → enter (navigate mode) OR focusContext (editing mode)
+        //   BTN2             → back / cancel, one level at a time
+        //   BTN1             → btn1Execute (dedicated execute, not in focus chain)
+        //
+        // Key simulation:
+        //   ↓ / → / Tab     → moveNext       ↑ / ← / Backtab → movePrev
+        //   Enter / Space   → ENC push       Esc / Backspace  → BTN2 back
+        //   Delete          → BTN1 execute
         focus: true
         Keys.onPressed: function(event) {
             var s  = nav.currentItem
@@ -66,9 +71,16 @@ ApplicationWindow {
             case Qt.Key_Up: case Qt.Key_Left: case Qt.Key_Backtab:
                 if (fc) { fc.movePrev(); event.accepted = true } break
             case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space:
-                if (fc) { fc.enter(); event.accepted = true } break
-            case Qt.Key_Delete:   // pendant BTN1 — screen-specific context action
-                if (s && typeof s.focusContext === "function") { s.focusContext(); event.accepted = true } break
+                // ENC push: editing → focusContext (confirm/context); navigate → fc.enter (activate).
+                if (fc && fc.editing && s && typeof s.focusContext === "function") {
+                    s.focusContext(); event.accepted = true
+                } else if (fc) {
+                    fc.enter(); event.accepted = true
+                }
+                break
+            case Qt.Key_Delete:   // BTN1 — dedicated execute, not in focus chain
+                if (s && typeof s.btn1Execute === "function") { s.btn1Execute(); event.accepted = true }
+                break
             case Qt.Key_Escape: case Qt.Key_Backspace:
                 if (fc && fc.editing) { fc.back(); event.accepted = true }
                 else if (s && typeof s.focusBack === "function") { s.focusBack(); event.accepted = true }

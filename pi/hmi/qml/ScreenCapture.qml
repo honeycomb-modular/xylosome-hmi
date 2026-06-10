@@ -35,7 +35,7 @@ Item {
         index: 1   // start on the active "jog" mode button
         targets: {
             var t = [tabProgram, tabJog, tabStatic]
-            if (root.activeMode === 0)      t = t.concat([btnOpenScan])
+            if (root.activeMode === 0)      t = t.concat([btnProgColor, btnProgBw, btnOpenScan])
             else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnEnable, btnZero, btnJogCapture])
             else                            t = t.concat([btnColor, btnBw, btnStaticCapture])
             return t.concat([backBtn])
@@ -83,6 +83,7 @@ Item {
     // Panel 0 — program scan
     // ═══════════════════════════════════════════════════════════════════════════
     Item {
+        id: programPanel
         x: Theme.marginX; y: 144; width: Theme.contentW; height: 300
         visible: root.activeMode === 0
 
@@ -92,9 +93,33 @@ Item {
             color: Theme.colorTextDim
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
+
+        // color mode — shared global Motor.colorMode (also used by static panel)
         Text {
-            x: root.labelX; y: 38
-            text: "4-pass r/g/b/c sequence — edit the curve on the main scan screen."
+            x: root.labelX; y: 82; text: "color mode"
+            color: Theme.colorTextDim
+            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        }
+        TerminalButton {
+            id: btnProgColor; controller: capFocus
+            x: root.ctlX; y: 70; width: 220; height: root.btnH
+            label: "[color  r/g/b/c]"
+            active: Motor.colorMode === 0
+            onClicked: Motor.colorMode = 0
+        }
+        TerminalButton {
+            id: btnProgBw; controller: capFocus
+            x: 342; y: 70; width: 180; height: root.btnH
+            label: "[bw  single]"
+            active: Motor.colorMode === 1
+            onClicked: Motor.colorMode = 1
+        }
+
+        Text {
+            x: root.labelX; y: 140
+            text: Motor.colorMode === 0
+                  ? "4-pass r/g/b/c filter wheel sequence — curve from scan editor"
+                  : "single bw pass, no filter wheel — curve from scan editor"
             color: Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
@@ -102,7 +127,7 @@ Item {
         TerminalButton {
             id: btnOpenScan
             controller: capFocus
-            x: root.labelX; y: 92; width: 220; height: root.btnH
+            x: root.labelX; y: 202; width: 220; height: root.btnH
             label: "[open scan editor]"
             onClicked: root.StackView.view.pop(null)   // back to ScreenScan (stack root)
         }
@@ -216,8 +241,6 @@ Item {
         x: Theme.marginX; y: 144; width: Theme.contentW; height: 300
         visible: root.activeMode === 2
 
-        property int colorMode: 0   // 0=color (r/g/b/c), 1=bw (single pass)
-
         Text {
             x: root.labelX; y: 16; text: "position"
             color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
@@ -238,17 +261,17 @@ Item {
         TerminalButton {
             id: btnColor; controller: capFocus
             x: root.ctlX; y: 70; width: 220; height: root.btnH
-            label: "[color  r/g/b/c]"; active: staticPanel.colorMode === 0; onClicked: staticPanel.colorMode = 0
+            label: "[color  r/g/b/c]"; active: Motor.colorMode === 0; onClicked: Motor.colorMode = 0
         }
         TerminalButton {
             id: btnBw; controller: capFocus
             x: 342; y: 70; width: 180; height: root.btnH
-            label: "[bw  single]"; active: staticPanel.colorMode === 1; onClicked: staticPanel.colorMode = 1
+            label: "[bw  single]"; active: Motor.colorMode === 1; onClicked: Motor.colorMode = 1
         }
 
         Text {
             x: root.labelX; y: 140
-            text: staticPanel.colorMode === 0
+            text: Motor.colorMode === 0
                   ? "motor stationary — 4-pass r/g/b/c filter wheel sequence"
                   : "motor stationary — single pass, no filter"
             color: Theme.colorTextFaint
@@ -259,7 +282,7 @@ Item {
             id: btnStaticCapture; controller: capFocus
             x: 614; y: 202; width: 300; height: root.btnH
             label: "[capture]"
-            onClicked: console.log("static capture mode=" + staticPanel.colorMode + " — TODO")
+            onClicked: console.log("static capture mode=" + Motor.colorMode + " — TODO")
         }
     }
 
