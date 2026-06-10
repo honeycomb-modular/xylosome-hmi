@@ -645,3 +645,7 @@ for a normal undistorted image), top edge = maxSpeed, bottom edge = 0.
 speedAtX, avgVelocity, buildProfile (→ xylod) and the local sim all inherit
 the mapping from the one function. Canvas axis labels ("time"/"speed")
 unchanged — rename to mark the std-speed line in a later pass if wanted.
+- **Verified by artist on Pi (6d901b7):** curve↔playhead correlation correct
+  (high=fast, center=std, low=slow), 450 ms reset glide, shortened inter-pass
+  pause — "feels great". Scan-feel ledger CLOSED for sim; revisit return speed
+  + stdSpeedFactor on real hardware.
