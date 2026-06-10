@@ -43,9 +43,12 @@ Item {
     // Glide between the daemon's discrete position reports (25 Hz) so the
     // playhead moves continuously. Disabled offline — the local 60 fps sim
     // writes playheadX directly and needs no smoothing.
+    // The pass-end reset uses a longer glide (~450 ms): visible as a reset,
+    // quicker than the real motor return — split the difference.
+    property bool _resetAnim: false
     Behavior on playheadX {
         enabled: Beckhoff.connected && root.isPlaying && root.playheadX >= 0
-        NumberAnimation { duration: 90 }
+        NumberAnimation { duration: root._resetAnim ? 450 : 90 }
     }
 
     // Execute button state machine: "idle" | "running" | "paused"
@@ -171,13 +174,15 @@ Item {
         // daemon events replace the local playhead bookkeeping when connected
         function onPassStarted(pass, tMs) {
             root.currentPass = pass
+            root._resetAnim = false
             root.playheadX = 0
             root._seqPassSeen = true
             Recorder.startPass(pass)
         }
         function onPassEnded(pass, tMs) {
             Recorder.endPass(pass)
-            root.playheadX = 0     // quick reset — ready for the next pass
+            root._resetAnim = true
+            root.playheadX = 0     // glides back ~450 ms — ready for the next pass
         }
         function onSequenceDone(passes) {
             Recorder.commitSession()     // finalise + auto-export SVG

@@ -163,8 +163,10 @@ void BeckhoffLink::executeScan(int colorMode,
         {QStringLiteral("arcEndDeg"),    arcEndDeg},
         {QStringLiteral("maxVelDegS"),   maxVelDegS},
         {QStringLiteral("minVelDegS"),   minVelDegS},
-        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 300.0).toDouble()},
-        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 40.0).toDouble()},
+        // Defaults tightened 2026-06-10 (artist: inter-pass pause too long).
+        // Both overridable via QSettings; revisit on real hardware.
+        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
+        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 80.0).toDouble()},
         {QStringLiteral("line"),         line},
         {QStringLiteral("profile"),      prof},
     });
