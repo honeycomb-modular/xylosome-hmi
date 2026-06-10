@@ -512,3 +512,29 @@ Alternative controller path (C6920 + SOEM + A6-EC, per
 - Verified: compiles clean vs real SOEM v1.4.0; `--sim` end-to-end 4-pass +
   BW + pause/resume over TCP. HMI not yet built on Pi — **clean rebuild**
   (QML changed).
+
+---
+
+## 2026-06-09 (bench, home) — Pi ⇄ Beckhoff C6920 first contact ✅
+
+Mac Internet Sharing bench: Mac (bridge100, 192.168.2.1) + PoE switch + Pi 5 +
+C6920. **C6920 = `192.168.2.2` via DHCP on `eno1`** (cable in the port labelled
+MAC1 — this is now the LAN port). **`enp4s0` is free = EtherCAT port** —
+`ec_iface = enp4s0` when the drive chain gets plugged in.
+
+- Pi eth0 is static `192.168.10.3` (garage config). For bench internet:
+  `sudo ip addr add 192.168.2.3/24 dev eth0` + default via `192.168.2.1`
+  + nameserver — temporary, gone after reboot.
+- Pi HMI rebuilt (clean), `[beckhoff] host=192.168.2.2` in XYLOSOME.conf
+  (DHCP lease — pin it before trusting long-term).
+- xylod built on C6920 (two CMake fixes now in repo: policy minimum +
+  -Wno-error=stringop-truncation + SOEM include dirs).
+- `xylod --sim` + HMI: execute from BTN1 ran 4 passes over the wire, playhead
+  driven by daemon axis position incl. backward return sweep. Choppiness fixed:
+  status now 25 Hz + 90 ms playhead interpolation in ScreenScan.
+
+### Next (garage)
+1. Plug EtherCAT chain into `enp4s0`, power 24 V segment: `sudo ./ec_scan enp4s0`
+   → expect 7 slaves; fix `pos_*` + `ec_iface` in xylod.conf to match.
+2. `sudo ./motor_test enp4s0 1 5 10` — motor loose on desk (PDO remap gate).
+3. `sudo ./xylod --config ...` for real; verify CoE items in BECKHOFF_PORT.md.

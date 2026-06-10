@@ -122,7 +122,10 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
     }
     else { post = false; ack["ok"] = false; ack["err"] = "unknown cmd"; }
 
-    if (post) m_seq.post(sc);
+    if (post) {
+        m_seq.post(sc);
+        LOGI("cmd: %s (from %s)", cmd.c_str(), c.name.c_str());
+    }
     sendTo(c, ack.dump());
 }
 
