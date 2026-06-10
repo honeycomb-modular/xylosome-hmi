@@ -572,3 +572,30 @@ MAC1 — this is now the LAN port). **`enp4s0` is free = EtherCAT port** —
 - ScreenScan: profile built once per execute, shared by controller + recorder.
 - **Test on Pi:** rebuild, execute once, check ~/xylosome_exports/ for paired
   .svg + .json with matching stems and sane pass timings.
+
+---
+
+## 2026-06-10 — bench made persistent ✅
+
+Everything from the 06-09 bench now survives reboot, no manual commands:
+
+- **Pi** (NM profile `eth0`, UUID 4117906f…): permanent second address
+  `192.168.2.3/24` + gateway `192.168.2.1` + DNS 8.8.8.8 at **route-metric
+  700** — Wi-Fi (metric 600) always outranks it, so the old "wired route
+  kills internet" trap is structurally impossible. `192.168.10.3` retained
+  for the garage. Mac alias `192.168.10.1` no longer needed: ssh
+  `hoyte@192.168.2.3`.
+- **Beckhoff**: `sudo make install` (xylod/ec_scan/motor_test + SOEM headers
+  system-wide), config at `/etc/xylod.conf`, **xylod runs as a systemd
+  service** (enabled, restart-on-failure). Bench sim mode via drop-in
+  `/etc/systemd/system/xylod.service.d/sim.conf`.
+  **Garage switch to real hardware:**
+  `sudo rm /etc/systemd/system/xylod.service.d/sim.conf && sudo systemctl daemon-reload && sudo systemctl restart xylod`
+  (set `ec_iface = enp4s0` + `pos_*` in /etc/xylod.conf first, per ec_scan).
+- **Mac**: Internet Sharing (Wi-Fi → USB LAN) persists on its own. Nothing
+  else needed.
+- Beckhoff `192.168.2.2` is still a DHCP lease from the Mac (sticky, not
+  guaranteed). Pin properly during garage network design.
+- ARP gotcha seen twice now: Mac holds a stale entry for the Pi after Pi
+  reboots → ping/ssh "timed out" despite healthy link.
+  Fix: `sudo arp -d 192.168.10.3` (or .2.3) and retry.
