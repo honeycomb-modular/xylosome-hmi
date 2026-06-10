@@ -21,6 +21,13 @@ Item {
     // 0 = program scan, 1 = jog, 2 = static
     property int activeMode: 1
 
+    // Safety: any mode change or leaving this screen stops a live jog.
+    onActiveModeChanged: if (Beckhoff.connected) Beckhoff.jog(0)
+    StackView.onStatusChanged: {
+        if (StackView.status !== StackView.Active && Beckhoff.connected)
+            Beckhoff.jog(0)
+    }
+
     // shared layout for the panels
     readonly property int labelX:  0
     readonly property int ctlX:    110
@@ -144,18 +151,27 @@ Item {
         property int jogSpeed: 1   // 0=slow, 1=medium, 2=fast
         readonly property var speedValues: [5, 30, 120]
 
-        // status — position
+        // status — position (real axis when the Beckhoff is connected)
         Text {
             x: root.labelX; y: 16; text: "position"
             color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
         Text {
-            x: 150; y: 4; text: Motor.position.toFixed(1)
+            x: 150; y: 4
+            text: (Beckhoff.connected ? Beckhoff.positionDeg : Motor.position).toFixed(1)
             color: Theme.accent; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {
             x: 300; y: 16; text: "deg"
             color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        }
+        Text {
+            x: 380; y: 16
+            text: Beckhoff.connected
+                  ? (Beckhoff.running ? "scan running — jog locked" : "beckhoff live")
+                  : "offline — simulated"
+            color: Beckhoff.connected && !Beckhoff.running ? Theme.colorTextDim : Theme.colorTextFaint
+            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
 
         // speed
@@ -195,8 +211,19 @@ Item {
             }
             MouseArea {
                 id: jogLeftArea; anchors.fill: parent
-                onPressed:  { Motor.mode = 1; Motor.setpoint = -jogPanel.speedValues[jogPanel.jogSpeed] }
-                onReleased: Motor.setpoint = 0
+                enabled: !Beckhoff.running     // never jog into a running scan
+                onPressed: {
+                    if (Beckhoff.connected) Beckhoff.jog(-jogPanel.speedValues[jogPanel.jogSpeed])
+                    else { Motor.mode = 1; Motor.setpoint = -jogPanel.speedValues[jogPanel.jogSpeed] }
+                }
+                onReleased: {
+                    if (Beckhoff.connected) Beckhoff.jog(0)
+                    else Motor.setpoint = 0
+                }
+                onCanceled: {
+                    if (Beckhoff.connected) Beckhoff.jog(0)
+                    else Motor.setpoint = 0
+                }
             }
         }
         Rectangle {
@@ -210,8 +237,19 @@ Item {
             }
             MouseArea {
                 id: jogRightArea; anchors.fill: parent
-                onPressed:  { Motor.mode = 1; Motor.setpoint = jogPanel.speedValues[jogPanel.jogSpeed] }
-                onReleased: Motor.setpoint = 0
+                enabled: !Beckhoff.running     // never jog into a running scan
+                onPressed: {
+                    if (Beckhoff.connected) Beckhoff.jog(jogPanel.speedValues[jogPanel.jogSpeed])
+                    else { Motor.mode = 1; Motor.setpoint = jogPanel.speedValues[jogPanel.jogSpeed] }
+                }
+                onReleased: {
+                    if (Beckhoff.connected) Beckhoff.jog(0)
+                    else Motor.setpoint = 0
+                }
+                onCanceled: {
+                    if (Beckhoff.connected) Beckhoff.jog(0)
+                    else Motor.setpoint = 0
+                }
             }
         }
 
@@ -219,12 +257,21 @@ Item {
         TerminalButton {
             id: btnEnable; controller: capFocus
             x: root.ctlX; y: 202; width: 120; height: root.btnH
-            label: "[enable]"; active: Motor.enabled; onClicked: Motor.toggleEnabled()
+            label: "[enable]"
+            active: Beckhoff.connected ? Beckhoff.enabled : Motor.enabled
+            onClicked: {
+                if (Beckhoff.connected) Beckhoff.enable(!Beckhoff.enabled)
+                else Motor.toggleEnabled()
+            }
         }
         TerminalButton {
             id: btnZero; controller: capFocus
             x: 242; y: 202; width: 120; height: root.btnH
-            label: "[zero]"; onClicked: Motor.zero()
+            label: "[zero]"
+            onClicked: {
+                if (Beckhoff.connected) Beckhoff.home()   // axis → 0° (home_deg)
+                else Motor.zero()
+            }
         }
         TerminalButton {
             id: btnJogCapture; controller: capFocus
@@ -246,7 +293,8 @@ Item {
             color: Theme.colorTextDim; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
         }
         Text {
-            x: 150; y: 4; text: Motor.position.toFixed(1)
+            x: 150; y: 4
+            text: (Beckhoff.connected ? Beckhoff.positionDeg : Motor.position).toFixed(1)
             color: Theme.accent; font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {

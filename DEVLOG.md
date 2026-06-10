@@ -649,3 +649,15 @@ unchanged — rename to mark the std-speed line in a later pass if wanted.
   (high=fast, center=std, low=slow), 450 ms reset glide, shortened inter-pass
   pause — "feels great". Scan-feel ledger CLOSED for sim; revisit return speed
   + stdSpeedFactor on real hardware.
+
+---
+
+## 2026-06-10 — capture ▸ jog mode wired to the Beckhoff ✅ (to verify on Pi)
+
+ScreenCapture jog panel now drives xylod when connected (offline = old mock,
+unchanged): hold-pads → `Beckhoff.jog(±speed)` (release/cancel → jog 0),
+[enable] → drive enable/disable, [zero] → `home` (axis → 0°), position
+readout = real axis degrees (jog + static panels), status text shows
+live/offline. Safety: jog stops on mode switch or leaving the screen; pads
+locked while a scan sequence runs. [capture] button remains TODO (camera
+integration). Next idea (not built): encoder dial as pendant-native jog.
