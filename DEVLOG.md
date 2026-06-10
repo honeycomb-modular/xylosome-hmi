@@ -555,3 +555,9 @@ MAC1 — this is now the LAN port). **`enp4s0` is free = EtherCAT port** —
   client of xylod. Makes ScreenCamera live; agent reports real max line rate
   → xylod line_max_hz stops being a guess (currently placeholder 20 kHz).
 - **Locked mode** — EL5152 encoder echo ↔ TDI sync, per diagram open item.
+- **Motion-path verification for motosome** — (1) JSON sidecar next to each
+  session SVG (MetadataRecorder): curve nodes, 128-sample profile as sent,
+  arcStart/End, boxW, colorMode, real pass timestamps → motosome reconstructs
+  the commanded path against its own curves. (2) Later, garage: xylod logs
+  commanded vs actual axis position per pass (1 kHz) on the C6920 → true
+  executed-trajectory verification once a real motor is in the loop.
