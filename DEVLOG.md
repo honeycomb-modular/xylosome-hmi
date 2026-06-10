@@ -538,3 +538,20 @@ MAC1 — this is now the LAN port). **`enp4s0` is free = EtherCAT port** —
    → expect 7 slaves; fix `pos_*` + `ec_iface` in xylod.conf to match.
 2. `sudo ./motor_test enp4s0 1 5 10` — motor loose on desk (PDO remap gate).
 3. `sudo ./xylod --config ...` for real; verify CoE items in BECKHOFF_PORT.md.
+
+### Bench test status (same night)
+- Verified live against `xylod --sim` over the wire: connect/reconnect, execute
+  4-pass, home (incl. from mid-pass pause), pause/resume, playhead smoothness
+  (25 Hz + interpolation), BW single pass (lead-in replay fixed via
+  `_seqPassSeen` gate).
+- Not yet run: presets→execute, SVG timing check, kill-xylod-mid-run safety.
+
+### Backlog (decided tonight, build later)
+- **Settings wiring** — ScreenAxis/ScreenCapture values are still static QML
+  ink. Decide artist-facing knobs (settle ms, return vel, home vel, line base
+  Hz) vs fixed xylod.conf; back with QSettings + send in execute payload.
+- **Capture agent** — small service on the capture PC (Sapera API): camera
+  exposure / TDI config from the HMI, pass events already available as TCP
+  client of xylod. Makes ScreenCamera live; agent reports real max line rate
+  → xylod line_max_hz stops being a guess (currently placeholder 20 kHz).
+- **Locked mode** — EL5152 encoder echo ↔ TDI sync, per diagram open item.
