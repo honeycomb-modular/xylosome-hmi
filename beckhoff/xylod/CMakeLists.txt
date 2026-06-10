@@ -4,6 +4,11 @@ project(xylod VERSION 0.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# SOEM v1.4.0 declares an ancient cmake_minimum_required; allow it on CMake ≥ 4
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+# SOEM builds its C with -Werror; newer GCC flags a strncpy pattern in oshw.c
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=stringop-truncation")
+
 # ──────────────────────────────────────────────────────────────────────────────
 # SOEM — use the copy already installed on the C6920 if present
 # (`sudo make install` from the SOEM repo), otherwise fetch v1.4.0.
@@ -16,6 +21,12 @@ if(NOT soem_FOUND)
         GIT_TAG        v1.4.0)
     set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(soem)
+    # SOEM 1.4.0 doesn't export include dirs on its target — attach them here
+    target_include_directories(soem INTERFACE
+        ${soem_SOURCE_DIR}/soem
+        ${soem_SOURCE_DIR}/osal
+        ${soem_SOURCE_DIR}/osal/linux
+        ${soem_SOURCE_DIR}/oshw/linux)
 endif()
 
 # nlohmann/json — header-only, system package or fetched

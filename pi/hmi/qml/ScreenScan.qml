@@ -165,9 +165,14 @@ Item {
             root.execState    = "idle"
             root.blinkVisible = true
         }
-        function onProgressChanged() {
-            if (Beckhoff.running && root.isPlaying)
-                root.playheadX = Beckhoff.progress * root.boxW
+        // Playhead follows the real axis angle — including the between-pass
+        // return sweep (carriage return). Mapped hand1..hand2 → 0..boxW.
+        function onStatusChanged() {
+            if (!root.isPlaying || !Beckhoff.connected) return
+            var arc = root.hand2Angle - root.hand1Angle
+            if (Math.abs(arc) < 0.001) return
+            var f = (Beckhoff.positionDeg - root.hand1Angle) / arc
+            root.playheadX = Math.max(0, Math.min(1, f)) * root.boxW
         }
         function onFaulted(text) {
             // kill the run UI — fault details live on the network/system screens
