@@ -40,6 +40,14 @@ Item {
     property real   playheadX:       -1
     property bool   isPlaying:       false
 
+    // Glide between the daemon's discrete position reports (25 Hz) so the
+    // playhead moves continuously. Disabled offline — the local 60 fps sim
+    // writes playheadX directly and needs no smoothing.
+    Behavior on playheadX {
+        enabled: Beckhoff.connected && root.isPlaying && root.playheadX >= 0
+        NumberAnimation { duration: 90 }
+    }
+
     // Execute button state machine: "idle" | "running" | "paused"
     property string execState:    "idle"
     property bool   blinkVisible: true        // drives [resume] blink

@@ -165,8 +165,8 @@ void TcpServer::run(volatile bool &keepRunning) {
         // events: push immediately
         for (const auto &e : m_seq.drainEvents()) broadcast(e);
 
-        // status @ 10 Hz
-        if (!m_clients.empty() && clock::now() - lastStatus > std::chrono::milliseconds(100)) {
+        // status @ 25 Hz — playhead smoothness on the HMI side
+        if (!m_clients.empty() && clock::now() - lastStatus > std::chrono::milliseconds(40)) {
             broadcast(statusJson());
             lastStatus = clock::now();
         }
