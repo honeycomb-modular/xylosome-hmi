@@ -63,6 +63,7 @@ Item {
     // One execute = 4 sequential passes (R / G / B / C), same curve each time.
     property bool inMultiPass:  false
     property int  currentPass:  0             // 0=R  1=G  2=B  3=C
+    property bool _seqPassSeen: false         // true once the daemon's first pass_start lands
 
     readonly property var passChannelNames: ["R", "G", "B", "C"]
     readonly property var passChannelColors: ["#CC4444", "#44CC44", "#4488CC", "#AAAAAA"]
@@ -159,6 +160,7 @@ Item {
         function onPassStarted(pass, tMs) {
             root.currentPass = pass
             root.playheadX = 0
+            root._seqPassSeen = true
             Recorder.startPass(pass)
         }
         function onPassEnded(pass, tMs) {
@@ -175,8 +177,11 @@ Item {
         }
         // Playhead follows the real axis angle — including the between-pass
         // return sweep (carriage return). Mapped hand1..hand2 → 0..boxW.
+        // _seqPassSeen gates out the pre-sequence lead-in: if execute lands
+        // while the axis is still parking from a previous run, the playhead
+        // waits at 0 instead of replaying that return move.
         function onStatusChanged() {
-            if (!root.isPlaying || !Beckhoff.connected) return
+            if (!root.isPlaying || !Beckhoff.connected || !root._seqPassSeen) return
             var arc = root.hand2Angle - root.hand1Angle
             if (Math.abs(arc) < 0.001) return
             var f = (Beckhoff.positionDeg - root.hand1Angle) / arc
@@ -1193,6 +1198,7 @@ Item {
                 root.currentPass  = 0
                 root.inMultiPass  = Motor.colorMode === 0   // color→4 passes, bw→single
                 Recorder.startSession()    // snapshot curve + boxW
+                root._seqPassSeen = false
                 if (Beckhoff.connected) {
                     // real motion — xylod runs the sequence; its pass_start /
                     // pass_end / status events drive playhead + Recorder
