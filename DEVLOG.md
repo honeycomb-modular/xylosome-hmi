@@ -670,3 +670,20 @@ integration). Next idea (not built): encoder dial as pendant-native jog.
 - **Verified by artist on Pi:** jog mode works — dial-jog steps, enable, home,
   live position. Jog ledger CLOSED for sim; [capture] button still TODO
   (capture-agent milestone).
+
+### Backlog additions (curve-semantics audit, 2026-06-10)
+- **Sidecar should record `stdSpeedFactor`** — the JSON's `profile` is
+  mapping-independent (fine), but re-deriving from `nodes` needs the mapping +
+  std value. Add to setScanContext + JSON for full self-description.
+- **Motosome curve editor speaks a different language** — its editor is
+  signed/bidirectional (center=0, top=+vmax, bottom=−vmax); Xylosome's is
+  unsigned (center=std, top=max, bottom=0). Decide: keep as bench tool, add a
+  "xylosome mode" with speedOfNy + stdSpeedFactor, or both. Design before code.
+  (Verified: motosome a5e993c everywhere — Mac/GitHub/Beckhoff identical.)
+- **Beckhoff boot-leaning** — future task: `systemd-analyze blame` first;
+  expect wait-online (the IP-less EtherCAT NIC is bait), cloud-init, PXE waits.
+  Target: power → xylod ≤15 s.
+- **Pendant thermals** — sealed PA6-CF soak test (30 min HMI →
+  `vcgencmd measure_temp`); metal enclosure: thermal-pad SoC/HAT to wall
+  (case = heatsink) and NOTE: metal = Faraday cage, Wi-Fi/BT die — wired only,
+  by design.
