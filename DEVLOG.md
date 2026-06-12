@@ -741,3 +741,40 @@ ratings persist across restart.
 
 ### Next session
 See `suite/NEXT_SESSION.md`.
+
+---
+
+## 2026-06-11 — EK1100 arrived: EtherCAT bus bring-up verified ✅
+
+### Bench facts (measured, not assumed)
+- EK1100 powered on **Us only** (bench 24 V; Up left off). Us LED green,
+  link up on `enp4s0` (`/sys/class/net/enp4s0/carrier` = 1).
+- `ec_scan enp4s0` → **4 slaves enumerated**, order = physical stack:
+
+  | pos | name   | id        |
+  |-----|--------|-----------|
+  | 1   | EK1100 | 044c2c52  |
+  | 2   | EL1008 | 03f03052  |
+  | 3   | EL2008 | 07d83052  |
+  | 4   | EL7047 | 1b873052  |
+
+- Obits/Ibits all 0 in the scan = expected (ec_scan enumerates only; sizes
+  appear after a master runs `ec_config_map`).
+
+### New tool: `beckhoff/tools/ec_blink.cpp`
+Visual bus proof: maps PDOs, walks the segment to OP (all RUN LEDs solid
+green), then chases a Knight-Rider pattern + triple all-flash across the
+EL2008 channel LEDs at a 10 ms cycle with WKC verification.
+**EL2008 channel LEDs are fed from the power contacts — Up must have 24 V
+(bridge from the same bench supply) or they stay dark while the bus runs.**
+
+### Still standing between bus and motion (unchanged backlog)
+1. **EcBackend speaks CiA402/CSP — the EL7047 is a Beckhoff stepper terminal
+   with STM control/status PDOs, not a DS402 drive.** Adaptation required
+   before motor_test/real xylod. Pure software; no hardware gate.
+2. `config/xylod.conf` still describes the originally planned bus (A6-EC +
+   EL7031 + EL2521 + EL5152). Rewrite together with (1):
+   `ec_iface = enp4s0`, positions per the table above.
+3. Field power: Up + EL7047 motor supply come from the power-panel build
+   (220 V cart panel; hardwired e-stop chain + contactors; sequencing via
+   timer relays or Teensy — Schneider PLCs optional, see session notes).
