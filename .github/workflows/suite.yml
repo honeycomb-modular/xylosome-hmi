@@ -115,21 +115,21 @@ jobs:
       - name: Build
         run: cmake --build build
 
+      # Manual deploy — windeployqt can't locate qmlimportscanner in the
+      # msys2 layout. qt.conf points the exe at its bundled plugins/qml;
+      # ldd assembles the full DLL chain (Qt, vips, glib, codecs).
       - name: Package
         run: |
           mkdir -p dist
           cp build/xylosome-suite.exe dist/
-          WDQ=$(command -v windeployqt-qt6 || command -v windeployqt6 || command -v windeployqt)
-          "$WDQ" --qmldir suite/qml --release dist/xylosome-suite.exe
-          # windeployqt covers Qt; pull the rest of the DLL chain (vips,
-          # glib, jpeg, …) from the dependency list.
-          ldd dist/xylosome-suite.exe | grep -io '/ucrt64/bin/[^ ]*\.dll' | sort -u \
+          cp -r /ucrt64/share/qt6/plugins dist/plugins
+          cp -r /ucrt64/share/qt6/qml dist/qml
+          printf '[Paths]\nPrefix=.\nPlugins=plugins\nQml2Imports=qml\n' > dist/qt.conf
+          { ldd dist/xylosome-suite.exe || true
+            find dist/plugins dist/qml -name '*.dll' -exec ldd {} + 2>/dev/null || true
+          } | grep -io '/ucrt64/bin/[^ ]*\.dll' | sort -u \
             | xargs -r -I{} cp -n {} dist/ || true
-          # vips loads image format support at runtime too — take every
-          # ucrt64 DLL that any copied DLL depends on (one transitive pass).
-          for f in dist/*.dll; do
-            ldd "$f" 2>/dev/null | grep -io '/ucrt64/bin/[^ ]*\.dll' || true
-          done | sort -u | xargs -r -I{} cp -n {} dist/ || true
+          echo "dist DLLs: $(ls dist/*.dll | wc -l)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
