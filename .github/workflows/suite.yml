@@ -63,6 +63,21 @@ jobs:
           (pkg-config --cflags-only-I vips) -split '\s+' |
             Where-Object { $_ -like '-I*' } |
             ForEach-Object { New-Item -ItemType Directory -Force $_.Substring(2) | Out-Null }
+          # MSVC wants foo.lib; MinGW ships libfoo.dll.a — alias every lib
+          # the .pc asks for.
+          (pkg-config --libs-only-l vips) -split '\s+' |
+            Where-Object { $_ -like '-l*' } |
+            ForEach-Object {
+              $n = $_.Substring(2)
+              $target = "$root\lib\$n.lib"
+              if (-not (Test-Path $target)) {
+                foreach ($cand in @("lib$n.lib","lib$n.dll.a","$n.dll.a","lib$n.a")) {
+                  if (Test-Path "$root\lib\$cand") {
+                    Copy-Item "$root\lib\$cand" $target; break
+                  }
+                }
+              }
+            }
           "VIPS_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
           "PKG_CONFIG_PATH=$root\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
           "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
