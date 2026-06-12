@@ -1,4 +1,13 @@
 // VipsEngine.cpp — see VipsEngine.h.
+
+// vips (and its glib headers) MUST come before any Qt header: Qt's
+// `signals` macro collides with a glib struct field of the same name.
+#ifdef HAVE_VIPS
+#include <vips/vips8>
+using vips::VImage;
+using vips::VError;
+#endif
+
 #include "VipsEngine.h"
 
 #include <QDir>
@@ -6,12 +15,6 @@
 #include <QFileInfo>
 #include <QVector>
 #include <QDebug>
-
-#ifdef HAVE_VIPS
-#include <vips/vips8>
-using vips::VImage;
-using vips::VError;
-#endif
 
 VipsEngine::VipsEngine(QObject *parent)
     : QObject(parent)

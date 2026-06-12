@@ -38,13 +38,12 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install vips pkgconf
 
-      - name: Export GitHub Actions cache env for vcpkg
+      - name: Cache vcpkg-built libvips
         if: runner.os == 'Windows'
-        uses: actions/github-script@v7
+        uses: actions/cache@v4
         with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+          path: C:\vcpkg\installed
+          key: vcpkg-libvips-x64-windows-v1
 
       - name: Install libvips (Windows)
         if: runner.os == 'Windows'
@@ -56,15 +55,15 @@ jobs:
             | Out-File -FilePath $env:GITHUB_ENV -Append
           "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" `
             | Out-File -FilePath $env:GITHUB_PATH -Append
-        env:
-          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
+      # arm64-only: brew's libvips is single-arch, a universal app can't
+      # link it. Intel Macs would need a separate x86_64 job with x86 brew.
       - name: Configure (macOS)
         if: runner.os == 'macOS'
         run: >
           cmake -S suite -B build -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-          "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+          -DCMAKE_OSX_ARCHITECTURES=arm64
 
       - name: Configure
         if: runner.os != 'macOS'
