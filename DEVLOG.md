@@ -829,3 +829,17 @@ doc-verified (0x8010 motor settings, 0x8012:01 mode, default predefined PDO
   EL1008=2, EL2008=3, EL7047=4; ec_iface=enp4s0) — the real-motor path
 - Raise current to motor spec once Hanpose 20HT24 rating is known (measure
   coil R, or run warm-touch test at 300→500 mA)
+
+### Hanpose 20HT24-T5×1 speed ladder — MEASURED 2026-06-11
+Vendor page (hanpose.com): rated 1.0 A/phase, 1.8°/step, ~1 N·cm, 80 g.
+Ladder via ec_step (now takes mA arg, auto speed-range 0x8012:05), 24 V,
+1000 mA, unloaded: **clean through 8 rev/s, not clean from 12 rev/s**
+→ ceiling ~10 rev/s; design number ~5–6 rev/s loaded = 5–6 mm/s on T5×1 lead.
+Color-slide implication: viable only with tight window pitch (~8–10 mm,
+plausible for a line-scan slit) and relaxed inter-pass budget; otherwise
+T5×4/T8×8 lead (4–8×), belt, or the rotary wheel (quarter turn ≈ 150 ms —
+order of magnitude faster). Decision pending: filter pitch + pause budget.
+PSU on bench: Mean Well EDR-120-24 (24 V/5 A) — feeds C6920 + Us/Up rail +
+motor; headroom fine at 1 A motor current.
+ec_dial verified same night: pendant dial → stepper follow, tunable kp
+(30 = detent-crisp), gear arg; full chain Grayhill→Teensy→Pi→xylod→EtherCAT.
