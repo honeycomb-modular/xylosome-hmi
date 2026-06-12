@@ -8,6 +8,7 @@
 // without 24 V on Up they stay dark even though the bus traffic is real.
 #include <ethercat.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 
@@ -21,8 +22,8 @@ int main(int argc, char **argv) {
     if (ec_config_init(FALSE) <= 0) { std::printf("no slaves on %s\n", iface); return 1; }
     ec_config_map(&IOmap);
     ec_configdc();
-    std::printf("%d slaves, mapped %d output bits / %d input bits\n",
-                ec_slavecount, ec_group[0].Obits, ec_group[0].Ibits);
+    std::printf("%d slaves, mapped %u output bytes / %u input bytes\n",
+                ec_slavecount, unsigned(ec_group[0].Obytes), unsigned(ec_group[0].Ibytes));
 
     // find the EL2008 by name — position-independent
     int dout = 0;
