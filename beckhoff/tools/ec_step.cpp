@@ -1,8 +1,11 @@
 // ec_step — first spin of a stepper on the EL7047, velocity-direct mode.
 //
-//   sudo ./ec_step enp4s0 [rev_per_s=0.5] [seconds=10]
+//   sudo ./ec_step enp4s0 [rev_per_s=0.5] [seconds=10] [mA=300]
 //
 // Sequence: + spin, stop, - spin, stop, disable. Ctrl-C aborts safely.
+// mA capped at 1000 (Hanpose 20HT24 rated current per vendor page) — raise
+// the cap in code only for a bigger motor. Speed range (0x8012:05) is chosen
+// automatically from rev_per_s, so speeds beyond 10 rev/s "just work".
 //
 // All object indices verified against Beckhoff infosys EL70x7 docs 2026-06-11:
 //  - Default predefined PDO assignment = "Velocity control compact":
@@ -33,9 +36,9 @@ static char IOmap[4096];
 static volatile sig_atomic_t g_stop = 0;
 static void onSigint(int) { g_stop = 1; }
 
-static constexpr int    SPEED_RANGE_FS = 2000;  // 0x8012:05 default (1)
-static constexpr int    FULLSTEPS_REV  = 200;
-static constexpr uint16 MAX_CURRENT_MA = 300;
+static constexpr int FULLSTEPS_REV = 200;
+// 0x8012:05 speed ranges per EL70x7 docs: index -> fullsteps/s
+static constexpr int RANGES[6] = { 1000, 2000, 4000, 8000, 16000, 32000 };
 
 static bool sdoU16(uint16 slave, uint16 idx, uint8 sub, uint16 val) {
     const int wkc = ec_SDOwrite(slave, idx, sub, FALSE, sizeof(val), &val, EC_TIMEOUTRXM);
@@ -52,15 +55,20 @@ int main(int argc, char **argv) {
     const char  *iface   = argc > 1 ? argv[1] : "enp4s0";
     const double revps   = argc > 2 ? atof(argv[2]) : 0.5;
     const int    seconds = argc > 3 ? atoi(argv[3]) : 10;
+    int          mA      = argc > 4 ? atoi(argv[4]) : 300;
+    if (mA > 1000) { std::printf("capping current at 1000 mA (motor rating)\n"); mA = 1000; }
+    if (mA < 50)   mA = 50;
     std::signal(SIGINT, onSigint);
 
     const double fsps = revps * FULLSTEPS_REV;            // fullsteps/s wanted
-    if (std::fabs(fsps) > SPEED_RANGE_FS) {
-        std::printf("rev_per_s too high for speed range (max %.1f)\n",
-                    double(SPEED_RANGE_FS) / FULLSTEPS_REV);
+    uint8 rangeIdx = 0;
+    while (rangeIdx < 5 && std::fabs(fsps) > RANGES[rangeIdx]) rangeIdx++;
+    const int rangeFs = RANGES[rangeIdx];
+    if (std::fabs(fsps) > rangeFs) {
+        std::printf("rev_per_s too high (max %.0f rev/s)\n", 32000.0 / FULLSTEPS_REV);
         return 1;
     }
-    const int16 velCmd = int16(lround(fsps / SPEED_RANGE_FS * 32767.0));
+    const int16 velCmd = int16(lround(fsps / rangeFs * 32767.0));
 
     if (!ec_init(iface)) { std::printf("ec_init(%s) failed — root? NIC name?\n", iface); return 1; }
     if (ec_config_init(FALSE) <= 0) { std::printf("no slaves on %s\n", iface); return 1; }
@@ -73,11 +81,13 @@ int main(int argc, char **argv) {
 
     // Motor protection FIRST. Defaults are sized for a 5 A motor — ours is not.
     bool ok = true;
-    ok &= sdoU16(drv, 0x8010, 0x01, MAX_CURRENT_MA);   // maximal current [mA]
-    ok &= sdoU16(drv, 0x8010, 0x02, MAX_CURRENT_MA/2); // reduced current [mA]
+    ok &= sdoU16(drv, 0x8010, 0x01, uint16(mA));       // maximal current [mA]
+    ok &= sdoU16(drv, 0x8010, 0x02, uint16(mA / 2));   // reduced current [mA]
     ok &= sdoU16(drv, 0x8010, 0x03, 2400);             // nominal voltage 24.00 V
     ok &= sdoU8 (drv, 0x8012, 0x01, 1);                // operation mode: velocity direct
+    ok &= sdoU8 (drv, 0x8012, 0x05, rangeIdx);         // speed range for requested rev/s
     if (!ok) { std::printf("CoE config failed — not spinning a motor on defaults\n"); ec_close(); return 1; }
+    std::printf("  speed range %d fullsteps/s, command %d/32767\n", rangeFs, velCmd);
 
     ec_config_map(&IOmap);
     ec_configdc();
