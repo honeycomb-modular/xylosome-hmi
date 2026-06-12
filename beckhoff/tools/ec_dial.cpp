@@ -2,7 +2,7 @@
 // xylod axis position. Turn the pendant dial (capture ▸ dial-jog on the Pi),
 // the leadscrew turns.
 //
-//   sudo ./ec_dial enp4s0 [gear=50] [kp=30] [maxrevs=2] [host=127.0.0.1] [port=5510]
+//   sudo ./ec_dial enp4s0 [gear=50] [kp=30] [maxrevs=8] [host=127.0.0.1] [port=5510]
 //
 // gear    = motor revolutions per axis revolution (default 50, like the
 //           harmonic drive: one 1.0-degree dial click ~= 1/7 motor rev).
@@ -41,8 +41,10 @@ static void onSigint(int) { g_run = false; }
 static constexpr double SPEED_RANGE_FS = 2000.0;  // 0x8012:05 default
 static constexpr double FULLSTEPS_REV  = 200.0;
 static constexpr double DT             = 0.01;    // 10 ms cycle
-static constexpr uint16 MAX_CURRENT_MA = 300;
-static double MAX_FS = 400.0;                     // velocity clamp [fullsteps/s]
+// 1000 mA = vendor-rated current for the Hanpose 20HT24 (hanpose.com).
+// Measured 2026-06-11 at 24 V / 1 A: clean to 8 rev/s, dirty from 12.
+static constexpr uint16 MAX_CURRENT_MA = 1000;
+static double MAX_FS = 1600.0;                    // velocity clamp [fullsteps/s]
 static double KP     = 30.0;                      // 1/s: vel = KP * pos error
 
 static void readerThread(std::string host, int port) {
@@ -95,7 +97,7 @@ int main(int argc, char **argv) {
     const char  *iface = argc > 1 ? argv[1] : "enp4s0";
     const double gear  = argc > 2 ? atof(argv[2]) : 50.0;
     KP                 = argc > 3 ? atof(argv[3]) : 30.0;
-    MAX_FS             = (argc > 4 ? atof(argv[4]) : 2.0) * FULLSTEPS_REV;
+    MAX_FS             = (argc > 4 ? atof(argv[4]) : 8.0) * FULLSTEPS_REV;   // measured clean ceiling
     const std::string host = argc > 5 ? argv[5] : "127.0.0.1";
     const int    port  = argc > 6 ? atoi(argv[6]) : 5510;
     std::signal(SIGINT, onSigint);
