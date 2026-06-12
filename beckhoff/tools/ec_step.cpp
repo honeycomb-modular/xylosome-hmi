@@ -108,7 +108,9 @@ int main(int argc, char **argv) {
         std::printf("failed to reach OP\n"); ec_close(); return 1;
     }
 
-    auto cycle = [&](int n, uint16 c, int16 v) {       // n x 10 ms with ctl/vel
+    // n x 10 ms with ctl/vel. abortOnErr only during motion phases — during
+    // reset/enable the error bit may legitimately still be latched.
+    auto cycle = [&](int n, uint16 c, int16 v, bool abortOnErr) {
         for (int i = 0; i < n && !g_stop; i++) {
             *ctl = c; *vel = v;
             ec_send_processdata();
@@ -118,27 +120,52 @@ int main(int argc, char **argv) {
                             *stat, *stat & 1, (*stat >> 1) & 1, (*stat >> 2) & 1,
                             (*stat >> 3) & 1, (*stat >> 4) & 1, (*stat >> 5) & 1,
                             (*stat >> 7) & 1);
-            if ((*stat >> 3) & 1) { std::printf("  ERROR bit set — stopping\n"); g_stop = 1; }
+            if (abortOnErr && ((*stat >> 3) & 1)) {
+                std::printf("  ERROR bit set — stopping\n"); g_stop = 1;
+            }
             usleep(10000);
         }
     };
 
+    // Dump 0xA010 STM diag flags (read raw; names best-effort from EL70x7 docs)
+    auto dumpDiag = [&]() {
+        static const char *names[] = { "?", "saturated", "over temperature",
+            "torque overload", "under voltage", "over voltage",
+            "short circuit A", "short circuit B", "no control power",
+            "misc error", "config error", "motor stall" };
+        std::printf("  STM diag (0xA010):");
+        for (uint8 sub = 1; sub <= 11; sub++) {
+            uint8 v = 0; int sz = sizeof(v);
+            if (ec_SDOread(drv, 0xA010, sub, FALSE, &sz, &v, EC_TIMEOUTRXM) > 0 && v)
+                std::printf("  [%02X %s=1]", sub, names[sub]);
+        }
+        std::printf("\n");
+    };
+
     std::printf("OP. Reset pulse, then enable...\n");
-    cycle(20, 0x0002, 0);                              // reset pulse
-    cycle(20, 0x0000, 0);
-    cycle(50, 0x0001, 0);                              // enable, let Ready come up
+    if ((*stat >> 3) & 1) dumpDiag();                  // name the boot error
+    cycle(30, 0x0002, 0, false);                       // reset pulse (clears latched errors)
+    cycle(30, 0x0000, 0, false);
+    if ((*stat >> 3) & 1) {                            // still in error after reset?
+        std::printf("  error persists after reset:\n");
+        dumpDiag();
+        std::printf("  not spinning. (Power LED off = motor supply missing at 3'/7'.)\n");
+        ec_slave[0].state = EC_STATE_INIT; ec_writestate(0); ec_close(); return 1;
+    }
+    cycle(50, 0x0001, 0, false);                       // enable, let Ready come up
     if (!((*stat >> 1) & 1) && !g_stop)
         std::printf("  note: Ready not set yet — check Power LED / motor supply\n");
 
     std::printf("spin +%.2f rev/s (%d) for %d s\n", revps, velCmd, seconds);
-    cycle(seconds * 100, 0x0001, velCmd);
+    cycle(seconds * 100, 0x0001, velCmd, true);
     std::printf("stop 1 s\n");
-    cycle(100, 0x0001, 0);
+    cycle(100, 0x0001, 0, true);
     std::printf("spin -%.2f rev/s for %d s\n", revps, seconds);
-    cycle(seconds * 100, 0x0001, int16(-velCmd));
+    cycle(seconds * 100, 0x0001, int16(-velCmd), true);
     std::printf("stop + disable\n");
-    cycle(50, 0x0001, 0);
-    cycle(20, 0x0000, 0);
+    cycle(50, 0x0001, 0, true);
+    cycle(20, 0x0000, 0, false);
+    if (g_stop) dumpDiag();                            // name whatever stopped us
 
     ec_slave[0].state = EC_STATE_INIT;
     ec_writestate(0);
