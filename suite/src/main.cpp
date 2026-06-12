@@ -6,6 +6,8 @@
 #include <QQuickStyle>
 #include <QUrl>
 
+#include "XylodLink.h"
+
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
@@ -18,6 +20,9 @@ int main(int argc, char *argv[])
     // Basic style: identical rendering on all three platforms; the suite
     // draws its own design language on top.
     QQuickStyle::setStyle("Basic");
+
+    auto *xylod = new XylodLink(&app);
+    qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Xylod", xylod);
 
     QQmlApplicationEngine engine;
     QObject::connect(

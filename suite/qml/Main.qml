@@ -5,6 +5,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import XylosomeSuite.Link
 
 ApplicationWindow {
     id: root
@@ -25,6 +26,11 @@ ApplicationWindow {
     readonly property color chB: "#378ADD"
     readonly property color chC: "#999999"
     readonly property int easeMs: 200
+
+    function filterColor(name) {
+        return name === "R" ? chR : name === "G" ? chG
+             : name === "B" ? chB : name === "C" ? chC : inkFaint
+    }
 
     // ── Menus (every item shows its key — the menu is the cheat sheet)
     menuBar: MenuBar {
@@ -84,8 +90,81 @@ ApplicationWindow {
                 Label { text: "Xylosome"; color: root.ink; font.pixelSize: 12; font.letterSpacing: 1 }
                 Item { Layout.fillWidth: true }
                 Label { text: qsTr("no capture folder"); color: root.inkFaint; font.pixelSize: 11 }
+                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
+                Label {
+                    text: Xylod.connected
+                          ? (Xylod.sim ? qsTr("xylod · sim") : qsTr("xylod · %1").arg(Xylod.host))
+                          : qsTr("xylod · offline")
+                    color: Xylod.connected ? root.inkMuted : root.inkFaint
+                    font.pixelSize: 11
+                }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
+        }
+
+        // Live scan indicator — appears only while xylod runs a sequence.
+        // The screen stays put; judging continues (plan → Layout).
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 30 : 0
+            visible: Xylod.running
+            color: "#FFFFFF"
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                spacing: 12
+                Rectangle {
+                    width: 8; height: 8; radius: 4
+                    color: root.filterColor(Xylod.filterName)
+                }
+                Label {
+                    text: Xylod.state === "paused" ? qsTr("paused")
+                        : Xylod.state === "running" ? qsTr("scanning · pass %1/4").arg(Xylod.passIndex + 1)
+                        : Xylod.state   // settle | filter
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                }
+                Label {
+                    text: Xylod.filterName
+                    color: root.filterColor(Xylod.filterName)
+                    font.pixelSize: 11
+                    visible: Xylod.filterName !== ""
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 3
+                    color: "#EEEEEE"
+                    Rectangle {
+                        width: parent.width * Xylod.progress
+                        height: parent.height
+                        color: root.ink
+                    }
+                }
+                Label {
+                    text: qsTr("%1% · %2°")
+                          .arg(Math.round(Xylod.progress * 100))
+                          .arg(Xylod.positionDeg.toFixed(1))
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                }
+            }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
+        }
+
+        // Fault display — loud, the review screen is the cart's billboard.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 36 : 0
+            visible: Xylod.faultText !== "" || (Xylod.connected && !Xylod.estopOk)
+            color: "#1A1A1A"
+            Label {
+                anchors.centerIn: parent
+                text: !Xylod.estopOk ? qsTr("E-STOP") : Xylod.faultText
+                color: "#FFFFFF"
+                font.pixelSize: 13
+                font.letterSpacing: 2
+            }
         }
 
         // Image field
