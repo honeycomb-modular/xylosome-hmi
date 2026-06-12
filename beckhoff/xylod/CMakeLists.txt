@@ -58,4 +58,7 @@ target_link_libraries(motor_test PRIVATE soem pthread)
 add_executable(ec_blink   ../tools/ec_blink.cpp)
 target_link_libraries(ec_blink PRIVATE soem pthread)
 
-install(TARGETS xylod ec_scan motor_test ec_blink RUNTIME DESTINATION /usr/local/bin)
+add_executable(ec_meter   ../tools/ec_meter.cpp)
+target_link_libraries(ec_meter PRIVATE soem nlohmann_json::nlohmann_json pthread)
+
+install(TARGETS xylod ec_scan motor_test ec_blink ec_meter RUNTIME DESTINATION /usr/local/bin)
