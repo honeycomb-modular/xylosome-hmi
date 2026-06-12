@@ -44,6 +44,7 @@ qt_add_qml_module(xylosome-suite
     RESOURCE_PREFIX /qt/qml
     QML_FILES
         qml/Main.qml
+        qml/ZoomView.qml
     RESOURCES
         assets/hm_logo_black.svg
 )

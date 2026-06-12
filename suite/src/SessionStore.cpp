@@ -77,6 +77,8 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassDurationsRole, "passDurations" },
         { PassPreviewsRole, "passPreviews" },
         { PassClipsRole, "passClips" },
+        { PassDimsRole, "passDims" },
+        { PassTileBasesRole, "passTileBases" },
     };
 }
 
@@ -120,6 +122,22 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
         for (const PassRecord &p : s.passes)
             v << QVariantMap{ { QStringLiteral("black"), p.clipBlackPct },
                               { QStringLiteral("white"), p.clipWhitePct } };
+        return v;
+    }
+    case PassDimsRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes)
+            v << QVariantMap{ { QStringLiteral("w"), p.pxW },
+                              { QStringLiteral("h"), p.pxH } };
+        return v;
+    }
+    case PassTileBasesRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes)
+            v << (p.preview.isEmpty()
+                      ? QString()
+                      : proxiesDir() + QLatin1Char('/') + s.uuid
+                            + QStringLiteral("/pass_%1").arg(p.index));
         return v;
     }
     }
@@ -180,7 +198,7 @@ void SessionStore::enqueueIngest(const SessionRecord &s, const PassRecord &p)
 }
 
 void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
-                              const QString &previewAbs,
+                              const QString &previewAbs, int pxW, int pxH,
                               double clipBlackPct, double clipWhitePct,
                               const QVariantList &hist256)
 {
@@ -192,6 +210,8 @@ void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
             if (p.index != passIndex)
                 continue;
             p.preview = previewAbs;
+            p.pxW = pxW;
+            p.pxH = pxH;
             p.clipBlackPct = clipBlackPct;
             p.clipWhitePct = clipWhitePct;
             p.hist256.clear();
@@ -239,6 +259,8 @@ void SessionStore::loadExisting()
             const QString prevRel = po.value(QStringLiteral("preview")).toString();
             if (!prevRel.isEmpty())
                 p.preview = m_captureDir + QLatin1Char('/') + prevRel;
+            p.pxW = po.value(QStringLiteral("pxW")).toInt();
+            p.pxH = po.value(QStringLiteral("pxH")).toInt();
             p.clipBlackPct = po.value(QStringLiteral("clipBlackPct")).toDouble(-1);
             p.clipWhitePct = po.value(QStringLiteral("clipWhitePct")).toDouble(-1);
             for (const QJsonValue &hv : po.value(QStringLiteral("hist256")).toArray())
@@ -280,6 +302,10 @@ void SessionStore::save(const SessionRecord &s) const
         if (!p.preview.isEmpty())
             po.insert(QStringLiteral("preview"),
                       QDir(m_captureDir).relativeFilePath(p.preview));
+        if (p.pxW > 0) {
+            po.insert(QStringLiteral("pxW"), p.pxW);
+            po.insert(QStringLiteral("pxH"), p.pxH);
+        }
         if (p.clipBlackPct >= 0) {
             po.insert(QStringLiteral("clipBlackPct"), p.clipBlackPct);
             po.insert(QStringLiteral("clipWhitePct"), p.clipWhitePct);

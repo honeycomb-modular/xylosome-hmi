@@ -66,6 +66,7 @@ ApplicationWindow {
     Shortcut { sequences: ["B"]; onActivated: root.soloChannel = "B" }
     Shortcut { sequences: ["C"]; onActivated: root.soloChannel = "C" }
     Shortcut { sequences: ["A"]; onActivated: root.soloChannel = "auto" }
+    Shortcut { sequences: ["Z"]; onActivated: zoomView.toggleFit() }
 
     // Index of the pass shown in the image field for the current session
     readonly property int shownPass: {
@@ -115,7 +116,10 @@ ApplicationWindow {
                 text: qsTr("Channel solo R/G/B/C — A auto")
                 enabled: false   // reference only; the keys do the work
             }
-            MenuItem { text: qsTr("Zoom 1:1"); enabled: false }
+            MenuItem {
+                text: qsTr("Zoom fit ⇄ 1:1\tZ · wheel · double-click")
+                onTriggered: zoomView.toggleFit()
+            }
             MenuItem { text: qsTr("Gray surround"); enabled: false }
         }
         Menu {
@@ -239,19 +243,29 @@ ApplicationWindow {
             Layout.fillHeight: true
             color: root.imageField
 
-            Image {
-                id: passImage
+            ZoomView {
+                id: zoomView
                 anchors.fill: parent
                 anchors.margins: 24
-                source: root.shownPass >= 0 && strip.currentItem
-                        ? "file:///" + strip.currentItem.sPassPreviews[root.shownPass].replace(/^\//, "")
-                        : ""
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                opacity: status === Image.Ready ? 1 : 0
-                Behavior on opacity {
-                    NumberAnimation { duration: root.easeMs; easing.type: Easing.OutCubic }
-                }
+                visible: root.shownPass >= 0
+                tileBase: root.shownPass >= 0 && strip.currentItem
+                          ? strip.currentItem.sPassTileBases[root.shownPass] : ""
+                imgW: root.shownPass >= 0 && strip.currentItem
+                      ? strip.currentItem.sPassDims[root.shownPass].w : 0
+                imgH: root.shownPass >= 0 && strip.currentItem
+                      ? strip.currentItem.sPassDims[root.shownPass].h : 0
+            }
+
+            // zoom readout — bottom right
+            Label {
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                visible: zoomView.visible && zoomView.imgW > 0
+                text: zoomView.atFit ? qsTr("fit")
+                                     : Math.round(zoomView.zoom * 100) + " %"
+                color: "#CCCCCC"
+                font.pixelSize: 11
             }
 
             // channel badge — bottom left, the only color on the field
@@ -387,7 +401,9 @@ ApplicationWindow {
             ListView {
                 id: strip
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.topMargin: 6
+                anchors.bottomMargin: 4
+                anchors.rightMargin: 10
                 anchors.leftMargin: 16
                 orientation: ListView.Horizontal
                 spacing: 8
@@ -408,6 +424,8 @@ ApplicationWindow {
                     required property var passDurations
                     required property var passPreviews
                     required property var passClips
+                    required property var passDims
+                    required property var passTileBases
                     // surfaced for the rest of the UI via strip.currentItem
                     readonly property int sSeq: seq
                     readonly property string sState: sessionState
@@ -419,14 +437,16 @@ ApplicationWindow {
                     readonly property var sPassDurations: passDurations
                     readonly property var sPassPreviews: passPreviews
                     readonly property var sPassClips: passClips
+                    readonly property var sPassDims: passDims
+                    readonly property var sPassTileBases: passTileBases
                     width: 56
                     height: strip.height
                     Column {
                         anchors.fill: parent
-                        spacing: 3
+                        spacing: 2
                         Rectangle {
                             width: parent.width
-                            height: 30
+                            height: 28
                             color: cell.rejected ? "#F2F2F2"
                                  : cell.sessionState === "live" ? "#F2F2F2" : "#2C2C2C"
                             opacity: cell.rejected ? 0.5 : 1
@@ -470,10 +490,15 @@ ApplicationWindow {
                         }
                         Label {
                             text: ("000" + cell.seq).slice(-4)
-                                  + (cell.rating > 0 ? " " + root.stars(cell.rating) : "")
                                   + (cell.rejected ? " ×" : "")
                             color: cell.ListView.isCurrentItem ? root.ink : root.inkFaint
                             font.pixelSize: 10
+                        }
+                        Label {
+                            visible: cell.rating > 0
+                            text: root.stars(cell.rating)
+                            color: cell.ListView.isCurrentItem ? root.ink : root.inkFaint
+                            font.pixelSize: 9
                         }
                     }
                     MouseArea {

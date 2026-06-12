@@ -29,6 +29,7 @@ struct PassRecord {
     QString file;                // paired TIFF (name relative to capture dir)
     bool    sealed = false;      // transient: hole skipped by the stream, never pair
     QString preview;             // abs path of pass_<i>_preview.jpg ("" = pending)
+    int     pxW = 0, pxH = 0;    // original TIFF dimensions (from ingest)
     double  clipBlackPct = -1;   // -1 = not computed
     double  clipWhitePct = -1;
     QVector<double> hist256;
@@ -67,6 +68,8 @@ public:
         PassDurationsRole,   // QVariantList<double> — seconds per pass, -1 if open
         PassPreviewsRole,    // QVariantList<QString> — preview abs path or ""
         PassClipsRole,       // QVariantList<QVariantMap{black,white}> — % or -1
+        PassDimsRole,        // QVariantList<QVariantMap{w,h}> — original px
+        PassTileBasesRole,   // QVariantList<QString> — dz base path or ""
     };
 
     explicit SessionStore(XylodLink *link, QObject *parent = nullptr);
@@ -98,7 +101,7 @@ private slots:
     void onLinkDropped();
     void onFileReady(const QString &absPath, qint64 mtimeMs);
     void onIngested(const QString &sessionUuid, int passIndex,
-                    const QString &previewAbs,
+                    const QString &previewAbs, int pxW, int pxH,
                     double clipBlackPct, double clipWhitePct,
                     const QVariantList &hist256);
 

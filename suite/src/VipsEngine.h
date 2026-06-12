@@ -39,7 +39,7 @@ public slots:
 signals:
     // previewRel/dziRel are relative to proxyDir's parent (the proxies root).
     void ingested(const QString &sessionUuid, int passIndex,
-                  const QString &previewAbs,
+                  const QString &previewAbs, int pxW, int pxH,
                   double clipBlackPct, double clipWhitePct,
                   const QVariantList &hist256);
     void failed(const QString &sessionUuid, int passIndex, const QString &error);

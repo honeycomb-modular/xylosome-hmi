@@ -123,6 +123,7 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
                        .arg(clipBlackPct, 0, 'f', 3)
                        .arg(clipWhitePct, 0, 'f', 3);
         emit ingested(sessionUuid, passIndex, previewPath,
+                      src.width(), src.height(),
                       clipBlackPct, clipWhitePct, hist256);
     } catch (const VError &e) {
         qWarning() << "[vips] ingest failed:" << e.what();
