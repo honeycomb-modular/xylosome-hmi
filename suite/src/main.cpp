@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QStandardPaths>
@@ -46,6 +47,9 @@ int main(int argc, char *argv[])
     // Basic style: identical rendering on all three platforms; the suite
     // draws its own design language on top.
     QQuickStyle::setStyle("Basic");
+
+    QGuiApplication::setWindowIcon(
+        QIcon(QStringLiteral(":/qt/qml/XylosomeSuite/assets/icon.png")));
 
     const QString logDir =
         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);

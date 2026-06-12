@@ -36,14 +36,27 @@ ApplicationWindow {
 
     function stars(n) { return "★".repeat(n) }
 
+    function folderFromUrl(u) {
+        let p = decodeURIComponent(u.toString()).replace(/^file:\/\//, "")
+        if (/^\/[A-Za-z]:/.test(p))   // Windows: /C:/… → C:/…
+            p = p.slice(1)
+        return p
+    }
+
     FolderDialog {
         id: captureDialog
         title: qsTr("Capture folder")
+        onAccepted: Sessions.captureDir = root.folderFromUrl(selectedFolder)
+    }
+
+    property string archiveDir: ""
+    property var archiveProposals: []
+    FolderDialog {
+        id: archiveDialog
+        title: qsTr("Archive folder")
         onAccepted: {
-            let p = decodeURIComponent(selectedFolder.toString()).replace(/^file:\/\//, "")
-            if (/^\/[A-Za-z]:/.test(p))   // Windows: /C:/… → C:/…
-                p = p.slice(1)
-            Sessions.captureDir = p
+            root.archiveDir = root.folderFromUrl(selectedFolder)
+            root.archiveProposals = Sessions.scanArchive(root.archiveDir)
         }
     }
 
@@ -123,7 +136,11 @@ ApplicationWindow {
                 text: qsTr("Open capture folder…")
                 onTriggered: captureDialog.open()
             }
-            MenuItem { text: qsTr("Import archive…"); enabled: false }
+            MenuItem {
+                text: qsTr("Import archive…")
+                enabled: Sessions.captureDir !== ""
+                onTriggered: archiveDialog.open()
+            }
             MenuSeparator {}
             MenuItem { text: qsTr("Export session…"); enabled: false }
             MenuItem { text: qsTr("Offload keepers…"); enabled: false }
@@ -898,6 +915,105 @@ ApplicationWindow {
                 MouseArea {
                     anchors.fill: parent
                     onClicked: { strip.currentIndex = tcell.index; root.libraryOpen = false }
+                }
+            }
+        }
+    }
+
+    // ── Import proposals overlay ─────────────────────────────────────
+    Rectangle {
+        visible: root.archiveProposals.length > 0
+        anchors.fill: parent
+        color: "#80FFFFFF"
+        z: 55
+        MouseArea { anchors.fill: parent; onClicked: root.archiveProposals = [] }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 520
+            height: Math.min(parent.height - 120, importCol.height + 48)
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: root.ink
+            MouseArea { anchors.fill: parent }   // swallow clicks
+            Column {
+                id: importCol
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: 24
+                width: parent.width - 48
+                spacing: 14
+                Label {
+                    text: qsTr("Import archive — %1 proposed session(s)")
+                            .arg(root.archiveProposals.length)
+                    color: root.ink
+                    font.pixelSize: 13
+                    font.letterSpacing: 1
+                }
+                Label {
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    text: qsTr("Grouped by filename letter and timing. Originals stay in the archive untouched; proxies are built into the capture folder. Already-imported files are skipped.")
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                }
+                ListView {
+                    width: parent.width
+                    height: Math.min(280, count * 30)
+                    clip: true
+                    model: root.archiveProposals
+                    delegate: RowLayout {
+                        required property var modelData
+                        width: ListView.view.width
+                        height: 30
+                        spacing: 12
+                        Label {
+                            text: parent.modelData.start
+                            color: root.inkMuted
+                            font.pixelSize: 11
+                        }
+                        Row {
+                            spacing: 4
+                            Repeater {
+                                model: parent.parent.modelData.filters
+                                Label {
+                                    required property string modelData
+                                    text: modelData
+                                    color: root.filterColor(modelData)
+                                    font.pixelSize: 11
+                                }
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: parent.modelData.files.join("  ")
+                            color: root.inkFaint
+                            font.pixelSize: 10
+                            elide: Text.ElideMiddle
+                        }
+                    }
+                }
+                Row {
+                    spacing: 12
+                    anchors.right: parent.right
+                    Button {
+                        text: qsTr("Cancel")
+                        flat: true
+                        font.pixelSize: 11
+                        onClicked: root.archiveProposals = []
+                    }
+                    Button {
+                        text: qsTr("Import all")
+                        flat: true
+                        font.pixelSize: 11
+                        palette.buttonText: root.ink
+                        onClicked: {
+                            const n = Sessions.importArchive(root.archiveDir)
+                            root.archiveProposals = []
+                            root.reclaimText = qsTr("%1 session(s) imported").arg(n)
+                            reclaimTimer.restart()
+                        }
+                    }
                 }
             }
         }

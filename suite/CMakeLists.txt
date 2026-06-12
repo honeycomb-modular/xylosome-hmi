@@ -25,6 +25,15 @@ qt_add_executable(xylosome-suite
     src/VipsEngine.cpp
 )
 
+# App icon (the HMI rainbow void, miniaturized)
+if(WIN32)
+    target_sources(xylosome-suite PRIVATE assets/icon.rc)
+elseif(APPLE)
+    set_source_files_properties(assets/icon.icns PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(xylosome-suite PRIVATE assets/icon.icns)
+endif()
+
 # libvips (optional — without it the suite runs, ingest is disabled).
 # C API only: stable ABI lets MSVC link the official MinGW-built Windows
 # binaries; vips-cpp would not.
@@ -49,12 +58,14 @@ qt_add_qml_module(xylosome-suite
         qml/ZoomView.qml
     RESOURCES
         assets/hm_logo_black.svg
+        assets/icon.png
 )
 
 set_target_properties(xylosome-suite PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_BUNDLE_NAME "Xylosome Suite"
+    MACOSX_BUNDLE_ICON_FILE "icon.icns"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.honeycomb-modular.xylosome-suite"
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}

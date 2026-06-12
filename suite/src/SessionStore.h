@@ -102,6 +102,13 @@ public:
     Q_INVOKABLE void deleteSession(int row);     // direct, skips quarantine
     Q_INVOKABLE void emptyQuarantine();          // deletes every rejected session
 
+    // Importer (plan → Import / backfill). scanArchive returns proposals
+    // [{start, files[], filters[]}]; importArchive creates the sessions.
+    // Imported passes keep ABSOLUTE paths (originals stay in the archive
+    // and are never deleted by the suite); proxies are built locally.
+    Q_INVOKABLE QVariantList scanArchive(const QString &dir) const;
+    Q_INVOKABLE int importArchive(const QString &dir);
+
 signals:
     void captureDirChanged();
     void countChanged();
@@ -135,6 +142,7 @@ private:
     void refreshDisk();
     qint64 sessionBytes(const SessionRecord &s) const;
     void appendDeletionLog(const SessionRecord &s, qint64 bytes) const;
+    QString passAbsPath(const PassRecord &p) const;
 
     XylodLink *m_link = nullptr;
     FolderWatcher *m_watcher = nullptr;

@@ -202,12 +202,18 @@ static qint64 dirBytes(const QString &path)
     return total;
 }
 
+QString SessionStore::passAbsPath(const PassRecord &p) const
+{
+    return QDir::isAbsolutePath(p.file) ? p.file
+                                        : m_captureDir + QLatin1Char('/') + p.file;
+}
+
 qint64 SessionStore::sessionBytes(const SessionRecord &s) const
 {
     qint64 total = 0;
     for (const PassRecord &p : s.passes)
         if (!p.file.isEmpty())
-            total += QFileInfo(m_captureDir + QLatin1Char('/') + p.file).size();
+            total += QFileInfo(passAbsPath(p)).size();
     total += dirBytes(proxiesDir() + QLatin1Char('/') + s.uuid);
     return total;
 }
@@ -281,8 +287,10 @@ void SessionStore::deleteSession(int row)
     m_sessions.removeAt(row);
     endRemoveRows();
 
+    // Capture-folder files are deleted; ARCHIVE originals (absolute paths,
+    // imported) are never touched — the suite only ever owns its copies.
     for (const PassRecord &p : s.passes)
-        if (!p.file.isEmpty())
+        if (!p.file.isEmpty() && !QDir::isAbsolutePath(p.file))
             QFile::remove(m_captureDir + QLatin1Char('/') + p.file);
     QDir(proxiesDir() + QLatin1Char('/') + s.uuid).removeRecursively();
     QFile::remove(sidecarDir() + QLatin1Char('/') + s.uuid + QStringLiteral(".json"));
@@ -311,7 +319,7 @@ void SessionStore::emptyQuarantine()
         endRemoveRows();
 
         for (const PassRecord &p : s.passes)
-            if (!p.file.isEmpty())
+            if (!p.file.isEmpty() && !QDir::isAbsolutePath(p.file))
                 QFile::remove(m_captureDir + QLatin1Char('/') + p.file);
         QDir(proxiesDir() + QLatin1Char('/') + s.uuid).removeRecursively();
         QFile::remove(sidecarDir() + QLatin1Char('/') + s.uuid + QStringLiteral(".json"));
@@ -343,7 +351,7 @@ void SessionStore::enqueueIngest(const SessionRecord &s, const PassRecord &p)
 {
     if (p.file.isEmpty())
         return;
-    const QString abs = m_captureDir + QLatin1Char('/') + p.file;
+    const QString abs = passAbsPath(p);
     const QString proxyDir = proxiesDir() + QLatin1Char('/') + s.uuid;
     QMetaObject::invokeMethod(m_engine, "ingest", Qt::QueuedConnection,
                               Q_ARG(QString, s.uuid), Q_ARG(int, p.index),
@@ -655,6 +663,115 @@ void SessionStore::pairPendingFiles()
     }
     if (changed)
         emit unpairedFilesChanged();
+}
+
+// ── importer (plan → Import / backfill) ──────────────────────────────────────
+
+struct ArchiveGroup {
+    QVector<QPair<QString, qint64>> files;   // absPath, mtimeMs
+    QStringList filters;
+};
+
+static QVector<ArchiveGroup> buildProposals(const QString &dir)
+{
+    static const QStringList kOrder{ QStringLiteral("R"), QStringLiteral("G"),
+                                     QStringLiteral("B"), QStringLiteral("C") };
+    QFileInfoList entries =
+        QDir(dir).entryInfoList({ QStringLiteral("*.tif"), QStringLiteral("*.tiff"),
+                                  QStringLiteral("*.TIF"), QStringLiteral("*.TIFF") },
+                                QDir::Files, QDir::Time | QDir::Reversed);
+
+    QVector<ArchiveGroup> groups;
+    qint64 lastMtime = -1;
+    for (const QFileInfo &fi : entries) {
+        const QString token = filterToken(fi.fileName());
+        const qint64 mtime = fi.lastModified().toMSecsSinceEpoch();
+
+        const bool gap = lastMtime > 0 && mtime - lastMtime > 10 * 60 * 1000;
+        const bool full = !groups.isEmpty() && groups.last().files.size() >= 4;
+        const bool restart = !groups.isEmpty() && !groups.last().files.isEmpty()
+                             && token == QLatin1String("R");
+        if (groups.isEmpty() || gap || full || restart)
+            groups.append({});
+
+        ArchiveGroup &g = groups.last();
+        g.files.append({ fi.absoluteFilePath(), mtime });
+        g.filters << (!token.isEmpty()
+                          ? token
+                          : kOrder.value(g.files.size() - 1, QStringLiteral("C")));
+        lastMtime = mtime;
+    }
+    return groups;
+}
+
+QVariantList SessionStore::scanArchive(const QString &dir) const
+{
+    QVariantList out;
+    for (const ArchiveGroup &g : buildProposals(dir)) {
+        QStringList names;
+        for (const auto &f : g.files)
+            names << QFileInfo(f.first).fileName();
+        out << QVariantMap{
+            { QStringLiteral("start"),
+              QDateTime::fromMSecsSinceEpoch(g.files.first().second)
+                  .toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")) },
+            { QStringLiteral("files"), names },
+            { QStringLiteral("filters"), g.filters },
+        };
+    }
+    return out;
+}
+
+int SessionStore::importArchive(const QString &dir)
+{
+    const QVector<ArchiveGroup> groups = buildProposals(dir);
+    if (groups.isEmpty() || m_captureDir.isEmpty())
+        return 0;
+
+    // Skip groups whose first file is already in a session (re-import safety).
+    auto known = [this](const QString &abs) {
+        for (const SessionRecord &s : m_sessions)
+            for (const PassRecord &p : s.passes)
+                if (passAbsPath(p) == abs)
+                    return true;
+        return false;
+    };
+
+    int imported = 0;
+    for (const ArchiveGroup &g : groups) {
+        if (g.files.isEmpty() || known(g.files.first().first))
+            continue;
+
+        beginInsertRows({}, m_sessions.size(), m_sessions.size());
+        SessionRecord s;
+        s.uuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        s.seq = m_nextSeq++;
+        s.createdWallMs = g.files.first().second;
+        s.state = g.files.size() == 4 ? QStringLiteral("complete")
+                                      : QStringLiteral("partial");
+        s.note = QStringLiteral("imported");
+        for (int i = 0; i < g.files.size(); ++i) {
+            PassRecord p;
+            p.index = i;
+            p.filter = g.filters.value(i);
+            p.file = g.files[i].first;            // absolute — archive original
+            p.wallStartMs = g.files[i].second;
+            p.wallEndMs = g.files[i].second;
+            s.passes << p;
+        }
+        m_sessions << s;
+        endInsertRows();
+        save(s);
+        for (const PassRecord &p : s.passes)
+            enqueueIngest(s, p);
+        ++imported;
+    }
+    if (imported > 0) {
+        qInfo() << "[sessions] imported" << imported << "sessions from" << dir;
+        emit countChanged();
+        refreshDisk();
+    }
+    return imported;
 }
 
 // ── judging (write-through, no Save) ─────────────────────────────────────────
