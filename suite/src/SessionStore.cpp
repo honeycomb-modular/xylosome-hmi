@@ -90,6 +90,11 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassDimsRole, "passDims" },
         { PassTileBasesRole, "passTileBases" },
         { CreatedRole, "createdWallMs" },
+        { MetaSvgRole, "metaSvg" },
+        { MetaXRole, "metaX" },
+        { MetaYRole, "metaY" },
+        { MetaWRole, "metaW" },
+        { MetaWhiteRole, "metaWhite" },
     };
 }
 
@@ -101,6 +106,11 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
     switch (role) {
     case SeqRole:       return s.seq;
     case CreatedRole:   return s.createdWallMs;
+    case MetaSvgRole:   return metaSvgPath(s);
+    case MetaXRole:     return s.metaX;
+    case MetaYRole:     return s.metaY;
+    case MetaWRole:     return s.metaW;
+    case MetaWhiteRole: return s.metaWhite;
     case UuidRole:      return s.uuid;
     case StateRole:     return s.state;
     case RatingRole:    return s.rating;
@@ -406,6 +416,13 @@ void SessionStore::loadExisting()
         s.rating        = o.value(QStringLiteral("rating")).toInt();
         s.rejected      = o.value(QStringLiteral("rejected")).toBool();
         s.note          = o.value(QStringLiteral("note")).toString();
+        s.metaSvg       = o.value(QStringLiteral("metaSvg")).toString();
+        if (o.contains(QStringLiteral("metaX"))) {
+            s.metaX = o.value(QStringLiteral("metaX")).toDouble();
+            s.metaY = o.value(QStringLiteral("metaY")).toDouble();
+            s.metaW = o.value(QStringLiteral("metaW")).toDouble();
+            s.metaWhite = o.value(QStringLiteral("metaWhite")).toBool();
+        }
         const QJsonArray passes = o.value(QStringLiteral("passes")).toArray();
         for (const QJsonValue &pv : passes) {
             const QJsonObject po = pv.toObject();
@@ -476,7 +493,7 @@ void SessionStore::save(const SessionRecord &s) const
         }
         passes.append(po);
     }
-    const QJsonObject o{
+    QJsonObject o{
         { QStringLiteral("schema"),        1 },
         { QStringLiteral("uuid"),          s.uuid },
         { QStringLiteral("seq"),           s.seq },
@@ -487,6 +504,13 @@ void SessionStore::save(const SessionRecord &s) const
         { QStringLiteral("note"),          s.note },
         { QStringLiteral("passes"),        passes },
     };
+    if (!s.metaSvg.isEmpty()) {
+        o.insert(QStringLiteral("metaSvg"), s.metaSvg);
+        o.insert(QStringLiteral("metaX"), s.metaX);
+        o.insert(QStringLiteral("metaY"), s.metaY);
+        o.insert(QStringLiteral("metaW"), s.metaW);
+        o.insert(QStringLiteral("metaWhite"), s.metaWhite);
+    }
 
     QFile f(sidecarDir() + QLatin1Char('/') + s.uuid + QStringLiteral(".json"));
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -583,6 +607,10 @@ void SessionStore::closeLive(const QString &finalState)
 
 void SessionStore::onFileReady(const QString &absPath, qint64 mtimeMs)
 {
+    if (absPath.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive)) {
+        pairMetaSvg(absPath, mtimeMs);
+        return;
+    }
     const QString rel = QDir(m_captureDir).relativeFilePath(absPath);
 
     // Already paired in a loaded sidecar? (startup rescan)
@@ -767,11 +795,109 @@ int SessionStore::importArchive(const QString &dir)
         ++imported;
     }
     if (imported > 0) {
+        // Pair any MetadataRecorder SVGs living beside the archive scans.
+        const QFileInfoList svgs = QDir(dir).entryInfoList(
+            { QStringLiteral("*.svg"), QStringLiteral("*.SVG") }, QDir::Files);
+        for (const QFileInfo &fi : svgs)
+            pairMetaSvg(fi.absoluteFilePath(),
+                        fi.lastModified().toMSecsSinceEpoch());
         qInfo() << "[sessions] imported" << imported << "sessions from" << dir;
         emit countChanged();
         refreshDisk();
     }
     return imported;
+}
+
+// ── metadata SVG pairing (Pi MetadataRecorder export) ────────────────────────
+
+void SessionStore::pairMetaSvg(const QString &absPath, qint64 mtimeMs)
+{
+    // Filename carries the trigger time: xylosome_YYYYMMDD_HHMMSS.svg.
+    // Pair with the session whose start is nearest (Pi and suite clocks
+    // are NTP'd on the cart LAN; ±10 min tolerance). Fallback: file mtime.
+    qint64 t = mtimeMs;
+    static const QRegularExpression rx(
+        QStringLiteral("xylosome_(\\d{8})_(\\d{6})\\.svg$"));
+    const auto m = rx.match(QFileInfo(absPath).fileName());
+    if (m.hasMatch()) {
+        const QDateTime dt = QDateTime::fromString(
+            m.captured(1) + m.captured(2), QStringLiteral("yyyyMMddHHmmss"));
+        if (dt.isValid())
+            t = dt.toMSecsSinceEpoch();
+    }
+
+    int best = -1;
+    qint64 bestDist = 10 * 60 * 1000;
+    for (int row = 0; row < m_sessions.size(); ++row) {
+        if (!m_sessions[row].metaSvg.isEmpty())
+            continue;
+        const qint64 d = qAbs(m_sessions[row].createdWallMs - t);
+        if (d < bestDist) {
+            bestDist = d;
+            best = row;
+        }
+    }
+    if (best < 0) {
+        qInfo() << "[sessions] metadata svg unmatched:" << QFileInfo(absPath).fileName();
+        return;
+    }
+    m_sessions[best].metaSvg =
+        absPath.startsWith(m_captureDir + QLatin1Char('/'))
+            ? QDir(m_captureDir).relativeFilePath(absPath)
+            : absPath;   // archive svg — keep absolute, like archive tiffs
+    qInfo() << "[sessions] metadata svg paired:" << QFileInfo(absPath).fileName()
+            << "→ session" << m_sessions[best].seq;
+    touchRow(best);
+}
+
+QString SessionStore::metaSvgPath(const SessionRecord &s) const
+{
+    if (s.metaSvg.isEmpty())
+        return {};
+    const QString orig = QDir::isAbsolutePath(s.metaSvg)
+                             ? s.metaSvg
+                             : m_captureDir + QLatin1Char('/') + s.metaSvg;
+    if (!s.metaWhite)
+        return orig;
+
+    // White-line variant for dark scans: same artwork, tones inverted
+    // (#000000→#FFFFFF, #555555→#AAAAAA). Derived file, cached in proxies.
+    const QString cached = proxiesDir() + QLatin1Char('/') + s.uuid
+                           + QStringLiteral("/meta_white.svg");
+    if (!QFile::exists(cached)
+        || QFileInfo(cached).lastModified() < QFileInfo(orig).lastModified()) {
+        QFile in(orig);
+        if (!in.open(QIODevice::ReadOnly))
+            return orig;
+        QString svg = QString::fromUtf8(in.readAll());
+        svg.replace(QStringLiteral("#000000"), QStringLiteral("#FFFFFF"), Qt::CaseInsensitive);
+        svg.replace(QStringLiteral("#555555"), QStringLiteral("#AAAAAA"), Qt::CaseInsensitive);
+        QDir().mkpath(QFileInfo(cached).path());
+        QFile out(cached);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return orig;
+        out.write(svg.toUtf8());
+    }
+    return cached;
+}
+
+void SessionStore::setMetaWhite(int row, bool white)
+{
+    if (row < 0 || row >= m_sessions.size() || m_sessions[row].metaWhite == white)
+        return;
+    m_sessions[row].metaWhite = white;
+    touchRow(row);
+}
+
+void SessionStore::setMetaPlacement(int row, double x, double y, double w)
+{
+    if (row < 0 || row >= m_sessions.size())
+        return;
+    SessionRecord &s = m_sessions[row];
+    s.metaX = qBound(-0.5, x, 1.0);
+    s.metaY = qBound(-0.5, y, 1.0);
+    s.metaW = qBound(0.02, w, 1.0);
+    touchRow(row);
 }
 
 // ── judging (write-through, no Save) ─────────────────────────────────────────

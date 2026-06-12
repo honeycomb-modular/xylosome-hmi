@@ -94,6 +94,13 @@ ApplicationWindow {
 
     property bool libraryOpen: false
     property bool libraryTimeline: false
+    property bool metaShown: true
+    Shortcut { enabled: root.keysLive; sequences: ["M"]
+               onActivated: root.metaShown = !root.metaShown }
+    Shortcut { enabled: root.keysLive; sequences: ["W"]
+               onActivated: if (strip.currentItem)
+                   Sessions.setMetaWhite(strip.currentIndex,
+                                         !strip.currentItem.sMetaWhite) }
 
     // ── deletion confirm (design-true: white card, hairline, no drama) ──
     property int confirmMode: 0      // 0 none · 1 delete current · 2 empty quarantine
@@ -175,6 +182,16 @@ ApplicationWindow {
             MenuItem {
                 text: qsTr("Zoom fit ⇄ 1:1\tZ · wheel · double-click")
                 onTriggered: zoomView.toggleFit()
+            }
+            MenuItem {
+                text: qsTr("Metadata block\tM · drag moves · corner scales")
+                onTriggered: root.metaShown = !root.metaShown
+            }
+            MenuItem {
+                text: qsTr("Metadata black ⇄ white\tW")
+                enabled: strip.currentItem !== null && strip.currentItem.sMetaSvg !== ""
+                onTriggered: Sessions.setMetaWhite(strip.currentIndex,
+                    !(strip.currentItem && strip.currentItem.sMetaWhite))
             }
             MenuItem { text: qsTr("Gray surround"); enabled: false }
         }
@@ -359,25 +376,66 @@ ApplicationWindow {
                       ? strip.currentItem.sPassDims[root.shownPass].w : 0
                 imgH: root.shownPass >= 0 && strip.currentItem
                       ? strip.currentItem.sPassDims[root.shownPass].h : 0
+                metaSource: strip.currentItem ? strip.currentItem.sMetaSvg : ""
+                metaX: strip.currentItem ? strip.currentItem.sMetaX : 0.04
+                metaY: strip.currentItem ? strip.currentItem.sMetaY : 0.78
+                metaW: strip.currentItem ? strip.currentItem.sMetaW : 0.25
+                metaVisible: root.metaShown
+                onPlacementChanged: (x, y, w) =>
+                    Sessions.setMetaPlacement(strip.currentIndex, x, y, w)
             }
 
-            // zoom readout — bottom right, click toggles fit ⇄ 1:1
-            Label {
+            // bottom right: metadata toggle + zoom readout
+            Row {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: 12
-                visible: zoomView.visible && zoomView.imgW > 0
-                text: (zoomView.atFit ? qsTr("fit")
-                                      : Math.round(zoomView.zoom * 100) + " %")
-                      + (zoomMouse.containsMouse ? (zoomView.atFit ? "  → 1:1" : "  → fit") : "")
-                color: "#CCCCCC"
-                font.pixelSize: 11
-                MouseArea {
-                    id: zoomMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: zoomView.toggleFit()
+                spacing: 14
+                Label {
+                    visible: zoomView.visible && zoomView.metaSource !== ""
+                    text: root.metaShown ? qsTr("meta on") : qsTr("meta off")
+                    color: root.metaShown ? "#FFFFFF" : "#AAAAAA"
+                    font.pixelSize: 11
+                    font.underline: metaMouse.containsMouse
+                    MouseArea {
+                        id: metaMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.metaShown = !root.metaShown
+                    }
+                }
+                Label {
+                    visible: zoomView.visible && zoomView.metaSource !== ""
+                             && root.metaShown
+                    text: strip.currentItem && strip.currentItem.sMetaWhite
+                          ? qsTr("white") : qsTr("black")
+                    color: "#CCCCCC"
+                    font.pixelSize: 11
+                    font.underline: bwMouse.containsMouse
+                    MouseArea {
+                        id: bwMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Sessions.setMetaWhite(strip.currentIndex,
+                            !(strip.currentItem && strip.currentItem.sMetaWhite))
+                    }
+                }
+                Label {
+                    visible: zoomView.visible && zoomView.imgW > 0
+                    text: (zoomView.atFit ? qsTr("fit")
+                                          : Math.round(zoomView.zoom * 100) + " %")
+                          + (zoomMouse.containsMouse ? (zoomView.atFit ? "  → 1:1" : "  → fit") : "")
+                    color: "#CCCCCC"
+                    font.pixelSize: 11
+                    MouseArea {
+                        id: zoomMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: zoomView.toggleFit()
+                    }
                 }
             }
 
@@ -609,6 +667,11 @@ ApplicationWindow {
                     required property var passClips
                     required property var passDims
                     required property var passTileBases
+                    required property string metaSvg
+                    required property double metaX
+                    required property double metaY
+                    required property double metaW
+                    required property bool metaWhite
                     // surfaced for the rest of the UI via strip.currentItem
                     readonly property int sSeq: seq
                     readonly property string sState: sessionState
@@ -622,6 +685,11 @@ ApplicationWindow {
                     readonly property var sPassClips: passClips
                     readonly property var sPassDims: passDims
                     readonly property var sPassTileBases: passTileBases
+                    readonly property string sMetaSvg: metaSvg
+                    readonly property double sMetaX: metaX
+                    readonly property double sMetaY: metaY
+                    readonly property double sMetaW: metaW
+                    readonly property bool sMetaWhite: metaWhite
                     width: 56
                     height: strip.height
                     Column {

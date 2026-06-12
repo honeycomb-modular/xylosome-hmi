@@ -7,7 +7,9 @@
 static bool isTiff(const QString &name)
 {
     return name.endsWith(QLatin1String(".tif"), Qt::CaseInsensitive)
-        || name.endsWith(QLatin1String(".tiff"), Qt::CaseInsensitive);
+        || name.endsWith(QLatin1String(".tiff"), Qt::CaseInsensitive)
+        || name.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive);
+        // .svg: the Pi's MetadataRecorder export, paired to sessions
 }
 
 FolderWatcher::FolderWatcher(QObject *parent)

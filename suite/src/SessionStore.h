@@ -44,6 +44,13 @@ struct SessionRecord {
     bool    rejected = false;
     QString note;
     QVector<PassRecord> passes;
+    // Metadata Infuser SVG (Pi export) + its placement over the image —
+    // normalized to image size; the export bakes this into the meta layer.
+    QString metaSvg;             // path (rel to captureDir, or abs if archive)
+    double  metaX = 0.04;        // left edge, fraction of image width
+    double  metaY = 0.78;        // top edge, fraction of image height
+    double  metaW = 0.25;        // block width, fraction of image width
+    bool    metaWhite = false;   // white-line variant (for dark scans)
 };
 
 class SessionStore : public QAbstractListModel
@@ -74,6 +81,11 @@ public:
         PassDimsRole,        // QVariantList<QVariantMap{w,h}> — original px
         PassTileBasesRole,   // QVariantList<QString> — dz base path or ""
         CreatedRole,         // qint64 wall ms
+        MetaSvgRole,         // abs path or "" (white variant if metaWhite)
+        MetaXRole,
+        MetaYRole,
+        MetaWRole,
+        MetaWhiteRole,
     };
 
     explicit SessionStore(XylodLink *link, QObject *parent = nullptr);
@@ -91,6 +103,8 @@ public:
     Q_INVOKABLE void setRating(int row, int rating);
     Q_INVOKABLE void setRejected(int row, bool rejected);
     Q_INVOKABLE void setNote(int row, const QString &note);
+    Q_INVOKABLE void setMetaPlacement(int row, double x, double y, double w);
+    Q_INVOKABLE void setMetaWhite(int row, bool white);
 
     double freeGB() const { return m_freeGB; }
     int sessionsRemaining() const { return m_sessionsRemaining; }
@@ -140,6 +154,8 @@ private:
     QString proxiesDir() const;
     void touchRow(int row);
     void refreshDisk();
+    void pairMetaSvg(const QString &absPath, qint64 mtimeMs);
+    QString metaSvgPath(const SessionRecord &s) const;
     qint64 sessionBytes(const SessionRecord &s) const;
     void appendDeletionLog(const SessionRecord &s, qint64 bytes) const;
     QString passAbsPath(const PassRecord &p) const;

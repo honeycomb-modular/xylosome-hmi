@@ -18,6 +18,15 @@ Item {
     property int imgW: 0
     property int imgH: 0
 
+    // Metadata overlay (Pi SVG) — placement normalized to image size.
+    // Drag moves; the corner handle scales; placementChanged fires on release.
+    property string metaSource: ""
+    property real metaX: 0.04
+    property real metaY: 0.78
+    property real metaW: 0.25
+    property bool metaVisible: true
+    signal placementChanged(real x, real y, real w)
+
     readonly property real fitZoom: (imgW > 0 && imgH > 0 && width > 0 && height > 0)
         ? Math.min(width / imgW, height / imgH) : 1
     property real zoom: fitZoom
@@ -122,6 +131,97 @@ Item {
                     source: modelData.url
                     asynchronous: true
                     smooth: view.zoom < 1.5   // crisp pixels past 1:1
+                }
+            }
+
+            // ── metadata block — part of the print: lives in IMAGE
+            //    coordinates, so it always scales with the image. Drag and
+            //    the corner handle write gesture offsets (gx/gy/gw, image
+            //    px) layered over the bindings — zoom tracking can never
+            //    break, during or after a gesture.
+            Image {
+                id: meta
+                property real gx: 0
+                property real gy: 0
+                property real gw: 0
+                visible: view.metaVisible && view.metaSource !== ""
+                source: view.metaSource !== ""
+                        ? "file:///" + view.metaSource.replace(/^\//, "") : ""
+                x: (view.metaX * view.imgW + gx) * view.zoom
+                y: (view.metaY * view.imgH + gy) * view.zoom
+                width: Math.max(8, (view.metaW * view.imgW + gw) * view.zoom)
+                height: status === Image.Ready && implicitWidth > 0
+                        ? width * implicitHeight / implicitWidth : width * 0.35
+                // re-rasterize the vector at (quantized) display width so
+                // the typography stays crisp at any zoom — it's the art
+                sourceSize.width: Math.min(4096, Math.max(256, Math.ceil(width / 256) * 256))
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+
+                function commit() {
+                    view.placementChanged(view.metaX + gx / view.imgW,
+                                          view.metaY + gy / view.imgH,
+                                          view.metaW + gw / view.imgW)
+                    gx = 0; gy = 0; gw = 0
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "transparent"
+                    border.width: metaDrag.containsMouse || metaDrag.pressed
+                                  || handleArea.containsMouse || handleArea.pressed ? 1 : 0
+                    border.color: "#1A1A1A"
+                }
+
+                MouseArea {
+                    id: metaDrag
+                    anchors.fill: parent
+                    // tiny block stays draggable: grow the hit area to at
+                    // least 28 px so the pan gesture can't steal it
+                    anchors.margins: -Math.max(0,
+                        (28 - Math.min(meta.width, meta.height)) / 2)
+                    preventStealing: true   // the Flickable must NEVER take
+                                            // over a drag that began here
+                    hoverEnabled: true
+                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                    property real px: 0
+                    property real py: 0
+                    onPressed: (m) => { px = m.x; py = m.y }
+                    onPositionChanged: (m) => {
+                        if (!pressed) return
+                        meta.gx += (m.x - px) / view.zoom
+                        meta.gy += (m.y - py) / view.zoom
+                    }
+                    onReleased: meta.commit()
+                }
+
+                // scale handle — visible while the block is big enough on
+                // screen for the handle not to swallow it; for a tiny block,
+                // zoom in and the handle returns at a workable size
+                Rectangle {
+                    width: 12
+                    height: 12
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    visible: meta.width > 32
+                    color: handleArea.pressed ? "#1A1A1A" : "#B3FFFFFF"
+                    border.width: 1
+                    border.color: "#1A1A1A"
+                    MouseArea {
+                        id: handleArea
+                        anchors.fill: parent
+                        anchors.margins: -10
+                        preventStealing: true
+                        hoverEnabled: true
+                        cursorShape: Qt.SizeFDiagCursor
+                        property real px: 0
+                        onPressed: (m) => px = m.x
+                        onPositionChanged: (m) => {
+                            if (!pressed) return
+                            meta.gw += (m.x - px) / view.zoom
+                        }
+                        onReleased: meta.commit()
+                    }
                 }
             }
         }
