@@ -64,4 +64,7 @@ target_link_libraries(ec_meter PRIVATE soem nlohmann_json::nlohmann_json pthread
 add_executable(ec_step    ../tools/ec_step.cpp)
 target_link_libraries(ec_step PRIVATE soem pthread)
 
-install(TARGETS xylod ec_scan motor_test ec_blink ec_meter ec_step RUNTIME DESTINATION /usr/local/bin)
+add_executable(ec_dial    ../tools/ec_dial.cpp)
+target_link_libraries(ec_dial PRIVATE soem nlohmann_json::nlohmann_json pthread)
+
+install(TARGETS xylod ec_scan motor_test ec_blink ec_meter ec_step ec_dial RUNTIME DESTINATION /usr/local/bin)
