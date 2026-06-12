@@ -2,10 +2,14 @@
 // xylod axis position. Turn the pendant dial (capture ▸ dial-jog on the Pi),
 // the leadscrew turns.
 //
-//   sudo ./ec_dial enp4s0 [gear=50] [host=127.0.0.1] [port=5510]
+//   sudo ./ec_dial enp4s0 [gear=50] [kp=30] [maxrevs=2] [host=127.0.0.1] [port=5510]
 //
-// gear = motor revolutions per axis revolution (default 50, like the harmonic
-// drive: one 1.0-degree dial click ~= 1/7 motor rev).
+// gear    = motor revolutions per axis revolution (default 50, like the
+//           harmonic drive: one 1.0-degree dial click ~= 1/7 motor rev).
+// kp      = controller stiffness, 1/s. Settling time ~ 3/kp: 6 = soft glide
+//           (~0.5 s tail), 30 = detent-crisp (~0.1 s), higher = harder still.
+// maxrevs = velocity clamp in motor rev/s (instant-start headroom for an
+//           unloaded NEMA 8; lower it if fast spins make it stall/skip).
 //
 // One side: xylod TCP client reading posDeg from status broadcasts (ec_meter
 // pattern). Other side: EL7047 velocity-direct mode (ec_step pattern, same
@@ -36,10 +40,10 @@ static void onSigint(int) { g_run = false; }
 
 static constexpr double SPEED_RANGE_FS = 2000.0;  // 0x8012:05 default
 static constexpr double FULLSTEPS_REV  = 200.0;
-static constexpr double MAX_FS         = 600.0;   // velocity clamp (3 rev/s)
-static constexpr double KP             = 6.0;     // 1/s: vel = KP * pos error
 static constexpr double DT             = 0.01;    // 10 ms cycle
 static constexpr uint16 MAX_CURRENT_MA = 300;
+static double MAX_FS = 400.0;                     // velocity clamp [fullsteps/s]
+static double KP     = 30.0;                      // 1/s: vel = KP * pos error
 
 static void readerThread(std::string host, int port) {
     while (g_run) {
@@ -90,8 +94,10 @@ static bool sdoU8(uint16 slave, uint16 idx, uint8 sub, uint8 val) {
 int main(int argc, char **argv) {
     const char  *iface = argc > 1 ? argv[1] : "enp4s0";
     const double gear  = argc > 2 ? atof(argv[2]) : 50.0;
-    const std::string host = argc > 3 ? argv[3] : "127.0.0.1";
-    const int    port  = argc > 4 ? atoi(argv[4]) : 5510;
+    KP                 = argc > 3 ? atof(argv[3]) : 30.0;
+    MAX_FS             = (argc > 4 ? atof(argv[4]) : 2.0) * FULLSTEPS_REV;
+    const std::string host = argc > 5 ? argv[5] : "127.0.0.1";
+    const int    port  = argc > 6 ? atoi(argv[6]) : 5510;
     std::signal(SIGINT, onSigint);
 
     const double fsPerDeg = gear * FULLSTEPS_REV / 360.0;
@@ -109,8 +115,8 @@ int main(int argc, char **argv) {
     ok &= sdoU16(drv, 0x8010, 0x03, 2400);
     ok &= sdoU8 (drv, 0x8012, 0x01, 1);                 // velocity direct
     if (!ok) { std::printf("CoE config failed — aborting\n"); ec_close(); return 1; }
-    std::printf("EL7047 at position %d configured (%.0f mA, gear %.1f)\n",
-                drv, double(MAX_CURRENT_MA), gear);
+    std::printf("EL7047 at position %d configured (%.0f mA, gear %.1f, kp %.0f, max %.1f rev/s)\n",
+                drv, double(MAX_CURRENT_MA), gear, KP, MAX_FS / FULLSTEPS_REV);
 
     ec_config_map(&IOmap);
     ec_configdc();
