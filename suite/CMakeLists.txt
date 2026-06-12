@@ -25,10 +25,12 @@ qt_add_executable(xylosome-suite
     src/VipsEngine.cpp
 )
 
-# libvips (optional — without it the suite runs, ingest is disabled)
+# libvips (optional — without it the suite runs, ingest is disabled).
+# C API only: stable ABI lets MSVC link the official MinGW-built Windows
+# binaries; vips-cpp would not.
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
-    pkg_check_modules(VIPS IMPORTED_TARGET vips-cpp)
+    pkg_check_modules(VIPS IMPORTED_TARGET vips)
 endif()
 if(VIPS_FOUND)
     target_link_libraries(xylosome-suite PRIVATE PkgConfig::VIPS)

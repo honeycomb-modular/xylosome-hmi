@@ -39,8 +39,11 @@ cmake --build build
 - **Linux**: `apt install qt6-base-dev qt6-declarative-dev libqt6svg6-dev
   qml6-module-qtquick-controls qml6-module-qtquick-dialogs libvips-dev`
   then the commands above (needs a distro shipping Qt ≥ 6.4).
-- **Windows**: `vcpkg install libvips:x64-windows` + pkg-config on PATH
-  (see the CI workflow for the exact recipe).
+- **Windows**: download `vips-dev-x64-all-<version>.zip` from
+  github.com/libvips/build-win64-mxe/releases, extract, put its `bin` on
+  PATH and `lib\pkgconfig` in PKG_CONFIG_PATH (see the CI workflow for the
+  exact recipe). The suite uses the libvips C API, so the official
+  binaries link fine from MSVC.
 
 libvips is optional at build time: without it the suite still builds and
 runs (sessions, pairing, judging), with ingest disabled and a warning in

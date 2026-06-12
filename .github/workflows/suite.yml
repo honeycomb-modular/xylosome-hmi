@@ -38,23 +38,20 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install vips pkgconf
 
-      - name: Cache vcpkg-built libvips
-        if: runner.os == 'Windows'
-        uses: actions/cache@v4
-        with:
-          path: C:\vcpkg\installed
-          key: vcpkg-libvips-x64-windows-v1
-
       - name: Install libvips (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install -y pkgconfiglite
-          vcpkg install libvips:x64-windows
-          "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib\pkgconfig" `
-            | Out-File -FilePath $env:GITHUB_ENV -Append
-          "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" `
-            | Out-File -FilePath $env:GITHUB_PATH -Append
+          $v = "8.18.3"
+          Invoke-WebRequest `
+            "https://github.com/libvips/build-win64-mxe/releases/download/v$v/vips-dev-x64-all-$v.zip" `
+            -OutFile vips.zip
+          Expand-Archive vips.zip -DestinationPath C:\vips
+          $root = (Get-ChildItem C:\vips -Directory | Select-Object -First 1).FullName
+          "VIPS_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PKG_CONFIG_PATH=$root\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       # arm64-only: brew's libvips is single-arch, a universal app can't
       # link it. Intel Macs would need a separate x86_64 job with x86 brew.
@@ -79,8 +76,8 @@ jobs:
           mkdir dist
           Copy-Item build/Release/xylosome-suite.exe dist/
           windeployqt --qmldir suite/qml --release dist/xylosome-suite.exe
-          if (Test-Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin") {
-            Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" dist/
+          if ($env:VIPS_ROOT -and (Test-Path "$env:VIPS_ROOT\bin")) {
+            Copy-Item "$env:VIPS_ROOT\bin\*.dll" dist/
           }
 
       - name: Package (macOS)
