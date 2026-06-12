@@ -49,6 +49,13 @@ jobs:
             -OutFile vips.zip
           Expand-Archive vips.zip -DestinationPath C:\vips
           $root = (Get-ChildItem C:\vips -Directory | Select-Object -First 1).FullName
+          # Relocate the .pc files: they still carry the MXE build prefix.
+          $rootFwd = $root -replace '\\','/'
+          Get-ChildItem "$root\lib\pkgconfig\*.pc" | ForEach-Object {
+            (Get-Content $_.FullName) `
+              -replace '/usr/local/mxe/usr/x86_64-w64-mingw32\.shared', $rootFwd `
+              | Set-Content $_.FullName
+          }
           "VIPS_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
           "PKG_CONFIG_PATH=$root\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
           "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
