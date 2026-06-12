@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -38,72 +38,6 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install vips pkgconf
 
-      # Windows + MSVC + MinGW-built libvips = linker archaeology (LNK1181
-      # intl.lib and friends). Parked: the Windows build is judging-only
-      # until the job moves to the msys2 toolchain, where Qt and libvips
-      # are both native packages. Set SUITE_WIN_VIPS=true to retry.
-      - name: Install libvips (Windows)
-        if: runner.os == 'Windows' && vars.SUITE_WIN_VIPS == 'true'
-        shell: pwsh
-        run: |
-          choco install -y pkgconfiglite
-          $v = "8.18.3"
-          Invoke-WebRequest `
-            "https://github.com/libvips/build-win64-mxe/releases/download/v$v/vips-dev-x64-all-$v.zip" `
-            -OutFile vips.zip
-          Expand-Archive vips.zip -DestinationPath C:\vips
-          $root = (Get-ChildItem C:\vips -Directory | Select-Object -First 1).FullName
-          # Relocate the .pc files: they still carry the MXE build prefix.
-          $rootFwd = $root -replace '\\','/'
-          Get-ChildItem "$root\lib\pkgconfig\*.pc" | ForEach-Object {
-            (Get-Content $_.FullName) `
-              -replace '/usr/local/mxe/usr/x86_64-w64-mingw32\.shared', $rootFwd `
-              | Set-Content $_.FullName
-          }
-          # The .pc may reference include dirs the zip doesn't ship
-          # (e.g. librsvg-2.0); CMake rejects imported targets with
-          # missing paths — create the empty dirs.
-          $env:PKG_CONFIG_PATH = "$root\lib\pkgconfig"
-          (pkg-config --cflags-only-I vips) -split '\s+' |
-            Where-Object { $_ -like '-I*' } |
-            ForEach-Object { New-Item -ItemType Directory -Force $_.Substring(2) | Out-Null }
-          # MSVC wants foo.lib; MinGW ships libfoo.dll.a — alias every lib
-          # the .pc asks for.
-          (pkg-config --libs-only-l vips) -split '\s+' |
-            Where-Object { $_ -like '-l*' } |
-            ForEach-Object {
-              $n = $_.Substring(2)
-              $target = "$root\lib\$n.lib"
-              if (-not (Test-Path $target)) {
-                foreach ($cand in @("lib$n.lib","lib$n.dll.a","$n.dll.a","lib$n.a")) {
-                  if (Test-Path "$root\lib\$cand") {
-                    Copy-Item "$root\lib\$cand" $target; break
-                  }
-                }
-              }
-            }
-          # Strip -l entries that still have no .lib (e.g. -lintl: its
-          # symbols live inside glib's DLL here; safe to drop for dynamic
-          # linking). Applied to every .pc in the chain.
-          Get-ChildItem "$root\lib\pkgconfig\*.pc" | ForEach-Object {
-            $lines = Get-Content $_.FullName | ForEach-Object {
-              if ($_ -match '^Libs') {
-                (($_ -split ' ') | Where-Object {
-                  -not ($_ -like '-l*') -or
-                  (Test-Path "$root\lib\$($_.Substring(2)).lib")
-                }) -join ' '
-              } else { $_ }
-            }
-            Set-Content $_.FullName $lines
-          }
-          Write-Host "final vips Libs:"
-          Select-String '^Libs' "$root\lib\pkgconfig\vips.pc"
-          Write-Host "lib dir:"
-          (Get-ChildItem "$root\lib" -File | Select-Object -ExpandProperty Name) -join "  "
-          "VIPS_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "PKG_CONFIG_PATH=$root\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
       # arm64-only: brew's libvips is single-arch, a universal app can't
       # link it. Intel Macs would need a separate x86_64 job with x86 brew.
       - name: Configure (macOS)
@@ -119,17 +53,6 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          mkdir dist
-          Copy-Item build/Release/xylosome-suite.exe dist/
-          windeployqt --qmldir suite/qml --release dist/xylosome-suite.exe
-          if ($env:VIPS_ROOT -and (Test-Path "$env:VIPS_ROOT\bin")) {
-            Copy-Item "$env:VIPS_ROOT\bin\*.dll" dist/
-          }
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -149,4 +72,60 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xylosome-suite-${{ runner.os }}
+          path: dist/
+
+  # Windows on msys2/UCRT64: Qt 6 and libvips are both native packages of
+  # the same toolchain — no MSVC ⇄ MinGW import-lib archaeology (see
+  # suite/NEXT_SESSION.md for the history). Ingest enabled.
+  build-windows:
+    name: windows-msys2
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-declarative
+            mingw-w64-ucrt-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-qt6-tools
+            mingw-w64-ucrt-x86_64-libvips
+
+      - name: Configure
+        run: cmake -S suite -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build/xylosome-suite.exe dist/
+          WDQ=$(command -v windeployqt-qt6 || command -v windeployqt6 || command -v windeployqt)
+          "$WDQ" --qmldir suite/qml --release dist/xylosome-suite.exe
+          # windeployqt covers Qt; pull the rest of the DLL chain (vips,
+          # glib, jpeg, …) from the dependency list.
+          ldd dist/xylosome-suite.exe | grep -io '/ucrt64/bin/[^ ]*\.dll' | sort -u \
+            | xargs -r -I{} cp -n {} dist/ || true
+          # vips loads image format support at runtime too — take every
+          # ucrt64 DLL that any copied DLL depends on (one transitive pass).
+          for f in dist/*.dll; do
+            ldd "$f" 2>/dev/null | grep -io '/ucrt64/bin/[^ ]*\.dll' || true
+          done | sort -u | xargs -r -I{} cp -n {} dist/ || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xylosome-suite-Windows
           path: dist/
