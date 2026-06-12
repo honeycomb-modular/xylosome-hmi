@@ -778,3 +778,8 @@ EL2008 channel LEDs at a 10 ms cycle with WKC verification.
 3. Field power: Up + EL7047 motor supply come from the power-panel build
    (220 V cart panel; hardwired e-stop chain + contactors; sequencing via
    timer relays or Teensy — Schneider PLCs optional, see session notes).
+
+### VERIFIED on hardware 2026-06-11 ✅
+`ec_blink enp4s0 15` ran on the bench: segment to OP (RUN LEDs solid),
+chase + all-flash visible on EL2008 channel LEDs (Up bridged from the same
+bench 24 V). First process data ever exchanged with the real Xylosome bus.
