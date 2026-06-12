@@ -692,7 +692,7 @@ static QVector<ArchiveGroup> buildProposals(const QString &dir)
         const bool restart = !groups.isEmpty() && !groups.last().files.isEmpty()
                              && token == QLatin1String("R");
         if (groups.isEmpty() || gap || full || restart)
-            groups.append({});
+            groups.append(ArchiveGroup());
 
         ArchiveGroup &g = groups.last();
         g.files.append({ fi.absoluteFilePath(), mtime });
