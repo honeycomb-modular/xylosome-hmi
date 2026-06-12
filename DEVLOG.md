@@ -783,3 +783,14 @@ EL2008 channel LEDs at a 10 ms cycle with WKC verification.
 `ec_blink enp4s0 15` ran on the bench: segment to OP (RUN LEDs solid),
 chase + all-flash visible on EL2008 channel LEDs (Up bridged from the same
 bench 24 V). First process data ever exchanged with the real Xylosome bus.
+
+### ec_meter — pendant-to-photon VERIFIED 2026-06-11 ✅
+`beckhoff/tools/ec_meter.cpp`: xylod TCP client on one side (reads posDeg
+from status broadcasts), SOEM master on the other — live axis position
+rendered as a wrapping dot on the EL2008 LEDs (1°/LED default). Runs
+alongside the sim xylod service (sim never opens the NIC — no master
+conflict). Verified end to end: Grayhill detent → Teensy analog Schmitt →
+USB → Pi capture ▸ dial-jog → TCP moveTo → sim axis → status @25 Hz →
+ec_meter → EtherCAT @10 ms → photon. One click = one LED, both directions;
+fast spins sweep (sim glide at moveTo velocity). Every layer of the
+architecture except the real motor is now hardware-proven.
