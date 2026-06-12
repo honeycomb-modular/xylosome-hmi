@@ -687,3 +687,57 @@ integration). Next idea (not built): encoder dial as pendant-native jog.
   `vcgencmd measure_temp`); metal enclosure: thermal-pad SoC/HAT to wall
   (case = heatsink) and NOTE: metal = Faraday cage, Wi-Fi/BT die — wired only,
   by design.
+
+---
+
+## 2026-06-11 — Xylosome Suite: plan → working live-review app in one session ✅
+
+### Plan
+- New deliverable defined: **Xylosome Suite** — the cart's review computer app
+  (Win 11 primary / macOS / Linux). Live tethered review: HMI triggers →
+  xylod scans → suite shows, judges, keeps. Replaces Photoshop+folders.
+- Full plan + design language decided and documented:
+  `docs/concept/review_suite_plan.md` (scope, proxy pipeline, judging aids,
+  import/backfill, permanent delete, offline proxies, foundations, phases).
+- Design: pure white chrome, neutral gray image field, R/G/B/C as the only
+  color, sans type, keyboard-first, slim filmstrip, no Save command.
+
+### Built (suite/ + CI, phases 0–3)
+- **Phase 0**: CMake + Qt 6 skeleton, splash (HM logo → "Xylosome Suite"),
+  menu bar; CI matrix builds + packages on Win/macOS/Linux from first push.
+- **Phase 1**: `XylodLink` (observer-only BeckhoffLink port, client "suite",
+  wall-clock stamps on pass events); live scan indicator; fault banner;
+  `suite/tools/fake_xylod.py` (protocol emulator, `--write-files` plays
+  capture PC). Verified against real `xylod --sim` (sandbox build, 4-pass
+  event stream exact).
+- **Phase 2a**: `SessionStore` (sessions from events, UUID, schema-1 sidecar
+  JSON in `<capture>/.xylosome/sessions/`, write-through judging, partial
+  sessions kept); `FolderWatcher` (size-stability guard); file⇄pass pairing
+  by wall-clock window; filmstrip with per-pass ticks; keys 1–5/0/X/←→.
+- **Phase 2b**: `VipsEngine` (worker thread, **libvips C API**): dz JPEG tile
+  pyramid (256 px, q90, 16→8 fixed map) + ≤2048 px preview + histogram/clip
+  from one 16-bit pass → sidecar. Crash-safe re-ingest on startup.
+  Thumbnails + previews in UI; channel solo R/G/B/C, A=auto; clip readout.
+- **Phase 3**: `ZoomView.qml` — deep-zoom over the dz pyramid, wheel/pinch
+  about cursor, drag pan, double-click/Z fit⇄1:1, 400 % cap, tile streaming
+  (constant memory on >1 GB scans).
+- **Pairing drift guards** (after live test caught channel shuffle):
+  filename filter-token must match pass; holes seal once the stream passes.
+
+### Verified on the Mac (fake rig)
+Two terminals: `fake_xylod.py --write-files ~/xylosome-test-capture` +
+`XYLOD_HOST=127.0.0.1 CAPTURE_DIR=... xylosome-suite`. Sessions appear live,
+TIFFs pair to correct channels, pyramids/histograms generate, zoom works,
+ratings persist across restart.
+
+### CI battles (all documented in workflow comments)
+- glib `signals` field vs Qt macro → vips includes before Qt. ✅
+- macOS universal binary vs arm64-only brew libvips → arm64 only. ✅
+- vcpkg has **no libvips port** → official `build-win64-mxe` binaries.
+- Windows MinGW-built vips + MSVC: .pc prefix relocation ✅, phantom include
+  dirs ✅, import-lib aliasing ✅ — still LNK1181 (`intl.lib`). **Parked**:
+  Windows CI artifact is judging-only (`vars.SUITE_WIN_VIPS` gate).
+- Run #13: **all three platforms green.**
+
+### Next session
+See `suite/NEXT_SESSION.md`.
