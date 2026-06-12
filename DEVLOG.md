@@ -794,3 +794,38 @@ USB → Pi capture ▸ dial-jog → TCP moveTo → sim axis → status @25 Hz �
 ec_meter → EtherCAT @10 ms → photon. One click = one LED, both directions;
 fast spins sweep (sim glide at moveTo velocity). Every layer of the
 architecture except the real motor is now hardware-proven.
+
+### ec_step — FIRST PHYSICAL MOTION on the real bus 2026-06-11 ✅
+Hanpose 20HT24-T5×1-150 (NEMA 8 linear stepper, label: Red A+/Green A−/
+Yellow B+/Blue B−) on the EL7047: spun +0.5 rev/s 10 s, −0.5 rev/s 10 s,
+clean status throughout (Ready, Moving±, no warn/err/stall), 300 mA limit.
+`beckhoff/tools/ec_step.cpp` — velocity-direct mode, every CoE index
+doc-verified (0x8010 motor settings, 0x8012:01 mode, default predefined PDO
+"Velocity control compact" 0x1600/0x1602/0x1604 + 0x1A00/0x1A03 = 8/8 bytes).
+
+#### Hard-won wiring facts (bench truth, recorded so we never re-learn them)
+- **EL7047 has TWO separate supplies:** motor current via terminal points
+  3'/7' (right section), and *drive electronics ("control power") via the
+  brass power-contact rail* — fed ONLY through the EK1100's + / − clamps.
+  Feeding 3'/7' directly from the PSU left the rail dead → persistent
+  0xA010:08 "no control power". Diag dump in ec_step named it correctly.
+- **Final topology:** PSU → 3'/7' (motor) → internal pairing 3'=4', 7'=8' →
+  taps from 4'/8' back to the EK1100 + / − clamps → rail energized →
+  control power OK. (Textbook alternative: PSU into +/− clamps, jumpers out
+  to 3'/7'. Either is valid; ours touches less.)
+- **EL7047 left points 3/7 are a documented rail tap** (encoder supply) —
+  perfect empty-hole test points for "is the power-contact rail live?"
+- **EK1100 clamp rows:** 24V/0V = Us (coupler+E-bus), + +/− − = Up rail
+  feed-ins (two internally-common holes per row), PE bottom. The +/− rows
+  are INPUTS — nothing feeds them implicitly.
+- **Correction:** EL2008 channel LEDs indicate commanded logic state and lit
+  WITHOUT Up — earlier claim (field-powered, "Up proven by the LED chase")
+  was wrong and cost a debugging detour. The rail was dead all night until
+  the 4'/8' taps went in.
+
+#### Next (candidates)
+- Pendant-dial → stepper (ec_meter pattern with velocity/position follow)
+- EL7047 adaptation of EcBackend + xylod.conf rewrite (positions: EK1100=1,
+  EL1008=2, EL2008=3, EL7047=4; ec_iface=enp4s0) — the real-motor path
+- Raise current to motor spec once Hanpose 20HT24 rating is known (measure
+  coil R, or run warm-touch test at 300→500 mA)
