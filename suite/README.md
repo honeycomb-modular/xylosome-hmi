@@ -47,7 +47,9 @@ cmake --build build
 
 libvips is optional at build time: without it the suite still builds and
 runs (sessions, pairing, judging), with ingest disabled and a warning in
-the log.
+the log. **Current CI state**: macOS and Linux build with ingest; the
+Windows CI artifact is judging-only until the job moves to msys2
+(MSVC ⇄ MinGW-libvips link issues, see workflow comment).
 
 ## Conventions
 

@@ -38,8 +38,12 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install vips pkgconf
 
+      # Windows + MSVC + MinGW-built libvips = linker archaeology (LNK1181
+      # intl.lib and friends). Parked: the Windows build is judging-only
+      # until the job moves to the msys2 toolchain, where Qt and libvips
+      # are both native packages. Set SUITE_WIN_VIPS=true to retry.
       - name: Install libvips (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && vars.SUITE_WIN_VIPS == 'true'
         shell: pwsh
         run: |
           choco install -y pkgconfiglite
