@@ -34,7 +34,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev
 
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: >
+          cmake -S suite -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+
       - name: Configure
+        if: runner.os != 'macOS'
         run: cmake -S suite -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
