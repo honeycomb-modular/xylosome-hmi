@@ -1,5 +1,6 @@
 // Xylosome Suite — main window.
-// Phase 0: splash → empty main screen in the design language.
+// Splash → live review: scan indicator, image field (pass previews,
+// channel solo), metadata strip, filmstrip, keyboard judging.
 // Design decisions: docs/concept/review_suite_plan.md → "Design language".
 
 import QtQuick
@@ -58,6 +59,30 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.MoveToPreviousChar]; onActivated: strip.decrementCurrentIndex() }
     Shortcut { sequences: [StandardKey.MoveToNextChar]; onActivated: strip.incrementCurrentIndex() }
 
+    // Channel solo (plan → Judging aids): R/G/B/C keys, A back to auto
+    property string soloChannel: "auto"
+    Shortcut { sequences: ["R"]; onActivated: root.soloChannel = "R" }
+    Shortcut { sequences: ["G"]; onActivated: root.soloChannel = "G" }
+    Shortcut { sequences: ["B"]; onActivated: root.soloChannel = "B" }
+    Shortcut { sequences: ["C"]; onActivated: root.soloChannel = "C" }
+    Shortcut { sequences: ["A"]; onActivated: root.soloChannel = "auto" }
+
+    // Index of the pass shown in the image field for the current session
+    readonly property int shownPass: {
+        const it = strip.currentItem
+        if (!it) return -1
+        if (soloChannel !== "auto") {
+            for (let i = 0; i < it.sPassFilters.length; i++)
+                if (it.sPassFilters[i] === soloChannel && it.sPassPreviews[i] !== "")
+                    return i
+            return -1
+        }
+        for (let i = it.sPassPreviews.length - 1; i >= 0; i--)
+            if (it.sPassPreviews[i] !== "")
+                return i
+        return -1
+    }
+
     // ── Menus (every item shows its key — the menu is the cheat sheet)
     menuBar: MenuBar {
         background: Rectangle { color: "#FFFFFF" }
@@ -86,7 +111,10 @@ ApplicationWindow {
         Menu {
             title: qsTr("&View")
             MenuItem { text: qsTr("Grid / timeline"); enabled: false }
-            MenuItem { text: qsTr("Channel solo"); enabled: false }
+            MenuItem {
+                text: qsTr("Channel solo R/G/B/C — A auto")
+                enabled: false   // reference only; the keys do the work
+            }
             MenuItem { text: qsTr("Zoom 1:1"); enabled: false }
             MenuItem { text: qsTr("Gray surround"); enabled: false }
         }
@@ -102,7 +130,7 @@ ApplicationWindow {
         }
     }
 
-    // ── Main screen (phase 0: layout regions, empty) ─────────────────
+    // ── Main screen ──────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -204,16 +232,53 @@ ApplicationWindow {
             }
         }
 
-        // Image field — pixels arrive in phase 2b (tile pyramids); until
-        // then the selected session shows its identity card.
+        // Image field — fit preview of the shown pass (deep-zoom tiles
+        // come with the phase 3 viewer); neutral gray surround.
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: root.imageField
+
+            Image {
+                id: passImage
+                anchors.fill: parent
+                anchors.margins: 24
+                source: root.shownPass >= 0 && strip.currentItem
+                        ? "file:///" + strip.currentItem.sPassPreviews[root.shownPass].replace(/^\//, "")
+                        : ""
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                opacity: status === Image.Ready ? 1 : 0
+                Behavior on opacity {
+                    NumberAnimation { duration: root.easeMs; easing.type: Easing.OutCubic }
+                }
+            }
+
+            // channel badge — bottom left, the only color on the field
+            Row {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                spacing: 8
+                visible: root.shownPass >= 0 && strip.currentItem !== null
+                Label {
+                    text: strip.currentItem && root.shownPass >= 0
+                          ? strip.currentItem.sPassFilters[root.shownPass] : ""
+                    color: root.filterColor(text)
+                    font.pixelSize: 13
+                }
+                Label {
+                    text: root.soloChannel === "auto" ? qsTr("auto") : qsTr("solo")
+                    color: "#CCCCCC"
+                    font.pixelSize: 11
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
             Column {
                 anchors.centerIn: parent
                 spacing: 8
-                visible: strip.currentItem !== null
+                visible: strip.currentItem !== null && root.shownPass < 0
                 Label {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: strip.currentItem ? "session " + strip.currentItem.sSeq : ""
@@ -224,8 +289,10 @@ ApplicationWindow {
                 Label {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: strip.currentItem
-                          ? strip.currentItem.sState
-                            + (strip.currentItem.sRejected ? qsTr(" · rejected") : "")
+                          ? (root.soloChannel !== "auto"
+                             ? qsTr("%1 — no image yet").arg(root.soloChannel)
+                             : strip.currentItem.sState
+                               + (strip.currentItem.sRejected ? qsTr(" · rejected") : ""))
                           : ""
                     color: strip.currentItem && strip.currentItem.sState === "partial"
                            ? "#FFFFFF" : "#AAAAAA"
@@ -280,6 +347,17 @@ ApplicationWindow {
                 }
                 Item { Layout.fillWidth: true }
                 Label {
+                    text: {
+                        if (!strip.currentItem || root.shownPass < 0) return ""
+                        const c = strip.currentItem.sPassClips[root.shownPass]
+                        if (!c || c.black < 0) return ""
+                        return qsTr("clip ▼%1% ▲%2%")
+                            .arg(c.black.toFixed(2)).arg(c.white.toFixed(2))
+                    }
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                }
+                Label {
                     text: strip.currentItem && strip.currentItem.sRating > 0
                           ? root.stars(strip.currentItem.sRating) : ""
                     color: root.ink
@@ -328,6 +406,8 @@ ApplicationWindow {
                     required property var passFilters
                     required property var passPaired
                     required property var passDurations
+                    required property var passPreviews
+                    required property var passClips
                     // surfaced for the rest of the UI via strip.currentItem
                     readonly property int sSeq: seq
                     readonly property string sState: sessionState
@@ -337,6 +417,8 @@ ApplicationWindow {
                     readonly property var sPassFilters: passFilters
                     readonly property var sPassPaired: passPaired
                     readonly property var sPassDurations: passDurations
+                    readonly property var sPassPreviews: passPreviews
+                    readonly property var sPassClips: passClips
                     width: 56
                     height: strip.height
                     Column {
@@ -350,6 +432,20 @@ ApplicationWindow {
                             opacity: cell.rejected ? 0.5 : 1
                             border.width: cell.ListView.isCurrentItem ? 1.5 : 0
                             border.color: root.ink
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                source: {
+                                    for (let i = 0; i < cell.passPreviews.length; i++)
+                                        if (cell.passPreviews[i] !== "")
+                                            return "file:///" + cell.passPreviews[i].replace(/^\//, "")
+                                    return ""
+                                }
+                                sourceSize.height: 60
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                opacity: cell.rejected ? 0.4 : 1
+                            }
                             Label {
                                 anchors.centerIn: parent
                                 visible: cell.sessionState === "live"

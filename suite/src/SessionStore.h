@@ -12,10 +12,12 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
+#include <QThread>
 #include <QVector>
 
 class XylodLink;
 class FolderWatcher;
+class VipsEngine;
 
 struct PassRecord {
     int     index = -1;          // 0..3
@@ -25,6 +27,11 @@ struct PassRecord {
     qint64  wallStartMs = -1;    // suite wall clock at event arrival
     qint64  wallEndMs = -1;
     QString file;                // paired TIFF (name relative to capture dir)
+    bool    sealed = false;      // transient: hole skipped by the stream, never pair
+    QString preview;             // abs path of pass_<i>_preview.jpg ("" = pending)
+    double  clipBlackPct = -1;   // -1 = not computed
+    double  clipWhitePct = -1;
+    QVector<double> hist256;
 };
 
 struct SessionRecord {
@@ -58,6 +65,8 @@ public:
         PassFiltersRole,     // QStringList, e.g. ["R","G","B"]
         PassPairedRole,      // QVariantList<bool> — file present per pass
         PassDurationsRole,   // QVariantList<double> — seconds per pass, -1 if open
+        PassPreviewsRole,    // QVariantList<QString> — preview abs path or ""
+        PassClipsRole,       // QVariantList<QVariantMap{black,white}> — % or -1
     };
 
     explicit SessionStore(XylodLink *link, QObject *parent = nullptr);
@@ -88,6 +97,10 @@ private slots:
     void onFaulted(const QString &text);
     void onLinkDropped();
     void onFileReady(const QString &absPath, qint64 mtimeMs);
+    void onIngested(const QString &sessionUuid, int passIndex,
+                    const QString &previewAbs,
+                    double clipBlackPct, double clipWhitePct,
+                    const QVariantList &hist256);
 
 private:
     SessionRecord *liveSession();
@@ -96,11 +109,15 @@ private:
     void save(const SessionRecord &s) const;
     void loadExisting();
     void pairPendingFiles();
+    void enqueueIngest(const SessionRecord &s, const PassRecord &p);
     QString sidecarDir() const;
+    QString proxiesDir() const;
     void touchRow(int row);
 
     XylodLink *m_link = nullptr;
     FolderWatcher *m_watcher = nullptr;
+    VipsEngine *m_engine = nullptr;
+    QThread m_engineThread;
     QString m_captureDir;
     QVector<SessionRecord> m_sessions;
     QVector<QPair<QString, qint64>> m_unpaired;   // absPath, mtimeMs

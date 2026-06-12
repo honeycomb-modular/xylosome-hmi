@@ -1,6 +1,7 @@
 // SessionStore.cpp — see SessionStore.h.
 #include "SessionStore.h"
 #include "FolderWatcher.h"
+#include "VipsEngine.h"
 #include "XylodLink.h"
 
 #include <QDir>
@@ -8,6 +9,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QCoreApplication>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QUuid>
 #include <QDebug>
@@ -33,6 +37,21 @@ SessionStore::SessionStore(XylodLink *link, QObject *parent)
     });
     connect(m_watcher, &FolderWatcher::fileReady, this, &SessionStore::onFileReady);
 
+    // Ingest engine in its own thread — UI never waits on a 1 GB TIFF.
+    m_engine = new VipsEngine;
+    m_engine->moveToThread(&m_engineThread);
+    connect(&m_engineThread, &QThread::finished, m_engine, &QObject::deleteLater);
+    connect(m_engine, &VipsEngine::ingested, this, &SessionStore::onIngested);
+    connect(m_engine, &VipsEngine::failed, this,
+            [](const QString &uuid, int pass, const QString &err) {
+                qWarning() << "[sessions] ingest failed" << uuid << "pass" << pass << err;
+            });
+    m_engineThread.start();
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
+        m_engineThread.quit();
+        m_engineThread.wait(3000);
+    });
+
     QSettings s;
     QString dir = s.value(QStringLiteral("capture/folder")).toString();
     if (qEnvironmentVariableIsSet("CAPTURE_DIR"))
@@ -56,6 +75,8 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassFiltersRole, "passFilters" },
         { PassPairedRole,  "passPaired" },
         { PassDurationsRole, "passDurations" },
+        { PassPreviewsRole, "passPreviews" },
+        { PassClipsRole, "passClips" },
     };
 }
 
@@ -87,6 +108,18 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
         for (const PassRecord &p : s.passes)
             v << (p.tEndMs >= 0 && p.tStartMs >= 0
                       ? (p.tEndMs - p.tStartMs) / 1000.0 : -1.0);
+        return v;
+    }
+    case PassPreviewsRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes) v << p.preview;
+        return v;
+    }
+    case PassClipsRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes)
+            v << QVariantMap{ { QStringLiteral("black"), p.clipBlackPct },
+                              { QStringLiteral("white"), p.clipWhitePct } };
         return v;
     }
     }
@@ -130,6 +163,47 @@ QString SessionStore::sidecarDir() const
     return m_captureDir + QStringLiteral("/.xylosome/sessions");
 }
 
+QString SessionStore::proxiesDir() const
+{
+    return m_captureDir + QStringLiteral("/.xylosome/proxies");
+}
+
+void SessionStore::enqueueIngest(const SessionRecord &s, const PassRecord &p)
+{
+    if (p.file.isEmpty())
+        return;
+    const QString abs = m_captureDir + QLatin1Char('/') + p.file;
+    const QString proxyDir = proxiesDir() + QLatin1Char('/') + s.uuid;
+    QMetaObject::invokeMethod(m_engine, "ingest", Qt::QueuedConnection,
+                              Q_ARG(QString, s.uuid), Q_ARG(int, p.index),
+                              Q_ARG(QString, abs), Q_ARG(QString, proxyDir));
+}
+
+void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
+                              const QString &previewAbs,
+                              double clipBlackPct, double clipWhitePct,
+                              const QVariantList &hist256)
+{
+    for (int row = 0; row < m_sessions.size(); ++row) {
+        SessionRecord &s = m_sessions[row];
+        if (s.uuid != sessionUuid)
+            continue;
+        for (PassRecord &p : s.passes) {
+            if (p.index != passIndex)
+                continue;
+            p.preview = previewAbs;
+            p.clipBlackPct = clipBlackPct;
+            p.clipWhitePct = clipWhitePct;
+            p.hist256.clear();
+            p.hist256.reserve(hist256.size());
+            for (const QVariant &v : hist256)
+                p.hist256 << v.toDouble();
+            touchRow(row);
+            return;
+        }
+    }
+}
+
 void SessionStore::loadExisting()
 {
     const QDir d(sidecarDir());
@@ -162,6 +236,13 @@ void SessionStore::loadExisting()
             p.wallStartMs = qint64(po.value(QStringLiteral("wallStartMs")).toDouble(-1));
             p.wallEndMs   = qint64(po.value(QStringLiteral("wallEndMs")).toDouble(-1));
             p.file        = po.value(QStringLiteral("file")).toString();
+            const QString prevRel = po.value(QStringLiteral("preview")).toString();
+            if (!prevRel.isEmpty())
+                p.preview = m_captureDir + QLatin1Char('/') + prevRel;
+            p.clipBlackPct = po.value(QStringLiteral("clipBlackPct")).toDouble(-1);
+            p.clipWhitePct = po.value(QStringLiteral("clipWhitePct")).toDouble(-1);
+            for (const QJsonValue &hv : po.value(QStringLiteral("hist256")).toArray())
+                p.hist256 << hv.toDouble();
             s.passes << p;
         }
         if (s.state == QLatin1String("live"))
@@ -170,6 +251,13 @@ void SessionStore::loadExisting()
         m_nextSeq = qMax(m_nextSeq, s.seq + 1);
     }
     qInfo() << "[sessions] loaded" << m_sessions.size() << "sidecars from" << sidecarDir();
+
+    // Crash-safe ingest: paired but proxy missing/incomplete → re-run.
+    for (const SessionRecord &s : m_sessions)
+        for (const PassRecord &p : s.passes)
+            if (!p.file.isEmpty()
+                && (p.preview.isEmpty() || !QFile::exists(p.preview)))
+                enqueueIngest(s, p);
 }
 
 void SessionStore::save(const SessionRecord &s) const
@@ -180,7 +268,7 @@ void SessionStore::save(const SessionRecord &s) const
 
     QJsonArray passes;
     for (const PassRecord &p : s.passes) {
-        passes.append(QJsonObject{
+        QJsonObject po{
             { QStringLiteral("index"),       p.index },
             { QStringLiteral("filter"),      p.filter },
             { QStringLiteral("tStartMs"),    double(p.tStartMs) },
@@ -188,7 +276,18 @@ void SessionStore::save(const SessionRecord &s) const
             { QStringLiteral("wallStartMs"), double(p.wallStartMs) },
             { QStringLiteral("wallEndMs"),   double(p.wallEndMs) },
             { QStringLiteral("file"),        p.file },
-        });
+        };
+        if (!p.preview.isEmpty())
+            po.insert(QStringLiteral("preview"),
+                      QDir(m_captureDir).relativeFilePath(p.preview));
+        if (p.clipBlackPct >= 0) {
+            po.insert(QStringLiteral("clipBlackPct"), p.clipBlackPct);
+            po.insert(QStringLiteral("clipWhitePct"), p.clipWhitePct);
+            QJsonArray h;
+            for (double v : p.hist256) h.append(v);
+            po.insert(QStringLiteral("hist256"), h);
+        }
+        passes.append(po);
     }
     const QJsonObject o{
         { QStringLiteral("schema"),        1 },
@@ -310,27 +409,61 @@ void SessionStore::onFileReady(const QString &absPath, qint64 mtimeMs)
     pairPendingFiles();
 }
 
+// Filter hint from the filename, e.g. "…_R.tif" → "R" ("" if none).
+// The capture agent will name files this way; CamExpert saves may not —
+// when absent, pairing falls back to pure FIFO.
+static QString filterToken(const QString &fileName)
+{
+    static const QRegularExpression rx(
+        QStringLiteral("[_-]([RGBC])\\.[^.]+$"));
+    const auto m = rx.match(fileName);
+    return m.hasMatch() ? m.captured(1) : QString();
+}
+
 void SessionStore::pairPendingFiles()
 {
     // Oldest unpaired file → oldest ended, unpaired pass within the window.
     // FIFO on both sides keeps manual-save order predictable; anything that
     // can't pair stays visible as "unpaired" (importer fodder, never lost).
+    // Two drift guards: a filter token in the filename must match the pass,
+    // and once the stream pairs past a hole, the hole is sealed — a missed
+    // file must not shift every later file back a slot.
     bool changed = false;
     for (int f = 0; f < m_unpaired.size(); ) {
         const qint64 mtime = m_unpaired[f].second;
+        const QString token = filterToken(QFileInfo(m_unpaired[f].first).fileName());
         bool paired = false;
         for (int row = 0; row < m_sessions.size() && !paired; ++row) {
             SessionRecord &s = m_sessions[row];
             for (PassRecord &p : s.passes) {
-                if (!p.file.isEmpty() || p.wallEndMs < 0)
+                if (!p.file.isEmpty() || p.sealed || p.wallEndMs < 0)
                     continue;
                 if (mtime < p.wallStartMs - 5000
                     || mtime - p.wallStartMs > kPairWindowMs)
                     continue;
+                if (!token.isEmpty() && token != p.filter)
+                    continue;
                 p.file = QDir(m_captureDir).relativeFilePath(m_unpaired[f].first);
                 qInfo() << "[sessions] paired" << p.file
                         << "→ session" << s.seq << "pass" << p.index << p.filter;
+                enqueueIngest(s, p);
                 touchRow(row);
+
+                // Seal holes the stream has now moved past (earlier sessions
+                // and earlier passes of this session).
+                for (int r2 = 0; r2 <= row; ++r2) {
+                    SessionRecord &s2 = m_sessions[r2];
+                    for (PassRecord &p2 : s2.passes) {
+                        if (r2 == row && p2.index >= p.index)
+                            break;
+                        if (p2.file.isEmpty() && !p2.sealed && p2.wallEndMs >= 0) {
+                            p2.sealed = true;
+                            qInfo() << "[sessions] sealed hole — session" << s2.seq
+                                    << "pass" << p2.index << p2.filter
+                                    << "(file never arrived)";
+                        }
+                    }
+                }
                 paired = true;
                 changed = true;
                 break;

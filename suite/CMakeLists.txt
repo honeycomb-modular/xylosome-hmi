@@ -21,7 +21,22 @@ qt_add_executable(xylosome-suite
     src/FolderWatcher.cpp
     src/SessionStore.h
     src/SessionStore.cpp
+    src/VipsEngine.h
+    src/VipsEngine.cpp
 )
+
+# libvips (optional — without it the suite runs, ingest is disabled)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(VIPS IMPORTED_TARGET vips-cpp)
+endif()
+if(VIPS_FOUND)
+    target_link_libraries(xylosome-suite PRIVATE PkgConfig::VIPS)
+    target_compile_definitions(xylosome-suite PRIVATE HAVE_VIPS)
+    message(STATUS "libvips found — ingest enabled")
+else()
+    message(WARNING "libvips NOT found — building without ingest (judging-only)")
+endif()
 
 qt_add_qml_module(xylosome-suite
     URI XylosomeSuite
