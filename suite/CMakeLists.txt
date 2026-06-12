@@ -17,6 +17,10 @@ qt_add_executable(xylosome-suite
     src/main.cpp
     src/XylodLink.h
     src/XylodLink.cpp
+    src/FolderWatcher.h
+    src/FolderWatcher.cpp
+    src/SessionStore.h
+    src/SessionStore.cpp
 )
 
 qt_add_qml_module(xylosome-suite

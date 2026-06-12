@@ -14,8 +14,8 @@ and packages on all three platforms (see `.github/workflows/suite.yml`).
 
 ## Build
 
-Requires CMake ≥ 3.21 and Qt ≥ 6.2 (CI uses 6.8; 6.2 floor keeps stock
-Ubuntu 22.04 buildable).
+Requires CMake ≥ 3.21 and Qt ≥ 6.4 (CI uses 6.8; QtQuick.Dialogs
+FolderDialog sets the floor).
 
 ```
 cmake -S suite -B build -DCMAKE_BUILD_TYPE=Release
@@ -28,7 +28,8 @@ cmake --build build
 - **macOS**: `brew install qt` then the commands above; produces
   `xylosome-suite.app`.
 - **Linux**: `apt install qt6-base-dev qt6-declarative-dev libqt6svg6-dev
-  qml6-module-qtquick-controls` then the commands above.
+  qml6-module-qtquick-controls qml6-module-qtquick-dialogs` then the
+  commands above (needs a distro shipping Qt ≥ 6.4).
 
 ## Conventions
 

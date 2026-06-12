@@ -3,9 +3,15 @@
 
 Speaks just enough of beckhoff/PROTOCOL.md: welcome, 10 Hz status,
 pass_start/pass_end/seq_done. Runs a 4-pass sequence every 15 s, forever.
-No dependencies. Usage:  python3 fake_xylod.py  (listens on :5510)
+No dependencies.
+
+Usage:
+    python3 fake_xylod.py                     # daemon only (listens on :5510)
+    python3 fake_xylod.py --write-files DIR   # also play capture PC: writes a
+                                              # small valid TIFF into DIR ~2 s
+                                              # after each pass ends
 """
-import json, socket, threading, time
+import json, os, socket, struct, sys, threading, time
 
 PORT = 5510
 PASS_S = 6.0        # seconds per pass
@@ -16,6 +22,35 @@ FILTERS = ["R", "G", "B", "C"]
 clients = []
 lock = threading.Lock()
 t0 = time.monotonic()
+WRITE_DIR = None
+if "--write-files" in sys.argv:
+    WRITE_DIR = sys.argv[sys.argv.index("--write-files") + 1]
+    os.makedirs(WRITE_DIR, exist_ok=True)
+seq_no = 0
+
+def write_tiff(name, w=256, h=160, shade=128):
+    """Minimal valid grayscale TIFF — enough for the watcher and, later,
+    the ingest pipeline to chew on. Written via temp name + rename."""
+    px = bytes([min(255, max(0, shade + ((x ^ y) % 64) - 32))
+                for y in range(h) for x in range(w)])
+    entries = [(256, 3, w), (257, 3, h), (258, 3, 8), (259, 3, 1),
+               (262, 3, 1), (273, 4, 8 + 2 + 12 * 8 + 4), (277, 3, 1),
+               (278, 3, h), (279, 4, len(px))]
+    ifd = struct.pack("<H", len(entries))
+    for tag, typ, val in entries:
+        ifd += struct.pack("<HHI", tag, typ, 1) + struct.pack("<I", val)
+    ifd += struct.pack("<I", 0)
+    data = struct.pack("<2sHI", b"II", 42, 8) + ifd + px
+    tmp = os.path.join(WRITE_DIR, "." + name + ".part")
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, os.path.join(WRITE_DIR, name))
+    print("wrote", name)
+
+def capture_pc(seq, p, f):
+    """Simulated capture PC: file lands a moment after the pass ends."""
+    time.sleep(2.0)
+    write_tiff(f"scan_{seq:04d}_p{p}_{f}.tif", shade=80 + 40 * p)
 
 state = {"state": "idle", "pass": -1, "progress": 0.0, "posDeg": 0.0,
          "velDegS": 0.0, "lineHz": 0.0, "estopOk": True,
@@ -45,10 +80,12 @@ def status_loop():
         time.sleep(0.1)
 
 def sequence_loop():
+    global seq_no
     while True:
         time.sleep(IDLE_S)
+        seq_no += 1
         for p, f in enumerate(FILTERS):
-            state.update(state="filter", pass_=None)
+            state["state"] = "filter"
             state["pass"] = p
             state["progress"] = 0.0
             time.sleep(GAP_S * 0.6)
@@ -66,6 +103,8 @@ def sequence_loop():
                 state["lineHz"] = 5000.0 * (0.2 + 0.8 * tri)
                 time.sleep(0.05)
             broadcast({"ev": "pass_end", "pass": p, "tMs": tms()})
+            if WRITE_DIR:
+                threading.Thread(target=capture_pc, args=(seq_no, p, f), daemon=True).start()
         state.update(state="idle", progress=0.0, posDeg=0.0, velDegS=0.0, lineHz=0.0)
         state["pass"] = -1
         broadcast({"ev": "seq_done", "passes": 4})

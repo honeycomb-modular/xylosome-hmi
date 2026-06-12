@@ -4,6 +4,7 @@
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import XylosomeSuite.Link
 
@@ -32,12 +33,40 @@ ApplicationWindow {
              : name === "B" ? chB : name === "C" ? chC : inkFaint
     }
 
+    function stars(n) { return "★".repeat(n) }
+
+    FolderDialog {
+        id: captureDialog
+        title: qsTr("Capture folder")
+        onAccepted: {
+            let p = decodeURIComponent(selectedFolder.toString()).replace(/^file:\/\//, "")
+            if (/^\/[A-Za-z]:/.test(p))   // Windows: /C:/… → C:/…
+                p = p.slice(1)
+            Sessions.captureDir = p
+        }
+    }
+
+    // Keyboard-first judging (plan → Design / Input)
+    Shortcut { sequences: ["1"]; onActivated: Sessions.setRating(strip.currentIndex, 1) }
+    Shortcut { sequences: ["2"]; onActivated: Sessions.setRating(strip.currentIndex, 2) }
+    Shortcut { sequences: ["3"]; onActivated: Sessions.setRating(strip.currentIndex, 3) }
+    Shortcut { sequences: ["4"]; onActivated: Sessions.setRating(strip.currentIndex, 4) }
+    Shortcut { sequences: ["5"]; onActivated: Sessions.setRating(strip.currentIndex, 5) }
+    Shortcut { sequences: ["0"]; onActivated: Sessions.setRating(strip.currentIndex, 0) }
+    Shortcut { sequences: ["X"]; onActivated: Sessions.setRejected(strip.currentIndex,
+                                                                   !(strip.currentItem && strip.currentItem.sRejected)) }
+    Shortcut { sequences: [StandardKey.MoveToPreviousChar]; onActivated: strip.decrementCurrentIndex() }
+    Shortcut { sequences: [StandardKey.MoveToNextChar]; onActivated: strip.incrementCurrentIndex() }
+
     // ── Menus (every item shows its key — the menu is the cheat sheet)
     menuBar: MenuBar {
         background: Rectangle { color: "#FFFFFF" }
         Menu {
             title: qsTr("&File")
-            MenuItem { text: qsTr("Open capture folder…"); enabled: false }
+            MenuItem {
+                text: qsTr("Open capture folder…")
+                onTriggered: captureDialog.open()
+            }
             MenuItem { text: qsTr("Import archive…"); enabled: false }
             MenuSeparator {}
             MenuItem { text: qsTr("Export session…"); enabled: false }
@@ -89,7 +118,15 @@ ApplicationWindow {
                 anchors.rightMargin: 16
                 Label { text: "Xylosome"; color: root.ink; font.pixelSize: 12; font.letterSpacing: 1 }
                 Item { Layout.fillWidth: true }
-                Label { text: qsTr("no capture folder"); color: root.inkFaint; font.pixelSize: 11 }
+                Label {
+                    text: Sessions.captureDir === ""
+                          ? qsTr("no capture folder")
+                          : Sessions.captureDir.split("/").pop()
+                            + (Sessions.unpairedFiles > 0
+                               ? qsTr(" · %1 unpaired").arg(Sessions.unpairedFiles) : "")
+                    color: Sessions.captureDir === "" ? root.inkFaint : root.inkMuted
+                    font.pixelSize: 11
+                }
                 Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
                 Label {
                     text: Xylod.connected
@@ -167,20 +204,46 @@ ApplicationWindow {
             }
         }
 
-        // Image field
+        // Image field — pixels arrive in phase 2b (tile pyramids); until
+        // then the selected session shows its identity card.
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: root.imageField
+            Column {
+                anchors.centerIn: parent
+                spacing: 8
+                visible: strip.currentItem !== null
+                Label {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: strip.currentItem ? "session " + strip.currentItem.sSeq : ""
+                    color: "#DDDDDD"
+                    font.pixelSize: 16
+                    font.letterSpacing: 2
+                }
+                Label {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: strip.currentItem
+                          ? strip.currentItem.sState
+                            + (strip.currentItem.sRejected ? qsTr(" · rejected") : "")
+                          : ""
+                    color: strip.currentItem && strip.currentItem.sState === "partial"
+                           ? "#FFFFFF" : "#AAAAAA"
+                    font.pixelSize: 11
+                }
+            }
             Label {
                 anchors.centerIn: parent
-                text: qsTr("no session")
+                visible: strip.count === 0
+                text: Sessions.captureDir === ""
+                      ? qsTr("File → Open capture folder…") : qsTr("no sessions yet")
                 color: "#AAAAAA"
                 font.pixelSize: 12
             }
         }
 
-        // Metadata strip
+        // Metadata strip — film-data-strip: per-pass timing for the
+        // selected session, real numbers from xylod events.
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
@@ -190,28 +253,138 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.leftMargin: 16
                 anchors.rightMargin: 16
-                spacing: 16
-                Label { text: "R"; color: root.chR; font.pixelSize: 11 }
-                Label { text: "G"; color: root.chG; font.pixelSize: 11 }
-                Label { text: "B"; color: root.chB; font.pixelSize: 11 }
-                Label { text: "C"; color: root.chC; font.pixelSize: 11 }
+                spacing: 20
+                Repeater {
+                    model: strip.currentItem ? strip.currentItem.sPassFilters : []
+                    RowLayout {
+                        spacing: 5
+                        required property int index
+                        required property string modelData
+                        Label {
+                            text: parent.modelData
+                            color: root.filterColor(parent.modelData)
+                            font.pixelSize: 11
+                        }
+                        Label {
+                            text: {
+                                if (!strip.currentItem) return ""
+                                const d = strip.currentItem.sPassDurations[parent.index]
+                                const paired = strip.currentItem.sPassPaired[parent.index]
+                                return (d >= 0 ? d.toFixed(1) + " s" : "…")
+                                       + (paired ? "" : " ○")
+                            }
+                            color: root.inkMuted
+                            font.pixelSize: 11
+                        }
+                    }
+                }
                 Item { Layout.fillWidth: true }
+                Label {
+                    text: strip.currentItem && strip.currentItem.sRating > 0
+                          ? root.stars(strip.currentItem.sRating) : ""
+                    color: root.ink
+                    font.pixelSize: 12
+                }
+                Label {
+                    text: strip.currentItem ? strip.currentItem.sNote : ""
+                    color: root.inkFaint
+                    font.pixelSize: 11
+                }
             }
         }
 
-        // Filmstrip
+        // Filmstrip — slim, always visible; live session joins the row.
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 72
             color: "#FFFFFF"
             Rectangle { width: parent.width; height: 1; color: root.hairline }
             Label {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: 16
+                anchors.centerIn: parent
+                visible: strip.count === 0
                 text: qsTr("today’s sessions appear here")
                 color: root.inkFaint
                 font.pixelSize: 11
+            }
+            ListView {
+                id: strip
+                anchors.fill: parent
+                anchors.margins: 10
+                anchors.leftMargin: 16
+                orientation: ListView.Horizontal
+                spacing: 8
+                clip: true
+                model: Sessions
+                onCountChanged: if (Sessions.liveRow >= 0) currentIndex = Sessions.liveRow
+                                else if (currentIndex < 0 && count > 0) currentIndex = count - 1
+                delegate: Item {
+                    id: cell
+                    required property int index
+                    required property int seq
+                    required property string sessionState
+                    required property int rating
+                    required property bool rejected
+                    required property string note
+                    required property var passFilters
+                    required property var passPaired
+                    required property var passDurations
+                    // surfaced for the rest of the UI via strip.currentItem
+                    readonly property int sSeq: seq
+                    readonly property string sState: sessionState
+                    readonly property int sRating: rating
+                    readonly property bool sRejected: rejected
+                    readonly property string sNote: note
+                    readonly property var sPassFilters: passFilters
+                    readonly property var sPassPaired: passPaired
+                    readonly property var sPassDurations: passDurations
+                    width: 56
+                    height: strip.height
+                    Column {
+                        anchors.fill: parent
+                        spacing: 3
+                        Rectangle {
+                            width: parent.width
+                            height: 30
+                            color: cell.rejected ? "#F2F2F2"
+                                 : cell.sessionState === "live" ? "#F2F2F2" : "#2C2C2C"
+                            opacity: cell.rejected ? 0.5 : 1
+                            border.width: cell.ListView.isCurrentItem ? 1.5 : 0
+                            border.color: root.ink
+                            Label {
+                                anchors.centerIn: parent
+                                visible: cell.sessionState === "live"
+                                text: qsTr("· · ·")
+                                color: root.inkMuted
+                                font.pixelSize: 10
+                            }
+                        }
+                        Row {
+                            spacing: 2
+                            Repeater {
+                                model: cell.passFilters
+                                Rectangle {
+                                    required property int index
+                                    required property string modelData
+                                    width: 12
+                                    height: 3
+                                    color: cell.passPaired[index]
+                                           ? root.filterColor(modelData) : "#E0E0E0"
+                                }
+                            }
+                        }
+                        Label {
+                            text: ("000" + cell.seq).slice(-4)
+                                  + (cell.rating > 0 ? " " + root.stars(cell.rating) : "")
+                                  + (cell.rejected ? " ×" : "")
+                            color: cell.ListView.isCurrentItem ? root.ink : root.inkFaint
+                            font.pixelSize: 10
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: strip.currentIndex = cell.index
+                    }
+                }
             }
         }
     }
