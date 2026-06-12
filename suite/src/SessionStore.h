@@ -53,6 +53,9 @@ class SessionStore : public QAbstractListModel
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
     Q_PROPERTY(int liveRow READ liveRow NOTIFY countChanged)
     Q_PROPERTY(int unpairedFiles READ unpairedFiles NOTIFY unpairedFilesChanged)
+    Q_PROPERTY(double freeGB READ freeGB NOTIFY diskChanged)
+    Q_PROPERTY(int sessionsRemaining READ sessionsRemaining NOTIFY diskChanged)
+    Q_PROPERTY(int rejectedCount READ rejectedCount NOTIFY countChanged)
 
 public:
     enum Roles {
@@ -70,6 +73,7 @@ public:
         PassClipsRole,       // QVariantList<QVariantMap{black,white}> — % or -1
         PassDimsRole,        // QVariantList<QVariantMap{w,h}> — original px
         PassTileBasesRole,   // QVariantList<QString> — dz base path or ""
+        CreatedRole,         // qint64 wall ms
     };
 
     explicit SessionStore(XylodLink *link, QObject *parent = nullptr);
@@ -88,10 +92,22 @@ public:
     Q_INVOKABLE void setRejected(int row, bool rejected);
     Q_INVOKABLE void setNote(int row, const QString &note);
 
+    double freeGB() const { return m_freeGB; }
+    int sessionsRemaining() const { return m_sessionsRemaining; }
+    int rejectedCount() const;
+
+    // Permanent deletion (plan → Operational / Permanent delete).
+    // sessionBytes: TIFFs + proxies, for the confirmation dialog.
+    Q_INVOKABLE double sessionGB(int row) const;
+    Q_INVOKABLE void deleteSession(int row);     // direct, skips quarantine
+    Q_INVOKABLE void emptyQuarantine();          // deletes every rejected session
+
 signals:
     void captureDirChanged();
     void countChanged();
     void unpairedFilesChanged();
+    void diskChanged();
+    void reclaimed(double gb, int sessions);     // after any permanent delete
 
 private slots:
     void onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs);
@@ -116,6 +132,9 @@ private:
     QString sidecarDir() const;
     QString proxiesDir() const;
     void touchRow(int row);
+    void refreshDisk();
+    qint64 sessionBytes(const SessionRecord &s) const;
+    void appendDeletionLog(const SessionRecord &s, qint64 bytes) const;
 
     XylodLink *m_link = nullptr;
     FolderWatcher *m_watcher = nullptr;
@@ -125,4 +144,6 @@ private:
     QVector<SessionRecord> m_sessions;
     QVector<QPair<QString, qint64>> m_unpaired;   // absPath, mtimeMs
     int m_nextSeq = 1;
+    double m_freeGB = -1;
+    int m_sessionsRemaining = -1;
 };

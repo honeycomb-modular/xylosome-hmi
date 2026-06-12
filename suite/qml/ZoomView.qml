@@ -12,6 +12,7 @@ import QtQuick
 
 Item {
     id: view
+    clip: true   // tiles must never paint over the chrome around the field
 
     property string tileBase: ""
     property int imgW: 0
@@ -80,7 +81,8 @@ Item {
 
     function zoomTo(z, cx, cy) {
         // keep the content point under (cx, cy) stationary
-        z = Math.max(Math.min(fitZoom, 1), Math.min(z, 4))
+        // 1600 % ceiling: pixel-level inspection; floor never below fit
+        z = Math.max(Math.min(fitZoom, 1), Math.min(z, Math.max(16, fitZoom)))
         const px = (flick.contentX + cx) / zoom
         const py = (flick.contentY + cy) / zoom
         zoom = z

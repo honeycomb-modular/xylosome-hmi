@@ -10,9 +10,13 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QStorageInfo>
+#include <QTimer>
 #include <QUuid>
 #include <QDebug>
 
@@ -52,6 +56,12 @@ SessionStore::SessionStore(XylodLink *link, QObject *parent)
         m_engineThread.wait(3000);
     });
 
+    // Disk gauge: refresh every 30 s and after every delete.
+    auto *diskTimer = new QTimer(this);
+    diskTimer->setInterval(30000);
+    connect(diskTimer, &QTimer::timeout, this, &SessionStore::refreshDisk);
+    diskTimer->start();
+
     QSettings s;
     QString dir = s.value(QStringLiteral("capture/folder")).toString();
     if (qEnvironmentVariableIsSet("CAPTURE_DIR"))
@@ -79,6 +89,7 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassClipsRole, "passClips" },
         { PassDimsRole, "passDims" },
         { PassTileBasesRole, "passTileBases" },
+        { CreatedRole, "createdWallMs" },
     };
 }
 
@@ -89,6 +100,7 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
     const SessionRecord &s = m_sessions[idx.row()];
     switch (role) {
     case SeqRole:       return s.seq;
+    case CreatedRole:   return s.createdWallMs;
     case UuidRole:      return s.uuid;
     case StateRole:     return s.state;
     case RatingRole:    return s.rating;
@@ -174,6 +186,147 @@ void SessionStore::setCaptureDir(const QString &dir)
     emit captureDirChanged();
     emit countChanged();
     emit unpairedFilesChanged();
+    refreshDisk();
+}
+
+// ── disk gauge + deletion ────────────────────────────────────────────────────
+
+static qint64 dirBytes(const QString &path)
+{
+    qint64 total = 0;
+    QDirIterator it(path, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        total += it.fileInfo().size();
+    }
+    return total;
+}
+
+qint64 SessionStore::sessionBytes(const SessionRecord &s) const
+{
+    qint64 total = 0;
+    for (const PassRecord &p : s.passes)
+        if (!p.file.isEmpty())
+            total += QFileInfo(m_captureDir + QLatin1Char('/') + p.file).size();
+    total += dirBytes(proxiesDir() + QLatin1Char('/') + s.uuid);
+    return total;
+}
+
+double SessionStore::sessionGB(int row) const
+{
+    if (row < 0 || row >= m_sessions.size())
+        return 0;
+    return sessionBytes(m_sessions[row]) / 1e9;
+}
+
+int SessionStore::rejectedCount() const
+{
+    int n = 0;
+    for (const SessionRecord &s : m_sessions)
+        if (s.rejected)
+            ++n;
+    return n;
+}
+
+void SessionStore::refreshDisk()
+{
+    if (m_captureDir.isEmpty())
+        return;
+    const QStorageInfo info(m_captureDir);
+    m_freeGB = info.bytesAvailable() / 1e9;
+
+    // "sessions remaining": free space / average size of complete sessions
+    qint64 sum = 0;
+    int n = 0;
+    for (const SessionRecord &s : m_sessions) {
+        if (s.state != QLatin1String("complete"))
+            continue;
+        sum += sessionBytes(s);
+        if (++n >= 8)   // recent average is enough; don't walk everything
+            break;
+    }
+    m_sessionsRemaining = (n > 0 && sum > 0)
+                              ? int(info.bytesAvailable() / (sum / n)) : -1;
+    emit diskChanged();
+}
+
+void SessionStore::appendDeletionLog(const SessionRecord &s, qint64 bytes) const
+{
+    QFile f(m_captureDir + QStringLiteral("/.xylosome/deletions.log"));
+    QDir().mkpath(m_captureDir + QStringLiteral("/.xylosome"));
+    if (!f.open(QIODevice::Append | QIODevice::Text))
+        return;
+    QStringList files;
+    for (const PassRecord &p : s.passes)
+        if (!p.file.isEmpty())
+            files << p.file;
+    f.write(QStringLiteral("%1 deleted session %2 (%3) %4 bytes — %5\n")
+                .arg(QDateTime::currentDateTime().toString(Qt::ISODate))
+                .arg(s.seq)
+                .arg(s.uuid, QString::number(bytes), files.join(QLatin1Char(' ')))
+                .toUtf8());
+}
+
+void SessionStore::deleteSession(int row)
+{
+    if (row < 0 || row >= m_sessions.size())
+        return;
+    SessionRecord s = m_sessions[row];
+    if (s.state == QLatin1String("live"))
+        return;   // never delete a session mid-scan
+
+    const qint64 bytes = sessionBytes(s);
+
+    beginRemoveRows({}, row, row);
+    m_sessions.removeAt(row);
+    endRemoveRows();
+
+    for (const PassRecord &p : s.passes)
+        if (!p.file.isEmpty())
+            QFile::remove(m_captureDir + QLatin1Char('/') + p.file);
+    QDir(proxiesDir() + QLatin1Char('/') + s.uuid).removeRecursively();
+    QFile::remove(sidecarDir() + QLatin1Char('/') + s.uuid + QStringLiteral(".json"));
+
+    appendDeletionLog(s, bytes);
+    qInfo() << "[sessions] permanently deleted session" << s.seq
+            << "—" << bytes / 1e9 << "GB reclaimed";
+
+    emit countChanged();
+    refreshDisk();
+    emit reclaimed(bytes / 1e9, 1);
+}
+
+void SessionStore::emptyQuarantine()
+{
+    double gb = 0;
+    int n = 0;
+    for (int row = m_sessions.size() - 1; row >= 0; --row) {
+        if (!m_sessions[row].rejected)
+            continue;
+        const SessionRecord s = m_sessions[row];
+        const qint64 bytes = sessionBytes(s);
+
+        beginRemoveRows({}, row, row);
+        m_sessions.removeAt(row);
+        endRemoveRows();
+
+        for (const PassRecord &p : s.passes)
+            if (!p.file.isEmpty())
+                QFile::remove(m_captureDir + QLatin1Char('/') + p.file);
+        QDir(proxiesDir() + QLatin1Char('/') + s.uuid).removeRecursively();
+        QFile::remove(sidecarDir() + QLatin1Char('/') + s.uuid + QStringLiteral(".json"));
+        appendDeletionLog(s, bytes);
+
+        gb += bytes / 1e9;
+        ++n;
+    }
+    if (n > 0) {
+        qInfo() << "[sessions] quarantine emptied —" << n << "sessions,"
+                << gb << "GB reclaimed";
+        emit countChanged();
+        refreshDisk();
+        emit reclaimed(gb, n);
+    }
 }
 
 QString SessionStore::sidecarDir() const

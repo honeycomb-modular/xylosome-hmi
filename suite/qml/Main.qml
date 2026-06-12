@@ -47,26 +47,56 @@ ApplicationWindow {
         }
     }
 
+    // All single-key shortcuts die while a text field has focus.
+    readonly property bool keysLive: !noteField.activeFocus
+
     // Keyboard-first judging (plan → Design / Input)
-    Shortcut { sequences: ["1"]; onActivated: Sessions.setRating(strip.currentIndex, 1) }
-    Shortcut { sequences: ["2"]; onActivated: Sessions.setRating(strip.currentIndex, 2) }
-    Shortcut { sequences: ["3"]; onActivated: Sessions.setRating(strip.currentIndex, 3) }
-    Shortcut { sequences: ["4"]; onActivated: Sessions.setRating(strip.currentIndex, 4) }
-    Shortcut { sequences: ["5"]; onActivated: Sessions.setRating(strip.currentIndex, 5) }
-    Shortcut { sequences: ["0"]; onActivated: Sessions.setRating(strip.currentIndex, 0) }
-    Shortcut { sequences: ["X"]; onActivated: Sessions.setRejected(strip.currentIndex,
+    Shortcut { enabled: root.keysLive; sequences: ["1"]; onActivated: Sessions.setRating(strip.currentIndex, 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["2"]; onActivated: Sessions.setRating(strip.currentIndex, 2) }
+    Shortcut { enabled: root.keysLive; sequences: ["3"]; onActivated: Sessions.setRating(strip.currentIndex, 3) }
+    Shortcut { enabled: root.keysLive; sequences: ["4"]; onActivated: Sessions.setRating(strip.currentIndex, 4) }
+    Shortcut { enabled: root.keysLive; sequences: ["5"]; onActivated: Sessions.setRating(strip.currentIndex, 5) }
+    Shortcut { enabled: root.keysLive; sequences: ["0"]; onActivated: Sessions.setRating(strip.currentIndex, 0) }
+    Shortcut { enabled: root.keysLive; sequences: ["X"]; onActivated: Sessions.setRejected(strip.currentIndex,
                                                                    !(strip.currentItem && strip.currentItem.sRejected)) }
-    Shortcut { sequences: [StandardKey.MoveToPreviousChar]; onActivated: strip.decrementCurrentIndex() }
-    Shortcut { sequences: [StandardKey.MoveToNextChar]; onActivated: strip.incrementCurrentIndex() }
+    Shortcut { enabled: root.keysLive; sequences: [StandardKey.MoveToPreviousChar]; onActivated: strip.decrementCurrentIndex() }
+    Shortcut { enabled: root.keysLive; sequences: [StandardKey.MoveToNextChar]; onActivated: strip.incrementCurrentIndex() }
 
     // Channel solo (plan → Judging aids): R/G/B/C keys, A back to auto
     property string soloChannel: "auto"
-    Shortcut { sequences: ["R"]; onActivated: root.soloChannel = "R" }
-    Shortcut { sequences: ["G"]; onActivated: root.soloChannel = "G" }
-    Shortcut { sequences: ["B"]; onActivated: root.soloChannel = "B" }
-    Shortcut { sequences: ["C"]; onActivated: root.soloChannel = "C" }
-    Shortcut { sequences: ["A"]; onActivated: root.soloChannel = "auto" }
-    Shortcut { sequences: ["Z"]; onActivated: zoomView.toggleFit() }
+    Shortcut { enabled: root.keysLive; sequences: ["R"]; onActivated: root.soloChannel = "R" }
+    Shortcut { enabled: root.keysLive; sequences: ["G"]; onActivated: root.soloChannel = "G" }
+    Shortcut { enabled: root.keysLive; sequences: ["B"]; onActivated: root.soloChannel = "B" }
+    Shortcut { enabled: root.keysLive; sequences: ["C"]; onActivated: root.soloChannel = "C" }
+    Shortcut { enabled: root.keysLive; sequences: ["A"]; onActivated: root.soloChannel = "auto" }
+    Shortcut { enabled: root.keysLive; sequences: ["Z"]; onActivated: zoomView.toggleFit() }
+
+    // Notes, library, deletion
+    Shortcut { enabled: root.keysLive; sequences: ["N"]; onActivated: noteField.beginEdit() }
+    Shortcut { enabled: root.keysLive; sequences: ["L"]; onActivated: root.libraryOpen = !root.libraryOpen }
+    Shortcut { enabled: root.keysLive && root.libraryOpen; sequences: ["T"]
+               onActivated: root.libraryTimeline = !root.libraryTimeline }
+    Shortcut { enabled: root.libraryOpen; sequences: ["Escape"]
+               onActivated: root.libraryOpen = false }
+
+    property bool libraryOpen: false
+    property bool libraryTimeline: false
+
+    // ── deletion confirm (design-true: white card, hairline, no drama) ──
+    property int confirmMode: 0      // 0 none · 1 delete current · 2 empty quarantine
+    function fmtGB(gb) { return gb >= 1 ? gb.toFixed(1) + " GB" : Math.round(gb * 1000) + " MB" }
+
+    // transient reclaim report
+    property string reclaimText: ""
+    Connections {
+        target: Sessions
+        function onReclaimed(gb, sessions) {
+            root.reclaimText = qsTr("%1 reclaimed · %2 session%3 deleted")
+                .arg(root.fmtGB(gb)).arg(sessions).arg(sessions > 1 ? "s" : "")
+            reclaimTimer.restart()
+        }
+    }
+    Timer { id: reclaimTimer; interval: 5000; onTriggered: root.reclaimText = "" }
 
     // Index of the pass shown in the image field for the current session
     readonly property int shownPass: {
@@ -99,6 +129,12 @@ ApplicationWindow {
             MenuItem { text: qsTr("Offload keepers…"); enabled: false }
             MenuSeparator {}
             MenuItem {
+                text: qsTr("Empty quarantine… (%1 rejected)").arg(Sessions.rejectedCount)
+                enabled: Sessions.rejectedCount > 0
+                onTriggered: root.confirmMode = 2
+            }
+            MenuSeparator {}
+            MenuItem {
                 text: qsTr("Quit")
                 onTriggered: Qt.quit()
             }
@@ -111,7 +147,10 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&View")
-            MenuItem { text: qsTr("Grid / timeline"); enabled: false }
+            MenuItem {
+                text: qsTr("Library\tL · T grid⇄timeline")
+                onTriggered: root.libraryOpen = !root.libraryOpen
+            }
             MenuItem {
                 text: qsTr("Channel solo R/G/B/C — A auto")
                 enabled: false   // reference only; the keys do the work
@@ -124,9 +163,25 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Session")
-            MenuItem { text: qsTr("Rate 1–5"); enabled: false }
-            MenuItem { text: qsTr("Reject"); enabled: false }
-            MenuItem { text: qsTr("Note…"); enabled: false }
+            MenuItem { text: qsTr("Rate\t1–5 · 0 clears"); enabled: false }
+            MenuItem {
+                text: qsTr("Reject\tX")
+                enabled: strip.currentItem !== null
+                onTriggered: Sessions.setRejected(strip.currentIndex,
+                                                  !(strip.currentItem && strip.currentItem.sRejected))
+            }
+            MenuItem {
+                text: qsTr("Note…\tN")
+                enabled: strip.currentItem !== null
+                onTriggered: noteField.beginEdit()
+            }
+            MenuSeparator {}
+            MenuItem {
+                text: qsTr("Delete now…")
+                enabled: strip.currentItem !== null
+                         && strip.currentItem.sState !== "live"
+                onTriggered: root.confirmMode = 1
+            }
         }
         Menu {
             title: qsTr("&Help")
@@ -149,7 +204,26 @@ ApplicationWindow {
                 anchors.leftMargin: 16
                 anchors.rightMargin: 16
                 Label { text: "Xylosome"; color: root.ink; font.pixelSize: 12; font.letterSpacing: 1 }
+                Label {
+                    text: root.reclaimText
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                    visible: root.reclaimText !== ""
+                    leftPadding: 16
+                }
                 Item { Layout.fillWidth: true }
+                Label {
+                    visible: Sessions.freeGB >= 0
+                    text: Sessions.sessionsRemaining >= 0
+                          ? qsTr("disk %1 GB · ~%2 sessions")
+                                .arg(Math.round(Sessions.freeGB))
+                                .arg(Sessions.sessionsRemaining)
+                          : qsTr("disk %1 GB").arg(Math.round(Sessions.freeGB))
+                    color: Sessions.sessionsRemaining >= 0 && Sessions.sessionsRemaining < 5
+                           ? root.ink : root.inkFaint
+                    font.pixelSize: 11
+                }
+                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11; visible: Sessions.freeGB >= 0 }
                 Label {
                     text: Sessions.captureDir === ""
                           ? qsTr("no capture folder")
@@ -166,6 +240,20 @@ ApplicationWindow {
                           : qsTr("xylod · offline")
                     color: Xylod.connected ? root.inkMuted : root.inkFaint
                     font.pixelSize: 11
+                }
+                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
+                Label {
+                    text: qsTr("library")
+                    color: root.libraryOpen ? root.ink : root.inkMuted
+                    font.pixelSize: 11
+                    font.underline: libMouse.containsMouse
+                    MouseArea {
+                        id: libMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.libraryOpen = !root.libraryOpen
+                    }
                 }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
@@ -256,16 +344,24 @@ ApplicationWindow {
                       ? strip.currentItem.sPassDims[root.shownPass].h : 0
             }
 
-            // zoom readout — bottom right
+            // zoom readout — bottom right, click toggles fit ⇄ 1:1
             Label {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: 12
                 visible: zoomView.visible && zoomView.imgW > 0
-                text: zoomView.atFit ? qsTr("fit")
-                                     : Math.round(zoomView.zoom * 100) + " %"
+                text: (zoomView.atFit ? qsTr("fit")
+                                      : Math.round(zoomView.zoom * 100) + " %")
+                      + (zoomMouse.containsMouse ? (zoomView.atFit ? "  → 1:1" : "  → fit") : "")
                 color: "#CCCCCC"
                 font.pixelSize: 11
+                MouseArea {
+                    id: zoomMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: zoomView.toggleFit()
+                }
             }
 
             // channel badge — bottom left, the only color on the field
@@ -345,6 +441,17 @@ ApplicationWindow {
                             text: parent.modelData
                             color: root.filterColor(parent.modelData)
                             font.pixelSize: 11
+                            font.underline: chMouse.containsMouse
+                            font.bold: root.soloChannel === parent.modelData
+                            MouseArea {
+                                id: chMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.soloChannel =
+                                    root.soloChannel === parent.parent.modelData
+                                        ? "auto" : parent.parent.modelData
+                            }
                         }
                         Label {
                             text: {
@@ -371,16 +478,75 @@ ApplicationWindow {
                     color: root.inkMuted
                     font.pixelSize: 11
                 }
-                Label {
-                    text: strip.currentItem && strip.currentItem.sRating > 0
-                          ? root.stars(strip.currentItem.sRating) : ""
-                    color: root.ink
-                    font.pixelSize: 12
+                Row {
+                    spacing: 1
+                    visible: strip.currentItem !== null
+                    Repeater {
+                        model: 5
+                        Label {
+                            required property int index
+                            text: strip.currentItem && strip.currentItem.sRating > index ? "★" : "☆"
+                            color: strip.currentItem && strip.currentItem.sRating > index
+                                   ? root.ink : root.inkFaint
+                            font.pixelSize: 12
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    const n = parent.index + 1
+                                    Sessions.setRating(strip.currentIndex,
+                                        strip.currentItem.sRating === n ? 0 : n)
+                                }
+                            }
+                        }
+                    }
                 }
                 Label {
+                    visible: strip.currentItem !== null
+                    text: "×"
+                    color: strip.currentItem && strip.currentItem.sRejected
+                           ? root.ink : root.inkFaint
+                    font.pixelSize: 14
+                    font.bold: strip.currentItem && strip.currentItem.sRejected
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Sessions.setRejected(strip.currentIndex,
+                            !(strip.currentItem && strip.currentItem.sRejected))
+                    }
+                }
+                TextField {
+                    id: noteField
+                    Layout.preferredWidth: 220
+                    visible: strip.currentItem !== null
                     text: strip.currentItem ? strip.currentItem.sNote : ""
-                    color: root.inkFaint
+                    placeholderText: qsTr("note")
                     font.pixelSize: 11
+                    color: root.inkMuted
+                    background: Rectangle {
+                        color: "transparent"
+                        border.width: 0
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            width: parent.width
+                            height: 1
+                            color: noteField.activeFocus ? root.ink : "transparent"
+                        }
+                    }
+                    function beginEdit() {
+                        if (strip.currentItem) {
+                            forceActiveFocus()
+                            selectAll()
+                        }
+                    }
+                    onAccepted: {
+                        Sessions.setNote(strip.currentIndex, text)
+                        strip.forceActiveFocus()
+                    }
+                    Keys.onEscapePressed: {
+                        text = strip.currentItem ? strip.currentItem.sNote : ""
+                        strip.forceActiveFocus()
+                    }
                 }
             }
         }
@@ -504,6 +670,299 @@ ApplicationWindow {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: strip.currentIndex = cell.index
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Library overlay — grid ⇄ timeline (L opens, T switches) ──────
+    Rectangle {
+        visible: root.libraryOpen
+        anchors.fill: parent
+        anchors.topMargin: 36
+        anchors.bottomMargin: 72
+        color: "#FFFFFF"
+        z: 40
+
+        RowLayout {
+            id: libHeader
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 16
+            height: 24
+            Label {
+                text: root.libraryTimeline ? qsTr("library · timeline") : qsTr("library · grid")
+                color: root.ink
+                font.pixelSize: 12
+                font.letterSpacing: 1
+            }
+            Item { Layout.fillWidth: true }
+            Label {
+                text: qsTr("grid")
+                color: root.libraryTimeline ? root.inkFaint : root.ink
+                font.pixelSize: 11
+                font.underline: gridMouse.containsMouse
+                MouseArea {
+                    id: gridMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.libraryTimeline = false
+                }
+            }
+            Label {
+                text: qsTr("timeline")
+                color: root.libraryTimeline ? root.ink : root.inkFaint
+                font.pixelSize: 11
+                font.underline: tlMouse.containsMouse
+                MouseArea {
+                    id: tlMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.libraryTimeline = true
+                }
+            }
+            Label {
+                text: qsTr("close ×")
+                color: root.inkMuted
+                font.pixelSize: 11
+                font.underline: closeMouse.containsMouse
+                leftPadding: 12
+                MouseArea {
+                    id: closeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.libraryOpen = false
+                }
+            }
+        }
+
+        GridView {
+            visible: !root.libraryTimeline
+            anchors.top: libHeader.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 16
+            clip: true
+            cellWidth: 168
+            cellHeight: 132
+            model: Sessions
+            delegate: Item {
+                id: gcell
+                required property int index
+                required property int seq
+                required property int rating
+                required property bool rejected
+                required property string sessionState
+                required property var passPreviews
+                readonly property string firstPreview: {
+                    for (let i = 0; i < passPreviews.length; i++)
+                        if (passPreviews[i] !== "")
+                            return "file:///" + passPreviews[i].replace(/^\//, "")
+                    return ""
+                }
+                width: 160
+                height: 124
+                Column {
+                    spacing: 4
+                    Rectangle {
+                        width: 160
+                        height: 92
+                        color: "#2C2C2C"
+                        opacity: gcell.rejected ? 0.4 : 1
+                        clip: true
+                        Image {
+                            anchors.fill: parent
+                            source: gcell.firstPreview
+                            sourceSize.height: 184
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                        }
+                    }
+                    Label {
+                        text: ("000" + gcell.seq).slice(-4)
+                              + (gcell.rejected ? " ×" : "")
+                              + (gcell.rating > 0 ? "  " + root.stars(gcell.rating) : "")
+                              + (gcell.sessionState === "partial" ? qsTr("  partial") : "")
+                        color: root.inkMuted
+                        font.pixelSize: 11
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { strip.currentIndex = gcell.index; root.libraryOpen = false }
+                }
+            }
+        }
+
+        ListView {
+            visible: root.libraryTimeline
+            anchors.top: libHeader.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 16
+            clip: true
+            spacing: 1
+            model: Sessions
+            delegate: Rectangle {
+                id: tcell
+                required property int index
+                required property int seq
+                required property int rating
+                required property bool rejected
+                required property string note
+                required property string sessionState
+                required property var passFilters
+                required property var passDurations
+                required property var passPreviews
+                required property double createdWallMs
+                readonly property string firstPreview: {
+                    for (let i = 0; i < passPreviews.length; i++)
+                        if (passPreviews[i] !== "")
+                            return "file:///" + passPreviews[i].replace(/^\//, "")
+                    return ""
+                }
+                width: ListView.view.width
+                height: 44
+                color: "#FFFFFF"
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.rightMargin: 8
+                    spacing: 16
+                    Rectangle {
+                        Layout.preferredWidth: 64
+                        Layout.preferredHeight: 36
+                        color: "#2C2C2C"
+                        opacity: tcell.rejected ? 0.4 : 1
+                        clip: true
+                        Image {
+                            anchors.fill: parent
+                            source: tcell.firstPreview
+                            sourceSize.height: 72
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                        }
+                    }
+                    Label {
+                        text: ("000" + tcell.seq).slice(-4)
+                        color: root.ink
+                        font.pixelSize: 11
+                    }
+                    Label {
+                        text: new Date(tcell.createdWallMs).toLocaleTimeString(Qt.locale(), "hh:mm:ss")
+                        color: root.inkMuted
+                        font.pixelSize: 11
+                    }
+                    Row {
+                        spacing: 8
+                        Repeater {
+                            model: tcell.passFilters
+                            Label {
+                                required property int index
+                                required property string modelData
+                                text: modelData + " " +
+                                      (tcell.passDurations[index] >= 0
+                                       ? tcell.passDurations[index].toFixed(1) + "s" : "…")
+                                color: root.filterColor(modelData)
+                                font.pixelSize: 11
+                            }
+                        }
+                    }
+                    Label {
+                        text: tcell.sessionState === "partial" ? qsTr("partial") : ""
+                        color: root.ink
+                        font.pixelSize: 11
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: tcell.note
+                        color: root.inkFaint
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: 260
+                    }
+                    Label {
+                        text: (tcell.rejected ? "× " : "")
+                              + (tcell.rating > 0 ? root.stars(tcell.rating) : "")
+                        color: root.ink
+                        font.pixelSize: 11
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { strip.currentIndex = tcell.index; root.libraryOpen = false }
+                }
+            }
+        }
+    }
+
+    // ── Delete confirmation overlay ──────────────────────────────────
+    Rectangle {
+        visible: root.confirmMode > 0
+        anchors.fill: parent
+        color: "#80FFFFFF"
+        z: 60
+        MouseArea { anchors.fill: parent; onClicked: root.confirmMode = 0 }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 380
+            height: confirmCol.height + 48
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: root.ink
+            Column {
+                id: confirmCol
+                anchors.centerIn: parent
+                width: parent.width - 48
+                spacing: 14
+                Label {
+                    text: root.confirmMode === 2
+                          ? qsTr("Empty quarantine")
+                          : qsTr("Delete session %1").arg(strip.currentItem ? strip.currentItem.sSeq : "")
+                    color: root.ink
+                    font.pixelSize: 13
+                    font.letterSpacing: 1
+                }
+                Label {
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    text: root.confirmMode === 2
+                          ? qsTr("%1 rejected session(s) — TIFFs, proxies and sidecars are permanently deleted. Not the OS trash. No undo.")
+                                .arg(Sessions.rejectedCount)
+                          : qsTr("%1 — TIFFs, proxies and sidecar are permanently deleted. Not the OS trash. No undo.")
+                                .arg(root.fmtGB(Sessions.sessionGB(strip.currentIndex)))
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                }
+                Row {
+                    spacing: 12
+                    anchors.right: parent.right
+                    Button {
+                        text: qsTr("Cancel")
+                        flat: true
+                        font.pixelSize: 11
+                        onClicked: root.confirmMode = 0
+                    }
+                    Button {
+                        text: root.confirmMode === 2 ? qsTr("Delete all rejected") : qsTr("Delete permanently")
+                        flat: true
+                        font.pixelSize: 11
+                        palette.buttonText: root.ink
+                        onClicked: {
+                            if (root.confirmMode === 2)
+                                Sessions.emptyQuarantine()
+                            else
+                                Sessions.deleteSession(strip.currentIndex)
+                            root.confirmMode = 0
+                        }
                     }
                 }
             }
