@@ -95,16 +95,24 @@ int main(int argc, char **argv) {
         ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
     }
     if (ec_slave[0].state != EC_STATE_OPERATIONAL) { std::printf("no OP\n"); return 1; }
-    std::printf("OPERATIONAL — enabling drive…\n");
+    // out-of-band sanity: read statusword via SDO to compare with the PDO view
+    {
+        uint16_t sw = 0; int sz = sizeof(sw);
+        ec_SDOread(sl, 0x6041, 0, FALSE, &sz, &sw, EC_TIMEOUTRXM);
+        std::printf("OPERATIONAL — SDO statusword=0x%04X, expected WKC=%d — enabling drive…\n",
+                    sw, ec_group[0].outputsWKC * 2 + ec_group[0].inputsWKC);
+    }
 
     timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
     const int32_t startPos = tx->pos;
     double t = 0.0;
     bool enabled = false;
 
+    double tEn = -1.0;
     while (run_ && t < secs + 5.0) {
+        t += 0.001;                                  // wall clock — always runs
         ec_send_processdata();
-        ec_receive_processdata(EC_TIMEOUTRET);
+        const int wkc = ec_receive_processdata(EC_TIMEOUTRET);
 
         // DS402 walk
         const uint16_t sw = tx->sw;
@@ -113,23 +121,23 @@ int main(int argc, char **argv) {
         else if ((sw & 0x004F) == 0x0040) cw = 0x0006;            // shutdown
         else if ((sw & 0x006F) == 0x0021) cw = 0x0007;            // switch on
         else if ((sw & 0x006F) == 0x0023) cw = 0x000F;            // enable op
-        else if ((sw & 0x006F) == 0x0027) { cw = 0x000F; enabled = true; }
+        else if ((sw & 0x006F) == 0x0027) { cw = 0x000F; if (!enabled) { enabled = true; tEn = t; } }
         rx->cw = cw;
         rx->mode = 8;
 
-        // sine sweep once enabled
+        // sine sweep once enabled (sine clock starts at the enable moment)
         int32_t target = startPos;
         if (enabled) {
-            t += 0.001;
-            const double deg = sweep * std::sin(2.0 * M_PI * t / 8.0);   // 8 s period
+            const double deg = sweep * std::sin(2.0 * M_PI * (t - tEn) / 8.0);   // 8 s period
             target = startPos + int32_t(deg * COUNTS_PER_DEG);
         }
         rx->target = target;
 
         if (int(t * 1000) % 250 == 0)
-            std::printf("\rsw=0x%04X pos=%+9.3f deg vel=%+8.2f deg/s err=0x%04X   ",
+            std::printf("\rsw=0x%04X pos=%+9.3f deg vel=%+8.2f deg/s err=0x%04X wkc=%d al=0x%02X  ",
                         sw, (tx->pos - startPos) / COUNTS_PER_DEG,
-                        tx->vel / COUNTS_PER_DEG, tx->err);
+                        tx->vel / COUNTS_PER_DEG, tx->err, wkc,
+                        unsigned(ec_slave[sl].state));
         std::fflush(stdout);
 
         next.tv_nsec += 1000000L;
