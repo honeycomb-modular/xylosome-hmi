@@ -23,7 +23,13 @@ struct Rx { uint16_t cw; int32_t target; int8_t mode; } __attribute__((packed));
 struct Tx { uint16_t sw; int32_t pos; int32_t vel; uint16_t err; int8_t modeDisp; } __attribute__((packed));
 
 template <typename T> static bool sdo(int s, uint16_t i, uint8_t sub, T v) {
-    return ec_SDOwrite(s, i, sub, FALSE, sizeof(T), &v, EC_TIMEOUTRXM) > 0;
+    const bool ok = ec_SDOwrite(s, i, sub, FALSE, sizeof(T), &v, EC_TIMEOUTRXM) > 0;
+    if (!ok) {
+        std::printf("  SDO write 0x%04X:%02X FAILED", i, sub);
+        while (EcatError) std::printf("  [%s]", ec_elist2string());
+        std::printf("\n");
+    }
+    return ok;
 }
 
 static const double COUNTS_PER_DEG = 131072.0 * 50.0 / 360.0;   // 17-bit abs × 50:1
@@ -38,6 +44,18 @@ int main(int argc, char **argv) {
     if (!ec_init(iface)) { std::printf("ec_init(%s) failed\n", iface); return 1; }
     if (ec_config_init(FALSE) <= 0) { std::printf("no slaves\n"); return 1; }
     std::printf("slave %d: %s\n", sl, ec_slave[sl].name);
+
+    // PDO config is legal ONLY in PRE-OP (manual 8.3.1: "2 displayed on the
+    // panel"). Don't trust config_init — enforce and verify.
+    ec_slave[sl].state = EC_STATE_PRE_OP;
+    ec_writestate(sl);
+    ec_statecheck(sl, EC_STATE_PRE_OP, EC_TIMEOUTSTATE * 4);
+    if (ec_slave[sl].state != EC_STATE_PRE_OP) {
+        std::printf("drive not in PRE-OP (al=0x%02X) — power-cycle it and retry\n",
+                    unsigned(ec_slave[sl].state));
+        ec_close(); return 1;
+    }
+    std::printf("drive in PRE-OP — remapping PDOs\n");
 
     // remap to fixed CSP PDOs (same set as xylod). Every write is verified —
     // if the drive refuses remapping, we must NOT touch the motor with a
