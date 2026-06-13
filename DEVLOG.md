@@ -843,3 +843,56 @@ PSU on bench: Mean Well EDR-120-24 (24 V/5 A) — feeds C6920 + Us/Up rail +
 motor; headroom fine at 1 A motor current.
 ec_dial verified same night: pendant dial → stepper follow, tunable kp
 (30 = detent-crisp), gear arg; full chain Grayhill→Teensy→Pi→xylod→EtherCAT.
+
+---
+
+## 2026-06-12 — A6-EC servo FIRST MOTION over EtherCAT ✅ (the Er74.1 saga)
+
+StepperOnline A6-EC (enumerates as **"ANCTL AS715N Servo Driver"**, slave 5,
+after EK1100/EL1008/EL2008/EL7047). EK1100 X2 OUT → drive **CN3 (IN)**;
+CN4 = OUT (doc-verified). 220 V single-phase on **L1+L2** (this drive; the
+Panasonic L1/L3 rule does NOT apply). Manual in repo:
+`beckhoff/docs/A6-EC_series_servo_drive_manual.pdf` (fault tables, C13 group,
+panel states nr/rd/rn, comm digit 2=PREOP 8=OP).
+
+### The fault and the five-layer fix (each verified on the bench)
+**Er74.1 = "no sync signal" (0x741, emcy 0x8700)** — drive demands DC sync;
+it is DC-ONLY by design (manual 8.2.3). What the master must do, ALL of it:
+1. **SYNC0 must be started by the master**: `ec_dcsync0(slave, TRUE, 1 ms, 0)`
+   — `ec_configdc()` alone only measures topology.
+2. **Drive panel C13.05 = 2** ("Sync 2", for masters jittering >1 µs —
+   userspace SOEM is exactly that; default 1 tolerates only C13.06=3 µs).
+3. **0x1C32/0x1C33 sync-manager config written explicitly** (type=2 DC-SYNC0,
+   cycle=1000000 ns) — TwinCAT does this from ESI; SOEM leaves it to us.
+4. **Order matters**: 1C32/1C33 writes + configdc + dcsync0 happen in PRE-OP,
+   **before ec_config_map's SAFE-OP transition** (drive samples sync config
+   on PREOP→SAFEOP).
+5. **Gap-free, phase-locked cyclic engine**: frames at exactly 1 ms from
+   before the OP request onward, PI-aligned to ec_DCtime (no blocking
+   statechecks, no SDO mailbox traffic once the cadence runs), SCHED_FIFO +
+   mlockall.
+
+### Also learned the hard way
+- PDO remap is legal ONLY in PRE-OP (panel comm digit 2). motor_test now
+  forces+verifies PRE-OP and restores INIT on exit (a Ctrl-C'd run used to
+  poison the next one).
+- PDO config does not survive power-off (no E2PROM) — reconfigure every run.
+- All-zero cyclic statusword = inputs not arriving (check WKC/AL state);
+  SDO statusword compares the drive's brain vs the process image.
+- Statusword decode shorthand: &0x4F → 0x40 idle, 0x08 FAULT, 0x27-pattern
+  enabled. wkc=9 al=0x08 = healthy bus with all 5 slaves.
+- git push HTTP 400 on big packs (17 MB manual): `git config http.postBuffer
+  524288000`.
+
+### Verified result
+`motor_test enp4s0 5 5 10`: phase-locked OP, drive enables (rd→rn), ±5°
+sine sweep runs both directions, clean disable. **The real scan axis moved
+under the real stack.**
+
+### MUST-DO before real xylod (EcBackend currently lacks 1,3,4,5)
+Port the full recipe into EcBackend::busInit + cycle thread:
+1C32/1C33 writes, dcsync0-before-config_map, PRE-OP enforcement before
+remap, INIT on shutdown, DC PI phase alignment in fwCycle. Plus the known
+items: EL7047 PDO adaptation, xylod.conf rewrite (5 slaves, ec_iface=enp4s0,
+pos_drive=5). C13.04 (read-only) = drive's sync-loss counter = master
+jitter report card.
