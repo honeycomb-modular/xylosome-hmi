@@ -164,9 +164,10 @@ void BeckhoffLink::executeScan(int colorMode,
         {QStringLiteral("maxVelDegS"),   maxVelDegS},
         {QStringLiteral("minVelDegS"),   minVelDegS},
         // Defaults tightened 2026-06-10 (artist: inter-pass pause too long).
-        // Both overridable via QSettings; revisit on real hardware.
+        // Return raised to 240 deg/s output = 2000 rpm motor through the 50:1
+        // (2026-06-12, artist: resets very fast). Overridable via QSettings.
         {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
-        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 80.0).toDouble()},
+        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),         line},
         {QStringLiteral("profile"),      prof},
     });
