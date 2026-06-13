@@ -149,6 +149,8 @@ int main(int argc, char **argv) {
     rx->cw = 0x0006;
     ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
     ec_dcsync0(uint16(sl), FALSE, 0, 0);
+    ec_slave[0].state = EC_STATE_INIT;               // clean slate for next run —
+    ec_writestate(0);                                 // PDO remap needs PRE-OP
     ec_close();
     return 0;
 }
