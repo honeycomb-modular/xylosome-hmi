@@ -896,3 +896,19 @@ remap, INIT on shutdown, DC PI phase alignment in fwCycle. Plus the known
 items: EL7047 PDO adaptation, xylod.conf rewrite (5 slaves, ec_iface=enp4s0,
 pos_drive=5). C13.04 (read-only) = drive's sync-loss counter = master
 jitter report card.
+
+### THE CURVE RAN ON THE REAL SERVO 2026-06-12 ✅✅
+EcBackend got the full bench-proven recipe (PRE-OP enforce, 1C32/1C33,
+SYNC0-before-config_map, OP transition INSIDE the phase-locked cyclic thread
+— a thread handoff after OP would be a frame gap —, DC PI alignment,
+zero-at-wake for the absolute multiturn encoder, position≤0 = device not
+fitted). conf rewritten for the bench bus (drive=5, dout=EL2008@3, din off —
+E-stop unwired). Real xylod up: 5 slaves, phase-locked, Pi HMI + motosome
+connected, **trigger on the pendant played the drawn speed curve on the
+physical axis**. Filter/line-trigger phases no-op cleanly.
+- Harmonic 50:1 IS fitted → gear_ratio corrected 1→50 (first run played at
+  1/50 scale on the flange; motor-degrees looked right, output was shy).
+- Wake-zero observed working: axis zero @ −65457 counts, no enable lurch.
+- REMAINING before garage: wire E-stop chain (din back on), EL7047 filter
+  adaptation, line-trigger terminal, real systemd service (drop sim
+  override), C13.04 jitter audit after long runs.
