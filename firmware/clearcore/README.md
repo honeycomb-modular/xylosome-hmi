@@ -1,5 +1,11 @@
 # ClearCore Firmware
 
+> ⚠️ **STALE / FALLBACK path (since 2026-06-13).** The active motion controller
+> is now the Beckhoff C6920 EtherCAT stack (`beckhoff/`, daemon `xylod`) — see
+> `BECKHOFF_PORT.md`. This ClearCore firmware is retained as a fallback in case
+> the Beckhoff path doesn't pan out; it is **not** the current motion path. Kept
+> intentionally — do not delete.
+
 Motion control and camera timing firmware for the **Teknik ClearCore** controller in the Xylosome main box.
 
 ## Responsibilities

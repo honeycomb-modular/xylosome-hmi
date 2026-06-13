@@ -280,7 +280,7 @@ ClearCore programming is not in scope for current sprint.
 | Wire pendant_serial.py into Qt app | High | Threading + Qt signal bridge needed |
 | Build ClearCore TCP client layer | High | Largest outstanding gap |
 | Replace MotorModel.tick() with real telemetry | High | Depends on TCP client |
-| Implement ScreenCamera | Medium | Camera: Dalsa Piranha 2 via Teledyne frame grabber |
+| Implement ScreenCamera | Medium | Camera: Dalsa Piranha HS-80-08K80-00-R (Camera Link) via Teledyne Xcelera-CL PX4 grabber |
 | ~~Implement focus cursor in QML~~ | ✅ done 2026-05-29 | Corner-bracket FocusIndicator + FocusController across all screens |
 | Resolve TBD gesture mappings (mode select, preset actions) | Medium | Before disabling touch |
 | Clarify ClearCore TCP protocol | Open question | Defines Pi ↔ ClearCore API layer |
@@ -912,3 +912,26 @@ physical axis**. Filter/line-trigger phases no-op cleanly.
 - REMAINING before garage: wire E-stop chain (din back on), EL7047 filter
   adaptation, line-trigger terminal, real systemd service (drop sim
   override), C13.04 jitter audit after long runs.
+
+
+---
+
+## 2026-06-13 — imaging chain identified + verified (camera / grabber / sync)
+
+Pinned the actual camera + frame grabber from the units, and corrected the
+architecture diagram (it wrongly labelled the link "CoaXPress / CLHS").
+
+- **Camera:** Teledyne DALSA Piranha **HS-80-08K80-00-R** — 8192 x 96 TDI,
+  7 um, 8/12-bit, **34 / 68 kHz** line rate, **Camera Link** (MDR26), **EXSYNC**
+  line trigger, **falling-edge** readout. "HS" = High Sensitivity, not CLHS.
+- **Frame grabber:** **OR-X4C0-XPF00** = X64 **Xcelera-CL PX4** (Camera Link,
+  PCIe x4; "Aquarius CL" is a reseller alias for the same OR- code).
+- **Sync:** grabber generates EXSYNC to the camera; its external I/O (connector
+  **J4**, balanced Trigger-In pin 11 +/12 -, plus shaft-encoder inputs) is what
+  the incoming breakout lands. Line trigger can come from the EL2521 (curve) or
+  a quadrature encoder into J4 (position-locked — preferred for clean 96-stage
+  TDI). See `docs/camera_capture_note.md` for the full write-up.
+- `xylod.conf` `line_max_hz` placeholder (20 kHz) is below the camera ceiling
+  (68 kHz); set the real value from CamExpert.
+- Diagram fix: `docs/architecture/xylosome_beckhoff.svg` link label
+  "CoaXPress / CLHS" -> "Camera Link / EXSYNC"; grabber box -> "Xcelera-CL PX4".

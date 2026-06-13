@@ -3,6 +3,12 @@
 > This file lives at `pi/hmi/` alongside `CMakeLists.txt` and `deploy.sh`.  
 > Any Claude session that reads this file has full context to continue implementation.
 
+> ⚠️ **Motion-source note (2026-06-13):** references below to "ClearCore" as the
+> source of pass events are **stale**. The active stack feeds pass timing from
+> the Beckhoff `xylod` daemon via `BeckhoffLink` (`Beckhoff` QML singleton) — the
+> Recorder now gets real pass start/end events from there (see `BECKHOFF_PORT.md`).
+> The metadata/SVG design itself is unchanged. ClearCore remains a kept fallback.
+
 ---
 
 ## What This Is
@@ -25,7 +31,7 @@ Panasonic Minas A6 — MHMF042L1V2M
     ↓ drives
 Harmonic Drive (50:1) — camera scan motion
     ↓
-Camera bracket — Dalsa Piranha 8K BW line scanner
+Camera bracket — Dalsa Piranha HS-80-08K80-00-R (8k x 96 TDI, Camera Link) BW line scanner
     ↓
 Teledyne frame grabber — separate capture machine (not Pi)
 

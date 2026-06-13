@@ -2,10 +2,29 @@
 
 Behavioral guidelines for AI coding sessions on this project.
 
+## ⚠️ Architecture status (updated 2026-06-13)
+
+**The motion stack moved from ClearCore to Beckhoff EtherCAT.**
+
+- **ACTIVE:** the **Beckhoff** path — C6920 running headless Linux as a SOEM
+  EtherCAT master (`beckhoff/`), driving a StepperOnline A6-EC servo (CiA-402
+  CSP). The artist's speed curve has run on the real servo over EtherCAT
+  (2026-06-12). The Pi HMI is retained and talks to the C6920 daemon (`xylod`).
+- **STALE / FALLBACK:** the original **ClearCore** path (ClearCore + Minas A6
+  pulse drive, commanded from the Pi over TCP). It is **deliberately kept, not
+  deleted**, as a fallback in case the Beckhoff path doesn't pan out.
+
+So: any document or code below that describes ClearCore as the live motion
+controller is **legacy/fallback design**. Read it as such. Do not extend the
+ClearCore path or delete it — leave it working and untouched unless asked.
+For current motion work, start from `BECKHOFF_PORT.md` and `beckhoff/README.md`.
+
 ## Project context — read these first
 
 Before touching any code, read:
 - `WORKFLOW.md` — **how Hoyte works across his Mac + PC, and why GitHub (not iCloud) is the source of truth. Read this before moving any code between machines or to a Pi.**
+- `BECKHOFF_PORT.md` — **ACTIVE motion stack: what the Beckhoff EtherCAT port built and what's left to verify on the bench.**
+- `beckhoff/README.md` — C6920 daemon (`xylod`) bring-up: OS, network, build, first motion, service.
 - `SESSION_NOTES.md` — Pi 4 vs Pi 5 targets, deploy sequences, SSH/build commands
 - `DEVLOG.md` — session history, what's done, outstanding items
 - `pi/hmi/METADATA_INFUSER.md` — metadata infuser spec and implementation notes

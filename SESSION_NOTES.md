@@ -1,5 +1,10 @@
 # XYLOSOME HMI — Qt6/QML Port · Session Notes
 
+> ⚠️ **ClearCore = STALE/fallback (since 2026-06-13).** The motion stack is now
+> Beckhoff EtherCAT (C6920 + `xylod`, see `BECKHOFF_PORT.md` / `CLAUDE.md`).
+> The "via ClearCore" description below is the retained fallback design — kept,
+> not the active controller. The Pi/HMI, pendant, and deploy notes here still apply.
+
 ## What this project is
 A Qt6/QML port of the XYLOSOME HMI.
 Art installation controller — Panasonic servo + NEMA 17 stepper via ClearCore,

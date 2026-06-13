@@ -5,7 +5,11 @@ metadata:
   type: project
 ---
 
-Xylosome is a handheld art scanning unit. Qt6/QML HMI on Raspberry Pi. Panasonic servo + NEMA 17 stepper controlled via ClearCore over TCP/Ethernet. Line scanner camera (Dalsa Piranha 8K BW). Pendant: Teensy 4.1 + Grayhill encoder + 3 buttons.
+Xylosome is a handheld art scanning unit. Qt6/QML HMI on Raspberry Pi. Line scanner camera (Dalsa Piranha 8K BW). Pendant: Teensy 4.1 + Grayhill encoder + 3 buttons.
+
+**Motion stack — ACTIVE = Beckhoff (as of 2026-06-13):** the axis is driven by a Beckhoff C6920 running headless Linux as a SOEM EtherCAT master (`beckhoff/`, daemon `xylod`), commanding a StepperOnline A6-EC servo (CiA-402 CSP). The real servo has run the artist's curve over EtherCAT. The Pi HMI is retained and talks to `xylod` over TCP. See `BECKHOFF_PORT.md` and `beckhoff/README.md`.
+
+**STALE / FALLBACK:** the original ClearCore path (Panasonic Minas A6 pulse drive + NEMA 17 stepper, controlled via ClearCore over TCP/Ethernet) is **kept, not deleted**, as a fallback if Beckhoff doesn't pan out. ClearCore references elsewhere in the repo are legacy design — don't treat them as current and don't delete that code.
 
 **Why:** The scanning motion creates intentional color fringing as the subject moves between 4 color passes (R/G/B/C). That fringing is the artwork.
 

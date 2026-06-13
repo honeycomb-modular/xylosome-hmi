@@ -3,6 +3,40 @@
 Written after the first Pi ⇄ Beckhoff bench session, while discussing whether
 TDI / exposure can be reached from the HMI. Short answer: not yet, by design.
 
+## Verified hardware (2026-06-13)
+
+The imaging chain, confirmed from the actual units (not the old diagram labels):
+
+- **Camera — Teledyne DALSA Piranha `HS-80-08K80-00-R`.** 8192 x 96 TDI line
+  scan, 7 um pixels, 8/12-bit, line rate **34 / 68 kHz** (two modes).
+  Interface is **Camera Link** (MDR26, control+data shared) — *not* CoaXPress
+  or CLHS. ("HS" = High Sensitivity / TDI, not Camera Link HS — that naming
+  trap is what put "CLHS" on the architecture diagram.) Line trigger is
+  **EXSYNC**, enabled over the serial link; the camera reads out on the
+  **falling edge** of EXSYNC.
+- **Frame grabber — Teledyne DALSA `OR-X4C0-XPF00`** = **X64 Xcelera-CL PX4**
+  (Camera Link, PCIe x4; also sold/labelled "Aquarius CL" under the same OR-
+  code). Camera Link <-> Camera Link: matched to the camera.
+- **The grabber generates EXSYNC** and sends it to the camera over the Camera
+  Link control line — the camera is not triggered directly. The grabber's
+  external I/O is on connector **J4**: a balanced **Trigger-In** (Trigger In 1 =
+  J4 pin 11 +, pin 12 -) and **shaft-encoder** inputs. This J4 is what the
+  incoming breakout board lands.
+
+### Two ways to pace the line trigger (decide per shot)
+
+1. **EL2521 pulse -> J4 Trigger-In (11/12) -> grabber -> EXSYNC -> camera.**
+   The Beckhoff pulse follows the speed curve (geometry <-> sampling). Matches
+   the `line.mode == "curve"` design below.
+2. **Quadrature encoder -> J4 shaft-encoder inputs -> grabber.** EXSYNC is then
+   locked to actual position. With **96 TDI stages** this is the robust path —
+   line rate must track velocity or the image smears past the *intentional*
+   fringing. This is the encoder-lock open item on the architecture diagram.
+
+`line_max_hz` in `xylod.conf` is a placeholder **20 kHz**; the camera's real
+ceiling is **up to 68 kHz** (mode-dependent). Set the working value from
+CamExpert for the chosen exposure/TDI — don't assume.
+
 ## Who owns what
 
 | Setting | Lives where | Set how |

@@ -25,7 +25,7 @@ text{font-family:'DejaVu Sans Mono','Courier New',monospace}
 <line x1="995" y1="44" x2="1018" y2="44" class="eecat"/><text x="1024" y="48" class="lab">EtherCAT</text>
 <line x1="1150" y1="44" x2="1173" y2="44" class="elan"/><text x="1179" y="48" class="lab">Ethernet/TCP</text>
 <line x1="1330" y1="44" x2="1353" y2="44" class="eusb"/><text x="1359" y="48" class="lab">USB</text>
-<line x1="995" y1="68" x2="1018" y2="68" class="ecam"/><text x="1024" y="72" class="lab">CoaXPress/CLHS</text>
+<line x1="995" y1="68" x2="1018" y2="68" class="ecam"/><text x="1024" y="72" class="lab">Camera Link / EXSYNC</text>
 <line x1="1150" y1="68" x2="1173" y2="68" class="esig"/><text x="1179" y="72" class="lab">trigger/encoder</text>
 <line x1="1330" y1="68" x2="1353" y2="68" class="emech"/><text x="1359" y="72" class="lab">motor</text>
 
@@ -47,9 +47,9 @@ text{font-family:'DejaVu Sans Mono','Courier New',monospace}
 
 <rect x="908" y="138" width="300" height="62" class="box" rx="3"/><text x="922" y="164" class="t">Capture PC</text><text x="922" y="183" class="s">frame-grabber host · Sapera</text>
 <rect x="776" y="220" width="136" height="76" class="box" rx="3"/><text x="788" y="250" class="t" font-size="13">Dalsa Piranha HS</text><text x="788" y="268" class="s">line scan camera</text>
-<rect x="936" y="220" width="150" height="76" class="box" rx="3"/><text x="948" y="250" class="t" font-size="13">Teledyne OR-X4C0</text><text x="948" y="268" class="s">frame grabber (PCIe)</text>
+<rect x="936" y="220" width="150" height="76" class="box" rx="3"/><text x="948" y="250" class="t" font-size="13">Xcelera-CL PX4</text><text x="948" y="268" class="s">frame grabber (PCIe)</text>
 <rect x="936" y="302" width="150" height="26" class="box" rx="3"/><text x="948" y="320" class="t" font-size="12">breakout · trig/enc I/O</text>
-<text x="816" y="214" class="lab" fill="#E0A75E">CoaXPress / CLHS</text>
+<text x="816" y="214" class="lab" fill="#E0A75E">Camera Link / EXSYNC</text>
 <line x1="912" y1="256" x2="936" y2="256" class="ecam" marker-end="url(#aA)"/>
 <line x1="1011" y1="220" x2="1011" y2="200" class="eusb" marker-end="url(#aGr)"/><text x="1016" y="214" class="lab">PCIe</text>
 
