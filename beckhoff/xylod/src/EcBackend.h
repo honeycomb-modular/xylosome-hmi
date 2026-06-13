@@ -58,7 +58,8 @@ private:
     void writeOutputs();
     void fwCycle(double dt);              // filter-wheel SW position loop
 
-    double countsToDeg(int32_t c) const;
+    double countsToDeg(int32_t c) const;      // position: zero-referenced
+    double countsToDegRel(int32_t c) const;   // scale only (velocities)
     int32_t degToCounts(double d) const;
 
     const Config &m_cfg;
@@ -102,4 +103,10 @@ private:
     DigitalIn m_din;
     int32_t   m_echo = 0;
     int       m_wkcFails = 0;
+
+    // The drive's 17-bit absolute multiturn encoder wakes up at an arbitrary
+    // count. The pose at OP entry becomes axis zero — otherwise the first
+    // setpoint (0°) commands a violent snap. Hand-rotating the shaft while
+    // xylod runs shifts reality, not the reference: re-start to re-zero.
+    int32_t m_zeroCounts = 0;
 };

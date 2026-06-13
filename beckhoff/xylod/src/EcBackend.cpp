@@ -10,18 +10,24 @@
 #include <cstring>
 #include <ctime>
 #include <pthread.h>
+#include <sys/mman.h>
 
 static char s_ioMap[4096];
 
 // ── unit conversion ───────────────────────────────────────────────────────────
-double EcBackend::countsToDeg(int32_t c) const {
+// Positions are zero-referenced to the wake-up pose (absolute multiturn
+// encoder reads arbitrary counts at power-on); velocities are scale-only.
+double EcBackend::countsToDegRel(int32_t c) const {
     const double cpd = m_cfg.motorCountsPerRev * m_cfg.gearRatio / 360.0;
     const double d = double(c) / cpd;
     return m_cfg.invertAxis ? -d : d;
 }
+double EcBackend::countsToDeg(int32_t c) const {
+    return countsToDegRel(int32_t(c - m_zeroCounts));
+}
 int32_t EcBackend::degToCounts(double d) const {
     const double cpd = m_cfg.motorCountsPerRev * m_cfg.gearRatio / 360.0;
-    return int32_t(std::llround((m_cfg.invertAxis ? -d : d) * cpd));
+    return int32_t(std::llround((m_cfg.invertAxis ? -d : d) * cpd)) + m_zeroCounts;
 }
 
 // ── SDO helpers ───────────────────────────────────────────────────────────────
@@ -74,42 +80,62 @@ bool EcBackend::busInit() {
     for (int i = 1; i <= ec_slavecount; i++)
         LOGI("ec:   %d: %-20s 0x%08x", i, ec_slave[i].name, uint32_t(ec_slave[i].eep_id));
 
+    // position ≤ 0 in the conf = device not fitted (bench configs)
     const int need = std::max({m_cfg.posDrive, m_cfg.posEk1100, m_cfg.posEl7031,
                                m_cfg.posEl2521, m_cfg.posEl5152, m_cfg.posElDout, m_cfg.posElDin});
     if (ec_slavecount < need) {
         LOGE("ec: expected %d slaves (config positions), found %d", need, ec_slavecount);
         return false;
     }
+    if (m_cfg.posDrive <= 0) { LOGE("ec: pos_drive not set"); return false; }
 
-    // PRE-OP: remap drive PDOs + set CSP mode before mapping
-    remapDriveCsp(m_cfg.posDrive);
+    // PDO config is legal ONLY in PRE-OP (drive manual 8.3.1) — enforce; an
+    // unclean previous exit leaves the drive elsewhere and it rejects remap.
+    ec_slave[m_cfg.posDrive].state = EC_STATE_PRE_OP;
+    ec_writestate(uint16(m_cfg.posDrive));
+    ec_statecheck(uint16(m_cfg.posDrive), EC_STATE_PRE_OP, EC_TIMEOUTSTATE * 4);
+    if (ec_slave[m_cfg.posDrive].state != EC_STATE_PRE_OP) {
+        LOGE("ec: drive not in PRE-OP (al=0x%02x) — power-cycle the drive",
+             unsigned(ec_slave[m_cfg.posDrive].state));
+        return false;
+    }
+
+    if (!remapDriveCsp(m_cfg.posDrive)) return false;
     sdoWrite<int8_t>(m_cfg.posDrive, 0x6060, 0x00, 8);            // CSP
+    // SM sync config: DC-SYNC0 at the cycle time. TwinCAT writes these from
+    // the ESI; SOEM leaves them to us. Bench-proven vs Er74.1 (DEVLOG
+    // 2026-06-12); drive panel C13.05 must be 2 for a userspace master.
+    sdoWrite<uint16_t>(m_cfg.posDrive, 0x1C32, 0x01, 2);
+    sdoWrite<uint32_t>(m_cfg.posDrive, 0x1C32, 0x02, uint32_t(m_cfg.cycleUs) * 1000u);
+    sdoWrite<uint16_t>(m_cfg.posDrive, 0x1C33, 0x01, 2);
+    sdoWrite<uint32_t>(m_cfg.posDrive, 0x1C33, 0x02, uint32_t(m_cfg.cycleUs) * 1000u);
     // EL7031 — velocity direct mode (0x8012:01 = 0). Verify on bench.
-    sdoWrite<uint8_t>(m_cfg.posEl7031, 0x8012, 0x01, 0);
+    if (m_cfg.posEl7031 > 0)
+        sdoWrite<uint8_t>(m_cfg.posEl7031, 0x8012, 0x01, 0);
 
-    ec_config_map(s_ioMap);
+    // DC measurement + SYNC0 BEFORE the SAFE-OP transition — the drive
+    // samples its sync configuration on PREOP→SAFEOP.
     ec_configdc();
-    // A6-EC requires DC SYNC0 at the cycle time or it faults Er74.1 "no sync
-    // signal" (found on the bench 2026-06-12; manual: "correct the master
-    // communication configuration"). ec_configdc only measures the topology.
     ec_dcsync0(uint16(m_cfg.posDrive), TRUE, uint32_t(m_cfg.cycleUs) * 1000u, 0);
 
+    ec_config_map(s_ioMap);
     ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
 
-    // ── resolve PDO pointers ─────────────────────────────────────────────────
+    // ── resolve PDO pointers (position ≤ 0 stays nullptr = feature absent) ───
     auto outOf = [](int s) { return ec_slave[s].outputs; };
     auto inOf  = [](int s) { return ec_slave[s].inputs;  };
 
     m_drvRx  = reinterpret_cast<DriveRx *>(outOf(m_cfg.posDrive));
     m_drvTx  = reinterpret_cast<DriveTx *>(inOf(m_cfg.posDrive));
-    m_fwRx   = reinterpret_cast<El7031Rx *>(outOf(m_cfg.posEl7031));
-    m_fwTx   = reinterpret_cast<El7031Tx *>(inOf(m_cfg.posEl7031));
-    m_ltRx   = reinterpret_cast<El2521Rx *>(outOf(m_cfg.posEl2521));
-    m_echoIn = reinterpret_cast<uint32_t *>(inOf(m_cfg.posEl5152));
-    m_dout   = outOf(m_cfg.posElDout);
-    m_dinRaw = inOf(m_cfg.posElDin);
+    m_fwRx   = m_cfg.posEl7031 > 0 ? reinterpret_cast<El7031Rx *>(outOf(m_cfg.posEl7031)) : nullptr;
+    m_fwTx   = m_cfg.posEl7031 > 0 ? reinterpret_cast<El7031Tx *>(inOf(m_cfg.posEl7031))  : nullptr;
+    m_ltRx   = m_cfg.posEl2521 > 0 ? reinterpret_cast<El2521Rx *>(outOf(m_cfg.posEl2521)) : nullptr;
+    m_echoIn = m_cfg.posEl5152 > 0 ? reinterpret_cast<uint32_t *>(inOf(m_cfg.posEl5152))  : nullptr;
+    m_dout   = m_cfg.posElDout > 0 ? outOf(m_cfg.posElDout) : nullptr;
+    m_dinRaw = m_cfg.posElDin  > 0 ? inOf(m_cfg.posElDin)   : nullptr;
 
     auto check = [](const char *n, int s, int obytes, int ibytes) {
+        if (s <= 0) return;                                   // not fitted
         if (int(ec_slave[s].Obytes) < obytes || int(ec_slave[s].Ibytes) < ibytes)
             LOGW("ec: slave %d (%s) PDO size O=%d I=%d — smaller than expected O>=%d I>=%d; "
                  "verify PDO assignment", s, n, int(ec_slave[s].Obytes), int(ec_slave[s].Ibytes),
@@ -122,30 +148,26 @@ bool EcBackend::busInit() {
     check("ELxxxx-dout", m_cfg.posElDout, 1, 0);
     check("ELxxxx-din",  m_cfg.posElDin,  0, 1);
 
-    // ── → OPERATIONAL (send valid process data while requesting) ─────────────
-    ec_slave[0].state = EC_STATE_OPERATIONAL;
-    ec_send_processdata();
-    ec_receive_processdata(EC_TIMEOUTRET);
-    ec_writestate(0);
-    for (int t = 0; t < 200; t++) {
-        ec_send_processdata();
-        ec_receive_processdata(EC_TIMEOUTRET);
-        ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
-        if (ec_slave[0].state == EC_STATE_OPERATIONAL) break;
-    }
-    if (ec_slave[0].state != EC_STATE_OPERATIONAL) {
-        LOGE("ec: segment did not reach OPERATIONAL");
+    if (int(ec_slave[m_cfg.posDrive].Obytes) != int(sizeof(DriveRx)) ||
+        int(ec_slave[m_cfg.posDrive].Ibytes) != int(sizeof(DriveTx))) {
+        LOGE("ec: drive process image mismatch O=%d I=%d (want %zu/%zu) — refusing to run",
+             int(ec_slave[m_cfg.posDrive].Obytes), int(ec_slave[m_cfg.posDrive].Ibytes),
+             sizeof(DriveRx), sizeof(DriveTx));
         return false;
     }
-    LOGI("ec: OPERATIONAL — cycle %d us", m_cfg.cycleUs);
+
+    mlockall(MCL_CURRENT | MCL_FUTURE);
+    // The OP transition happens in the cyclic thread: the drive needs frames
+    // GAP-FREE at the cycle time from before the OP request (Er74.1 otherwise),
+    // and a thread handoff after OP would be exactly such a gap.
+    LOGI("ec: SAFE-OP — handing off to phase-locked cyclic thread");
     return true;
 }
 
 bool EcBackend::start(CycleFn cycle) {
     if (!busInit()) return false;
     m_running = true;
-    m_op = true;
-    m_thread = std::thread([this, cycle] { cyclicLoop(cycle); });
+    m_thread = std::thread([this, cycle] { cyclicLoop(cycle); });   // sets m_op at OP
     return true;
 }
 
@@ -153,7 +175,8 @@ void EcBackend::shutdown() {
     if (!m_running) return;
     m_running = false;
     if (m_thread.joinable()) m_thread.join();
-    ec_slave[0].state = EC_STATE_INIT;
+    if (m_cfg.posDrive > 0) ec_dcsync0(uint16(m_cfg.posDrive), FALSE, 0, 0);
+    ec_slave[0].state = EC_STATE_INIT;       // clean slate: PDO remap needs PRE-OP
     ec_writestate(0);
     ec_close();
     m_op = false;
@@ -165,7 +188,7 @@ void EcBackend::axisSetTargetDeg(double deg) {
     m_targetValid = true;
 }
 double EcBackend::axisPosDeg()  const { return m_drvTx ? countsToDeg(m_drvTx->actualPos) : 0.0; }
-double EcBackend::axisVelDegS() const { return m_drvTx ? countsToDeg(m_drvTx->actualVel) : 0.0; }
+double EcBackend::axisVelDegS() const { return m_drvTx ? countsToDegRel(m_drvTx->actualVel) : 0.0; }
 
 DriveState EcBackend::drive() const {
     DriveState d;
@@ -182,6 +205,11 @@ DriveState EcBackend::drive() const {
 
 void EcBackend::fwMoveToSlot(int slot) {
     slot = std::max(0, std::min(3, slot));
+    if (!m_fwRx) {                      // filter hardware not fitted: instant
+        m_fwSlot = slot;                // "arrival" so sequences don't stall
+        m_fwBusy = false;
+        return;
+    }
     // shortest path around the wheel
     const double rev = m_cfg.fwStepsPerRev;
     double target = m_cfg.fwSlotOffset[slot] * rev;
@@ -267,9 +295,50 @@ void EcBackend::cyclicLoop(CycleFn cycle) {
                  m_cfg.rtPrio);
     }
 
-    timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
     const long periodNs = long(m_cfg.cycleUs) * 1000L;
     const double dt = m_cfg.cycleUs * 1e-6;
+
+    // DC phase alignment (classic SOEM PI): frames gap-free at the cycle time,
+    // aimed ~1/4 cycle after SYNC0. Required by the A6-EC (Er74.1 otherwise).
+    int64 toff = 0, integral = 0;
+    auto dcAlign = [&]() {
+        int64 delta = (ec_DCtime - periodNs / 4) % periodNs;
+        if (delta > periodNs / 2) delta -= periodNs;
+        integral += (delta > 0) - (delta < 0);
+        toff = -(delta / 100) - (integral / 20);
+    };
+    timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
+    auto cycleSleep = [&]() {
+        long ns = next.tv_nsec + periodNs + long(toff);
+        next.tv_sec += ns / 1000000000L; ns %= 1000000000L;
+        if (ns < 0) { ns += 1000000000L; next.tv_sec--; }
+        next.tv_nsec = ns;
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr);
+    };
+
+    // phase-lock in SAFE-OP, then request OP without ever pausing frames
+    for (int i = 0; i < 500 && m_running; i++) {
+        ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
+        dcAlign(); cycleSleep();
+    }
+    ec_slave[0].state = EC_STATE_OPERATIONAL;
+    ec_writestate(0);
+    for (int w = 0; w < 5000 && m_running && ec_slave[0].state != EC_STATE_OPERATIONAL; w++) {
+        ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
+        dcAlign(); cycleSleep();
+        if (w % 200 == 199) ec_readstate();
+    }
+    if (ec_slave[0].state != EC_STATE_OPERATIONAL) {
+        LOGE("ec: segment did not reach OPERATIONAL");
+        m_op = false;
+        return;
+    }
+    // wake-up pose becomes axis zero (absolute multiturn encoder)
+    if (m_drvTx) m_zeroCounts = m_drvTx->actualPos;
+    m_op = true;
+    LOGI("ec: OPERATIONAL (phase-locked) — cycle %d us, axis zero @ %d counts",
+         m_cfg.cycleUs, int(m_zeroCounts));
+
     const int expectedWkc = ec_group[0].outputsWKC * 2 + ec_group[0].inputsWKC;
 
     while (m_running) {
@@ -289,9 +358,7 @@ void EcBackend::cyclicLoop(CycleFn cycle) {
         cycle(dt);           // Sequencer: consumes inputs, sets targets
         writeOutputs();
 
-        next.tv_nsec += periodNs;
-        while (next.tv_nsec >= 1000000000L) { next.tv_nsec -= 1000000000L; next.tv_sec++; }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr);
+        dcAlign(); cycleSleep();
     }
 
     // safe exit: drop torque request, zero outputs
