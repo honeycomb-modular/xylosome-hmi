@@ -123,6 +123,53 @@ Rsync from Mac:
 
 ---
 
+## Beckhoff C6920 — `xylod` motion controller (Linux IPC)
+
+### CONFIRMED — read off the box 2026-06-13 (`ip -br addr` / `ip route`)
+- **Hostname `beckhoff-pc`, Ubuntu 26.04 LTS** (kernel 7.0.0-22), root disk ~908 GB.
+- **SSH: `ssh hoyte@192.168.2.2`** (user `hoyte`).
+- **`eno1` = LAN / SSH NIC → `192.168.2.2/24`, default gateway `192.168.2.1`.**
+  The gateway `192.168.2.1` is the **Mac** (last login came from it), so the
+  C6920's LAN side currently lives on the **Mac's `192.168.2.x` network**, NOT
+  the garage `192.168.10.x` net. Default route is `proto static` (looks like a
+  netplan static config — confirm in `/etc/netplan/` before changing it).
+- **`enp4s0` = EtherCAT NIC → UP, link-local IPv6 only, NO IPv4** (raw SOEM
+  frames, exactly as expected).
+- **`xylod` runs REAL as a systemd service, auto-starting on boot** (set up +
+  verified 2026-06-13). Unit `/etc/systemd/system/xylod.service` (enabled) runs
+  `/usr/local/bin/xylod --config /etc/xylod.conf` (no `--sim`). Verified live:
+  `welcome` → `sim:false`, bus → `op:true`, drive → Operation Enabled
+  (statusword `0x1637`), `fault:0`.
+  - **After code changes, update the installed binary the service runs:**
+    `cd ~/xylosome-hmi/beckhoff/xylod/build && sudo cmake --install . && sudo systemctl restart xylod`
+  - Manage: `systemctl status|restart|stop xylod`; live log `journalctl -u xylod -f`.
+  - **Sim still available on demand:** `sudo ./xylod --sim` by hand, or re-add a
+    `/etc/systemd/system/xylod.service.d/sim.conf` drop-in (`ExecStart=` then
+    `ExecStart=/usr/local/bin/xylod --config /etc/xylod.conf --sim`).
+
+### ⚠️ The 2026-06-13 "won't turn from the Pi" gotcha — SOLVED, don't relive it
+Symptom: after power-on the pendant connected and motosome streamed the curve,
+but the servo never moved. **Cause: the systemd service was booting with a
+`sim.conf` drop-in (`ExecStart=… --sim`)**, so the **simulator** was answering on
+`:5510` — and the sim *fakes* `op:true` / `enabled:true` / `homed:true`, so it
+looks perfectly healthy. The fix above (install real binary, remove the sim
+drop-in, reload, restart) made the service real.
+**Tell-tale:** the `welcome` line's `"sim"` flag is ground truth — always check it
+first (`printf '{"cmd":"status"}\n' | nc -w1 127.0.0.1 5510 | head -1`).
+
+### Pi ↔ xylod path — CONFIRMED working 2026-06-13
+- The **Pi (`xylosome-pi`)** carries both `192.168.10.3` *and* `192.168.2.3` on
+  `eth0`, so it shares the `192.168.2.x` net with the C6920 (`192.168.2.2`). The
+  HMI's `beckhoff/host` is already correct — `xylod` logs
+  `client connected: 192.168.2.3` + `cmd: execute (from hmi)`.
+- (The old doc default host `192.168.10.20` was never valid — the C6920 is
+  `192.168.2.2:5510`. HMI default in code is still `192.168.10.20`; the Pi's
+  saved QSetting overrides it correctly.)
+- Longer-term: `192.168.2.2` rides the Mac-shared net (gw `192.168.2.1` = Mac).
+  For a standalone cart, pin C6920 + Pi onto one subnet and record it here.
+
+---
+
 ## Status: RUNNING ON PI ✓  — splash screen, all screens navigating, touch working
 
 ```

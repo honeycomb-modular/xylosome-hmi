@@ -95,10 +95,16 @@ design).
   is legal only in PRE-OP and does **not** survive power-off — reconfigure every run.
 - **Bench bus order (per `ec_scan`):** `EK1100(1) · EL1008(2) · EL2008(3) ·
   EL7047(4) · A6-EC(5)`. EL2008 carries `pass_active`/`pass_index`.
+- **Auto-start:** `xylod` runs REAL as an enabled **systemd service**
+  (`/etc/systemd/system/xylod.service` → `/usr/local/bin/xylod --config
+  /etc/xylod.conf`), verified `sim:false` / `op:true` on boot (2026-06-13). The
+  sim is opt-in via a `sim.conf` drop-in. See `SESSION_NOTES.md` — including the
+  "won't turn from the Pi" gotcha (a `--sim` drop-in had it booting the
+  simulator, which fakes a healthy status). Update the installed binary after
+  code changes: `sudo cmake --install . && sudo systemctl restart xylod`.
 - **Open / before garage:** wire the **E-stop chain** (din currently off),
   **EL7047 filter-wheel adaptation** + `xylod.conf` rewrite, **line-trigger
-  terminal** (EL2521), a **real systemd service** (drop the sim override),
-  PREEMPT_RT, and a C13.04 jitter audit after long runs.
+  terminal** (EL2521), PREEMPT_RT, and a C13.04 jitter audit after long runs.
 - **Fallback:** the original ClearCore + Panasonic Minas A6 (pulse) path —
   `firmware/clearcore/`, ClearCore-era HMI code — is intact and untouched.
 - **Detail docs:** `BECKHOFF_PORT.md`, `beckhoff/README.md`, `beckhoff/PROTOCOL.md`.
@@ -251,7 +257,13 @@ separate island (auxiliary analog out), not part of the EtherCAT motion chain.
   `raw.githubusercontent.com/honeycomb-modular/xylosome-hmi/main/<file>`.
 - **Two Pi targets, never mix:** Pi 4 dev @ `192.168.10.2` (EGLFS, make);
   Pi 5 final @ `192.168.2.2` (also `192.168.10.3` on the garage wired link;
-  Wayland/labwc, ninja). C6920 suggested static `192.168.10.20`.
+  Wayland/labwc, ninja).
+- **C6920 (Beckhoff):** `beckhoff-pc`, Ubuntu 26.04. SSH `ssh hoyte@192.168.2.2`
+  (confirmed 2026-06-13). `eno1` = LAN `192.168.2.2/24` (gw `.2.1` = the Mac);
+  `enp4s0` = EtherCAT (no IP). The Pi reaches `xylod` at `192.168.2.2:5510`
+  (Pi is dual-homed `192.168.10.3` + `192.168.2.3`) — **confirmed working**.
+  `xylod` **auto-starts real** on boot (systemd). Details + the sim-trap writeup
+  in `SESSION_NOTES.md`.
 - `.claude/memory/` is write-protected in the Cowork session — **persist durable
   knowledge in the repo** (this file, `DEVLOG.md`) so it syncs everywhere.
 
