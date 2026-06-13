@@ -22,6 +22,7 @@ For current motion work, start from `BECKHOFF_PORT.md` and `beckhoff/README.md`.
 ## Project context — read these first
 
 Before touching any code, read:
+- `PROJECT_OVERVIEW.md` — **START HERE. Single source of truth for the whole system (motion, imaging, HMI, suite, hardware, workflow, open items) with a map to every other doc.**
 - `WORKFLOW.md` — **how Hoyte works across his Mac + PC, and why GitHub (not iCloud) is the source of truth. Read this before moving any code between machines or to a Pi.**
 - `BECKHOFF_PORT.md` — **ACTIVE motion stack: what the Beckhoff EtherCAT port built and what's left to verify on the bench.**
 - `beckhoff/README.md` — C6920 daemon (`xylod`) bring-up: OS, network, build, first motion, service.
