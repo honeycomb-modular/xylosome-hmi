@@ -105,23 +105,43 @@ int main(int argc, char **argv) {
     auto *rx = reinterpret_cast<Rx *>(ec_slave[sl].outputs);
     auto *tx = reinterpret_cast<Tx *>(ec_slave[sl].inputs);
 
-    ec_slave[0].state = EC_STATE_OPERATIONAL;
-    ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
-    ec_writestate(0);
-    for (int t = 0; t < 200 && ec_slave[0].state != EC_STATE_OPERATIONAL; t++) {
+    // ── DC phase-locked cyclic engine ────────────────────────────────────────
+    // Er74.1 round 2 (2026-06-12): SYNC0 + C13.05=2 was not enough — the drive
+    // faulted entering OP. DC drives need frames GAP-FREE at the cycle time
+    // from before the OP request, phase-aligned to DC time (classic SOEM PI).
+    // No blocking statechecks or SDO mailbox traffic once the cadence starts.
+    static int64 integral = 0;
+    int64 toff = 0;
+    auto dcAlign = [&]() {
+        int64 delta = (ec_DCtime - 250000) % 1000000;   // aim ~250 us after SYNC0
+        if (delta > 500000) delta -= 1000000;
+        integral += (delta > 0) - (delta < 0);
+        toff = -(delta / 100) - (integral / 20);
+    };
+    timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
+    auto cycleSleep = [&]() {
+        long ns = next.tv_nsec + 1000000L + long(toff);
+        next.tv_sec += ns / 1000000000L; ns %= 1000000000L;
+        if (ns < 0) { ns += 1000000000L; next.tv_sec--; }
+        next.tv_nsec = ns;
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr);
+    };
+
+    for (int i = 0; i < 500 && run_; i++) {        // phase-lock in SAFE-OP first
         ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
-        ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
+        dcAlign(); cycleSleep();
+    }
+    ec_slave[0].state = EC_STATE_OPERATIONAL;
+    ec_writestate(0);
+    for (int w = 0; w < 5000 && run_ && ec_slave[0].state != EC_STATE_OPERATIONAL; w++) {
+        ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
+        dcAlign(); cycleSleep();
+        if (w % 200 == 199) ec_readstate();        // non-blocking-ish state poll
     }
     if (ec_slave[0].state != EC_STATE_OPERATIONAL) { std::printf("no OP\n"); return 1; }
-    // out-of-band sanity: read statusword via SDO to compare with the PDO view
-    {
-        uint16_t sw = 0; int sz = sizeof(sw);
-        ec_SDOread(sl, 0x6041, 0, FALSE, &sz, &sw, EC_TIMEOUTRXM);
-        std::printf("OPERATIONAL — SDO statusword=0x%04X, expected WKC=%d — enabling drive…\n",
-                    sw, ec_group[0].outputsWKC * 2 + ec_group[0].inputsWKC);
-    }
+    std::printf("OPERATIONAL (phase-locked), expected WKC=%d — enabling drive…\n",
+                ec_group[0].outputsWKC * 2 + ec_group[0].inputsWKC);
 
-    timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
     const int32_t startPos = tx->pos;
     double t = 0.0;
     bool enabled = false;
@@ -158,9 +178,7 @@ int main(int argc, char **argv) {
                         unsigned(ec_slave[sl].state));
         std::fflush(stdout);
 
-        next.tv_nsec += 1000000L;
-        while (next.tv_nsec >= 1000000000L) { next.tv_nsec -= 1000000000L; next.tv_sec++; }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr);
+        dcAlign(); cycleSleep();
     }
 
     std::printf("\ndisabling…\n");
