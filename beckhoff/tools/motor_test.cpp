@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <sched.h>
+#include <sys/mman.h>
 
 static char ioMap[4096];
 static volatile bool run_ = true;
@@ -71,6 +73,15 @@ int main(int argc, char **argv) {
         ec_close(); return 1;
     }
     ec_configdc();
+    // The drive (Er74.1 "no sync signal", 2026-06-12) requires DC SYNC0 at the
+    // cycle time — ec_configdc alone only measures the topology, it doesn't
+    // start the slave's sync pulse.
+    ec_dcsync0(uint16(sl), TRUE, 1000000, 0);            // SYNC0 @ 1 ms
+    // Keep our frames inside the sync window: RT priority + locked memory.
+    mlockall(MCL_CURRENT | MCL_FUTURE);
+    sched_param sp{}; sp.sched_priority = 60;
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0)
+        std::printf("note: SCHED_FIFO unavailable (run with sudo) — continuing best-effort\n");
     ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
 
     auto *rx = reinterpret_cast<Rx *>(ec_slave[sl].outputs);
@@ -129,6 +140,7 @@ int main(int argc, char **argv) {
     std::printf("\ndisabling…\n");
     rx->cw = 0x0006;
     ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET);
+    ec_dcsync0(uint16(sl), FALSE, 0, 0);
     ec_close();
     return 0;
 }

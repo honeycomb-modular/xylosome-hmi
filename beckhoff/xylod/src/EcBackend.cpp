@@ -89,6 +89,10 @@ bool EcBackend::busInit() {
 
     ec_config_map(s_ioMap);
     ec_configdc();
+    // A6-EC requires DC SYNC0 at the cycle time or it faults Er74.1 "no sync
+    // signal" (found on the bench 2026-06-12; manual: "correct the master
+    // communication configuration"). ec_configdc only measures the topology.
+    ec_dcsync0(uint16(m_cfg.posDrive), TRUE, uint32_t(m_cfg.cycleUs) * 1000u, 0);
 
     ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
 
