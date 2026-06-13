@@ -37,25 +37,39 @@ int main(int argc, char **argv) {
     if (ec_config_init(FALSE) <= 0) { std::printf("no slaves\n"); return 1; }
     std::printf("slave %d: %s\n", sl, ec_slave[sl].name);
 
-    // remap to fixed CSP PDOs (same set as xylod)
-    sdo<uint8_t>(sl, 0x1C12, 0, 0); sdo<uint8_t>(sl, 0x1C13, 0, 0);
-    sdo<uint8_t>(sl, 0x1600, 0, 0);
-    sdo<uint32_t>(sl, 0x1600, 1, 0x60400010);
-    sdo<uint32_t>(sl, 0x1600, 2, 0x607A0020);
-    sdo<uint32_t>(sl, 0x1600, 3, 0x60600008);
-    sdo<uint8_t>(sl, 0x1600, 0, 3);
-    sdo<uint8_t>(sl, 0x1A00, 0, 0);
-    sdo<uint32_t>(sl, 0x1A00, 1, 0x60410010);
-    sdo<uint32_t>(sl, 0x1A00, 2, 0x60640020);
-    sdo<uint32_t>(sl, 0x1A00, 3, 0x606C0020);
-    sdo<uint32_t>(sl, 0x1A00, 4, 0x603F0010);
-    sdo<uint32_t>(sl, 0x1A00, 5, 0x60610008);
-    sdo<uint8_t>(sl, 0x1A00, 0, 5);
-    sdo<uint16_t>(sl, 0x1C12, 1, 0x1600); sdo<uint8_t>(sl, 0x1C12, 0, 1);
-    sdo<uint16_t>(sl, 0x1C13, 1, 0x1A00); sdo<uint8_t>(sl, 0x1C13, 0, 1);
-    sdo<int8_t>(sl, 0x6060, 0, 8);                       // CSP
+    // remap to fixed CSP PDOs (same set as xylod). Every write is verified —
+    // if the drive refuses remapping, we must NOT touch the motor with a
+    // misaligned process image.
+    bool ok = true;
+    ok &= sdo<uint8_t>(sl, 0x1C12, 0, 0); ok &= sdo<uint8_t>(sl, 0x1C13, 0, 0);
+    ok &= sdo<uint8_t>(sl, 0x1600, 0, 0);
+    ok &= sdo<uint32_t>(sl, 0x1600, 1, 0x60400010);
+    ok &= sdo<uint32_t>(sl, 0x1600, 2, 0x607A0020);
+    ok &= sdo<uint32_t>(sl, 0x1600, 3, 0x60600008);
+    ok &= sdo<uint8_t>(sl, 0x1600, 0, 3);
+    ok &= sdo<uint8_t>(sl, 0x1A00, 0, 0);
+    ok &= sdo<uint32_t>(sl, 0x1A00, 1, 0x60410010);
+    ok &= sdo<uint32_t>(sl, 0x1A00, 2, 0x60640020);
+    ok &= sdo<uint32_t>(sl, 0x1A00, 3, 0x606C0020);
+    ok &= sdo<uint32_t>(sl, 0x1A00, 4, 0x603F0010);
+    ok &= sdo<uint32_t>(sl, 0x1A00, 5, 0x60610008);
+    ok &= sdo<uint8_t>(sl, 0x1A00, 0, 5);
+    ok &= sdo<uint16_t>(sl, 0x1C12, 1, 0x1600); ok &= sdo<uint8_t>(sl, 0x1C12, 0, 1);
+    ok &= sdo<uint16_t>(sl, 0x1C13, 1, 0x1A00); ok &= sdo<uint8_t>(sl, 0x1C13, 0, 1);
+    ok &= sdo<int8_t>(sl, 0x6060, 0, 8);                 // CSP
+    if (!ok) {
+        std::printf("PDO remap rejected by drive — aborting before motion.\n"
+                    "(Drive may use fixed PDOs; we adapt the tool, not push on.)\n");
+        ec_close(); return 1;
+    }
 
     ec_config_map(ioMap);
+    if (ec_slave[sl].Obytes != sizeof(Rx) || ec_slave[sl].Ibytes != sizeof(Tx)) {
+        std::printf("process image mismatch: O=%u (want %zu) I=%u (want %zu) — aborting.\n",
+                    unsigned(ec_slave[sl].Obytes), sizeof(Rx),
+                    unsigned(ec_slave[sl].Ibytes), sizeof(Tx));
+        ec_close(); return 1;
+    }
     ec_configdc();
     ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
 
