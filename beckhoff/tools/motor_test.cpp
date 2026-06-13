@@ -83,6 +83,33 @@ int main(int argc, char **argv) {
         ec_close(); return 1;
     }
 
+    // Sync-manager sync config (0x1C32/0x1C33): TwinCAT writes these from the
+    // ESI at startup; SOEM leaves them to us. Read what the drive reports,
+    // then explicitly request DC-SYNC0 at 1 ms. Best-effort (some subobjects
+    // may be read-only) — failures print but don't abort.
+    auto rdU16 = [&](uint16_t i, uint8_t s2) -> int {
+        uint16_t v = 0; int sz = sizeof(v);
+        return ec_SDOread(sl, i, s2, FALSE, &sz, &v, EC_TIMEOUTRXM) > 0 ? int(v) : -1;
+    };
+    auto rdU32 = [&](uint16_t i, uint8_t s2) -> long {
+        uint32_t v = 0; int sz = sizeof(v);
+        return ec_SDOread(sl, i, s2, FALSE, &sz, &v, EC_TIMEOUTRXM) > 0 ? long(v) : -1;
+    };
+    std::printf("1C32: type=%d cycle=%ld supported=0x%X | 1C33: type=%d cycle=%ld\n",
+                rdU16(0x1C32, 1), rdU32(0x1C32, 2), unsigned(rdU16(0x1C32, 4)),
+                rdU16(0x1C33, 1), rdU32(0x1C33, 2));
+    sdo<uint16_t>(sl, 0x1C32, 1, 2);                 // sync type: DC SYNC0
+    sdo<uint32_t>(sl, 0x1C32, 2, 1000000);           // cycle 1 ms
+    sdo<uint16_t>(sl, 0x1C33, 1, 2);
+    sdo<uint32_t>(sl, 0x1C33, 2, 1000000);
+    std::printf("1C32 after: type=%d cycle=%ld | 1C33 after: type=%d cycle=%ld\n",
+                rdU16(0x1C32, 1), rdU32(0x1C32, 2), rdU16(0x1C33, 1), rdU32(0x1C33, 2));
+
+    // DC measurement + SYNC0 BEFORE the SAFE-OP transition — the drive samples
+    // its sync configuration on PREOP→SAFEOP (TwinCAT's startup order).
+    ec_configdc();
+    ec_dcsync0(uint16(sl), TRUE, 1000000, 0);        // SYNC0 @ 1 ms
+
     ec_config_map(ioMap);
     if (ec_slave[sl].Obytes != sizeof(Rx) || ec_slave[sl].Ibytes != sizeof(Tx)) {
         std::printf("process image mismatch: O=%u (want %zu) I=%u (want %zu) — aborting.\n",
@@ -90,11 +117,6 @@ int main(int argc, char **argv) {
                     unsigned(ec_slave[sl].Ibytes), sizeof(Tx));
         ec_close(); return 1;
     }
-    ec_configdc();
-    // The drive (Er74.1 "no sync signal", 2026-06-12) requires DC SYNC0 at the
-    // cycle time — ec_configdc alone only measures the topology, it doesn't
-    // start the slave's sync pulse.
-    ec_dcsync0(uint16(sl), TRUE, 1000000, 0);            // SYNC0 @ 1 ms
     // Keep our frames inside the sync window: RT priority + locked memory.
     mlockall(MCL_CURRENT | MCL_FUTURE);
     sched_param sp{}; sp.sched_priority = 60;
