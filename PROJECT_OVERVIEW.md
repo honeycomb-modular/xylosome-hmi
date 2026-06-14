@@ -105,6 +105,12 @@ design).
 - **Open / before garage:** wire the **E-stop chain** (din currently off),
   **EL7047 filter-wheel adaptation** + `xylod.conf` rewrite, **line-trigger
   terminal** (EL2521), PREEMPT_RT, and a C13.04 jitter audit after long runs.
+- **Permanent absolute home (decided 2026-06-13, not built):** no switch / no
+  hard stop — use the **multi-turn absolute encoder + battery + stored home
+  offset**, replacing `xylod`'s wake-zero. Battery encoder cable **ordered**
+  (StepperOnline `AS7-C-ENC076-BAT-3.0`); then set `C00.07` multi-turn mode,
+  clear the first-connect `Er208`, teach the offset once. Full plan in
+  `SESSION_NOTES.md`.
 - **Fallback:** the original ClearCore + Panasonic Minas A6 (pulse) path —
   `firmware/clearcore/`, ClearCore-era HMI code — is intact and untouched.
 - **Detail docs:** `BECKHOFF_PORT.md`, `beckhoff/README.md`, `beckhoff/PROTOCOL.md`.

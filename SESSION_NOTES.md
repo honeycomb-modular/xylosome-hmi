@@ -168,6 +168,41 @@ first (`printf '{"cmd":"status"}\n' | nc -w1 127.0.0.1 5510 | head -1`).
 - Longer-term: `192.168.2.2` rides the Mac-shared net (gw `192.168.2.1` = Mac).
   For a standalone cart, pin C6920 + Pi onto one subnet and record it here.
 
+### Homing / absolute home — DECISION 2026-06-13 (noted, NOT built)
+Constraints from Hoyte: **no hard-stop homing, no home switch.** (Homing on every
+startup is acceptable in principle, but not via a switch or a stop.)
+
+Why a plain "<360° so single-turn is enough" shortcut does NOT work: the encoder
+is on the **motor**, before the 50:1 harmonic reduction. Output travel is <360°
+(soft limits −10..200 = 210°), but that's ~**29 motor revolutions**, so a
+single-turn absolute reading is ambiguous (~29×) over the range.
+
+**Chosen route: let the absolute encoder BE the home** — 17-bit **multi-turn
+absolute + backup battery + a stored home offset**. No homing move at all: on
+power-up the drive already knows true position; `xylod` applies a fixed offset so
+"home" is the same physical place every boot. Cleanest fit given no switch/stop.
+
+To build later (NOT done) — hardware path now committed:
+- **Encoder battery cable ORDERED 2026-06-13: StepperOnline `AS7-C-ENC076-BAT-3.0`**
+  (3 m, A6 17-bit, battery box inline). It **replaces** the current encoder cable
+  at the motor ↔ drive **CN2**. Product:
+  https://www.omc-stepperonline.com/3m-118-11-encoder-cable-with-battery-box-for-a6-series-17-bit-servo-motor-as7-c-enc076-bat-3-0
+  (5 m / 10 m variants exist if the run needs it.) Confirm it matches the exact
+  motor connector (brake vs non-brake) on arrival.
+- **On first connect: `Er208` (battery fault) is expected** → reset via
+  `F31.10` / `2031.11h`, power-cycle, then run absolute-position setup.
+- **Set the drive to multi-turn absolute mode: `C00.07` (`2000.08h`)** (not
+  single-turn `60E6h`).
+- **Teach the home offset once** (`607Ch` home offset, or store in `xylod`):
+  define "this physical position = 0".
+- **Replace `xylod`'s wake-zero** (today it zeros to wherever the shaft sits at
+  OP — `xylod.conf` note) **with absolute-position + stored offset.**
+
+Trade-off (price of no switch / no stop): the battery is a consumable. If it dies
+or is replaced → `Er208`, multi-turn count lost → re-teach home once. Same if the
+keyway/coupling or harmonic drive is ever reassembled. Otherwise: zero-touch,
+instant-ready home on every boot.
+
 ---
 
 ## Status: RUNNING ON PI ✓  — splash screen, all screens navigating, touch working
