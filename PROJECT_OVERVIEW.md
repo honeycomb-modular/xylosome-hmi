@@ -242,6 +242,14 @@ separate island (auxiliary analog out), not part of the EtherCAT motion chain.
 - **EL7047 has two supplies:** motor current on terminal points 3'/7', and drive
   *control power* via the EK1100 +/− power-contact rail — feed the rail or you
   get `0xA010:08` "no control power".
+- **Shock safety (mobile cart, no earth routine) — design, not built:** the
+  aluminum frame on rubber wheels can't rely on building earth. Plan = float the
+  240 V servo on the isolation-transformer secondary + an **insulation monitor
+  (Bender ISOMETER IR425-D4-1)** referenced to the bonded frame (trips on first
+  live-to-frame fault, earth-independent), plus a **portable Class-A GFCI** on the
+  120 V cord, plus equipotential bonding of all metal. IMD trip ties into the
+  E-stop contactor. Full design: `docs/electrical_safety.md`. **Validate with a
+  licensed electrician.**
 
 ---
 
@@ -317,6 +325,7 @@ separate island (auxiliary analog out), not part of the EtherCAT motion chain.
 | `SESSION_NOTES.md` | Pi 4 vs Pi 5 targets, deploy/SSH/build commands |
 | `pi/hmi/METADATA_INFUSER.md` | Metadata Infuser spec + implementation |
 | `docs/camera_capture_note.md` | Camera/grabber ownership + verified imaging chain |
+| `docs/electrical_safety.md` | Cart shock-safety: floating 240 V + insulation monitor + bonded frame |
 | `docs/concept/review_suite_plan.md` | Full Review Suite plan + design decisions |
 | `suite/README.md`, `suite/NEXT_SESSION.md` | Suite build + resume handoff |
 | `docs/architecture/README.md` | Which architecture diagram is current vs stale |
