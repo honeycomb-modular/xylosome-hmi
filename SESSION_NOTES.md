@@ -168,6 +168,24 @@ first (`printf '{"cmd":"status"}\n' | nc -w1 127.0.0.1 5510 | head -1`).
 - Longer-term: `192.168.2.2` rides the Mac-shared net (gw `192.168.2.1` = Mac).
   For a standalone cart, pin C6920 + Pi onto one subnet and record it here.
 
+### ⚠️ Two gotchas solved 2026-06-16
+
+**1. Motor wouldn't run — `xylod` crash-looping ("A6-EC PDO remap failed / slave 5").**
+A **second EL2008 was added to the bus**, which shifted every downstream slave:
+`1 EK1100  2 EL1008  3 EL2008  4 EL2008  5 EL7047  6 A6-EC` (drive moved 5→6).
+`xylod.conf` still said `pos_drive=5`, so the servo PDO remap hit the EL7047. Fix:
+`pos_drive = 6` (done in repo conf). **Rule: adding/removing ANY Beckhoff terminal
+shifts all downstream `pos_*` — update `xylod.conf`.** (Future hardening: match the
+drive by name "ANCTL AS715N" instead of fixed position.)
+
+**2. Boot hung ~2 min on a prompt.** `systemd-networkd-wait-online` was waiting for
+the **IP-less EtherCAT NIC `enp4s0`** (it had `accept-ra: true` → stuck
+"configuring" → 120 s timeout). Fix in `/etc/netplan/00-installer-config.yaml`:
+set `enp4s0` to `dhcp4/6: false`, `accept-ra: false`, **`optional: true`**, then
+`sudo netplan generate && sudo netplan apply`. Verified the wait-online ExecStart
+now lists only `eno1`. (`eno1` is **static** `192.168.2.2` — the box keeps its IP
+with or without the Mac; the Mac is only the default gateway.)
+
 ### Homing / absolute home — DECISION 2026-06-13 (noted, NOT built)
 Constraints from Hoyte: **no hard-stop homing, no home switch.** (Homing on every
 startup is acceptable in principle, but not via a switch or a stop.)
