@@ -168,7 +168,7 @@ first (`printf '{"cmd":"status"}\n' | nc -w1 127.0.0.1 5510 | head -1`).
 - Longer-term: `192.168.2.2` rides the Mac-shared net (gw `192.168.2.1` = Mac).
   For a standalone cart, pin C6920 + Pi onto one subnet and record it here.
 
-### ⚠️ Two gotchas solved 2026-06-16
+### ⚠️ Three gotchas solved 2026-06-16
 
 **1. Motor wouldn't run — `xylod` crash-looping ("A6-EC PDO remap failed / slave 5").**
 A **second EL2008 was added to the bus**, which shifted every downstream slave:
@@ -185,6 +185,14 @@ set `enp4s0` to `dhcp4/6: false`, `accept-ra: false`, **`optional: true`**, then
 `sudo netplan generate && sudo netplan apply`. Verified the wait-online ExecStart
 now lists only `eno1`. (`eno1` is **static** `192.168.2.2` — the box keeps its IP
 with or without the Mac; the Mac is only the default gateway.)
+
+**3. After a reboot, drive faulted `0x8700` (Er74.1 "no sync"), `op:false`.**
+Power-up race: the systemd service starts `xylod` before the A6-EC finishes its
+own boot, so the DC-sync handshake fails. A plain `sudo systemctl restart xylod`
+(drive already up) clears it. Permanent fix = a startup delay drop-in
+`/etc/systemd/system/xylod.service.d/wait-drive.conf` → `ExecStartPre=/bin/sleep 15`
++ `daemon-reload`. (Better long-term: have `xylod` fail/retry bus-init until OP so
+systemd's `Restart=on-failure` auto-recovers — code change, not done.)
 
 ### Homing / absolute home — DECISION 2026-06-13 (noted, NOT built)
 Constraints from Hoyte: **no hard-stop homing, no home switch.** (Homing on every
