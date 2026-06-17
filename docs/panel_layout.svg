@@ -1,0 +1,101 @@
+<svg viewBox="0 0 920 700" xmlns="http://www.w3.org/2000/svg" role="img" font-family="system-ui, -apple-system, Segoe UI, sans-serif">
+<title>Xylosome cart DIN-rail and panel layout</title>
+<desc>A control-panel back-plate split into a left POWER/HEAT zone (mains inlet, GFCI breaker, isolation transformer, A6-EC servo drive) and a right CONTROL/SIGNAL zone (24V PSU, EtherCAT EK1100 terminal stack, C6920 IPC), with a protective-earth bar across the bottom bonded to the frame.</desc>
+<style>
+  svg{
+    --ink:var(--color-text-primary,#21262c);
+    --mut:var(--color-text-secondary,#6b7178);
+    --ln:var(--color-border-secondary,#cfd4da);
+    --box:var(--color-bg-primary,#ffffff);
+    --plate:var(--color-bg-secondary,#f5f6f8);
+    --amb:#bf7a2c; --ambf:#e89a4717; --ambh:#945715;
+    --blu:#3a6fb0; --bluf:#3f7cc516; --bluh:#2c5790;
+    --grn:#2f8350; --grnf:#3c9a5f24;
+  }
+  .t{fill:var(--ink);font-size:12.5px}
+  .ti{fill:var(--ink);font-size:12.5px;font-weight:600}
+  .s{fill:var(--mut);font-size:9.5px}
+  .h{font-size:11px;font-weight:700;letter-spacing:.4px}
+  .box{fill:var(--box);stroke:var(--ln);stroke-width:1}
+  .ec{fill:var(--box);stroke:var(--blu);stroke-width:1}
+  .lbl{fill:var(--mut);font-size:9px}
+  .cap{fill:var(--mut);font-size:9.5px;font-style:italic}
+</style>
+
+<text x="460" y="26" text-anchor="middle" class="ti" font-size="18">Xylosome cart — DIN-rail / panel layout</text>
+<text x="460" y="45" text-anchor="middle" class="s" font-size="11">power &amp; heat on one side · logic &amp; signal on the other · earth across the bottom</text>
+
+<rect x="24" y="60" width="872" height="566" rx="10" fill="var(--plate)" stroke="var(--ln)"/>
+
+<rect x="40" y="80" width="408" height="476" rx="6" fill="var(--ambf)" stroke="var(--amb)"/>
+<rect x="472" y="80" width="408" height="476" rx="6" fill="var(--bluf)" stroke="var(--blu)"/>
+<text x="52" y="100" class="h" fill="var(--ambh)">POWER / HEAT  ·  keep cables this side</text>
+<text x="484" y="100" class="h" fill="var(--bluh)">CONTROL / SIGNAL  ·  clean</text>
+<line x1="460" y1="86" x2="460" y2="550" stroke="var(--ln)" stroke-width="1.4" stroke-dasharray="4 4"/>
+
+<rect x="58" y="112" width="372" height="40" rx="4" class="box"/>
+<text x="72" y="137" class="ti">120 V inlet + main switch</text>
+
+<rect x="58" y="160" width="372" height="46" rx="4" class="box"/>
+<text x="72" y="180" class="ti">GFCI / RCBO  (DIN)</text>
+<text x="72" y="196" class="s">ground-fault · breaker · surge</text>
+
+<rect x="58" y="214" width="372" height="56" rx="4" class="box"/>
+<text x="72" y="236" class="ti">Isolation transformer  120 → 240 V</text>
+<text x="72" y="252" class="s">heavy — mount low &amp; supported · warm</text>
+
+<rect x="58" y="286" width="372" height="74" rx="4" class="box"/>
+<text x="72" y="308" class="ti">A6-EC servo drive</text>
+<text x="72" y="324" class="s">plate-mount, vertical · heat clearance ↑↓</text>
+<text x="72" y="345" class="lbl">→ motor cable exits on power side (away from logic)</text>
+
+<rect x="58" y="372" width="372" height="36" rx="4" class="box" stroke-dasharray="3 3"/>
+<text x="72" y="394" class="s">(future) contactor · insulation monitor (IMD)</text>
+
+<line x1="244" y1="270" x2="244" y2="286" stroke="var(--amb)" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="252" y="282" class="lbl" fill="var(--ambh)">240 V</text>
+
+<rect x="490" y="112" width="372" height="46" rx="4" class="box"/>
+<text x="504" y="132" class="ti">24 V PSU — Mean Well (DIN)</text>
+<text x="504" y="148" class="s">feeds bus Us/Up + all logic</text>
+
+<rect x="490" y="178" width="372" height="92" rx="4" class="box"/>
+<text x="504" y="198" class="ti">EtherCAT DIN rail</text>
+<text x="504" y="213" class="s">left → right = slave 1 … N</text>
+<g font-size="8.5px" text-anchor="middle" fill="var(--ink)">
+  <rect x="500" y="222" width="56" height="38" rx="3" class="ec"/><text x="528" y="238">EK1100</text><text x="528" y="251" class="lbl">1</text>
+  <rect x="558" y="222" width="56" height="38" rx="3" class="ec"/><text x="586" y="238">EL1008</text><text x="586" y="251" class="lbl">2</text>
+  <rect x="616" y="222" width="56" height="38" rx="3" class="ec"/><text x="644" y="238">EL2008</text><text x="644" y="251" class="lbl">3</text>
+  <rect x="674" y="222" width="56" height="38" rx="3" class="ec"/><text x="702" y="238">EL2008</text><text x="702" y="251" class="lbl">4</text>
+  <rect x="732" y="222" width="56" height="38" rx="3" class="ec"/><text x="760" y="238">EL7047</text><text x="760" y="251" class="lbl">5</text>
+  <rect x="790" y="222" width="36" height="38" rx="3" class="ec" fill="var(--plate)"/><text x="808" y="243">END</text>
+</g>
+
+<rect x="490" y="290" width="372" height="56" rx="4" class="box"/>
+<text x="504" y="312" class="ti">C6920 IPC  (plate-mount, x86)</text>
+<text x="504" y="328" class="s">EtherCAT master · eno1 → Pi / HMI</text>
+
+<text x="490" y="372" class="cap">⚠ add a terminal → every later slave renumbers</text>
+<text x="490" y="386" class="cap">→ update xylod.conf pos_*  (drive hangs off the end)</text>
+
+<line x1="676" y1="158" x2="676" y2="178" stroke="var(--blu)" stroke-width="1.6" marker-end="url(#b)"/>
+<text x="684" y="174" class="lbl" fill="var(--bluh)">24 V</text>
+
+<path d="M 500 252 C 470 252, 452 322, 430 322" fill="none" stroke="var(--blu)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<text x="452" y="300" class="lbl" fill="var(--bluh)">EtherCAT → drive</text>
+
+<rect x="40" y="566" width="840" height="36" rx="5" fill="var(--grnf)" stroke="var(--grn)"/>
+<text x="56" y="589" class="ti" fill="var(--grn)">⏚  PE EARTH BAR  —  bonded to cart frame · every enclosure, shield &amp; PE lands here</text>
+
+<g transform="translate(40,620)" font-size="10px">
+  <rect x="0" y="0" width="12" height="12" rx="2" fill="var(--ambf)" stroke="var(--amb)"/><text x="18" y="10" class="t">power / heat</text>
+  <rect x="120" y="0" width="12" height="12" rx="2" fill="var(--bluf)" stroke="var(--blu)"/><text x="138" y="10" class="t">logic / signal</text>
+  <rect x="250" y="0" width="12" height="12" rx="2" fill="var(--grnf)" stroke="var(--grn)"/><text x="268" y="10" class="t">protective earth</text>
+  <text x="410" y="10" class="s">flat schematic — not to scale</text>
+</g>
+
+<defs>
+  <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L7,4 L0,8 Z" fill="var(--amb)"/></marker>
+  <marker id="b" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L7,4 L0,8 Z" fill="var(--blu)"/></marker>
+</defs>
+</svg>

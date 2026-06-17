@@ -13,6 +13,33 @@ voltage and waits for a person to become the path to ground. We need automatic
 shock protection that **travels with the cart and does not depend on the quality
 of the field outlet's earth.**
 
+## ⚠️ Frame bonding on the 4040 cart — the anodize trap
+
+The cart is an **open 4040 aluminum-extrusion frame** (DIN rails screwed straight to
+the chassis, open on all sides). Two consequences:
+
+- **Anodized aluminum is an electrical INSULATOR.** The extrusion surface is Al₂O₃,
+  and T-slot joints are mechanical, not electrical — so **the frame is NOT one
+  continuous conductor.** Different sections (and the DIN rails bolted to them) can
+  sit at different potentials. This silently defeats "bond the frame": a fault could
+  energize a section that the PE never actually reached.
+- **Open on all sides = touch hazard.** People can reach live terminals, so all
+  mains/240 V terminals must be **finger-safe / shrouded**, ideally with a clip-on
+  cover over the live bits.
+
+**Do this — build a deliberate bonding star, don't trust the structure:**
+- Run a **green PE conductor from every DIN rail, every metal enclosure, and every
+  major frame section** back to the central **PE bar**.
+- Use **anodize-piercing hardware** at the bond points — serrated/paint-piercing
+  washers or **grounding T-nuts** (8020/Misumi) — for a gas-tight metal-to-metal bite.
+- **Verify with a meter:** < ~0.1 Ω from the PE bar to *every* spot a hand can reach.
+  Anywhere reading open is an unbonded island — fix it.
+
+EMC note (open frame = no shielding): rely on **physical separation + shielded
+cables**; keep the drive/motor/240 V region away from EtherCAT/signal (use the
+front/back faces of the 4040 to separate). Panel area ≈ 30" × 24" — roomy.
+Layout: see `docs/panel_layout.svg`.
+
 ## Tier 1 — the cheap, standard solution (do this first, ~$30)
 
 This is how every metal-cased appliance/tool is protected. It's enough for a safe cart.
