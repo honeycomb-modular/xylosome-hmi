@@ -327,6 +327,7 @@ separate island (auxiliary analog out), not part of the EtherCAT motion chain.
 | `docs/camera_capture_note.md` | Camera/grabber ownership + verified imaging chain |
 | `docs/electrical_safety.md` | Cart shock-safety: floating 240 V + insulation monitor + bonded frame (incl. 4040 bonding) |
 | `docs/panel_layout.svg` | DIN-rail / panel layout: power vs signal zones, EtherCAT stack order, PE bar |
+| `docs/grabber_io_wiring.md` | EL2521 → Xtium-CL MX4 line-trigger/encoder wiring (pins, Sapera params) |
 | `docs/concept/review_suite_plan.md` | Full Review Suite plan + design decisions |
 | `suite/README.md`, `suite/NEXT_SESSION.md` | Suite build + resume handoff |
 | `docs/architecture/README.md` | Which architecture diagram is current vs stale |
