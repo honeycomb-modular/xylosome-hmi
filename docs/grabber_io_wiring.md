@@ -65,6 +65,25 @@ is the fully-specified one.)
 - The pin↔wire-colour map ships on the **Product Notice in the cable bag** — use it
   with the rev-correct J1 table.
 
+## Identifying the wires (blunt-end cable) — beep-test method
+
+You only need **5 wires** (pins 3, 2, 6, 5 + a GND) out of the 27. Fastest, most
+trustworthy way to find them:
+
+1. Check the cable bag for Teledyne's **wire-colour → pin sheet** ("Product
+   Notice"). Use it as a hint, not gospel.
+2. **Verify with a multimeter on continuity.** The DH40-27S plug has **pin numbers
+   molded on it**. Probe a known pin, then touch each blunt wire until it beeps:
+   - **Pin 3 → A+**, **Pin 2 → A−**, **Pin 6 → B+**, **Pin 5 → B−**, plus a **GND** pin.
+3. **Label each wire as you find it** (heat-shrink/tape: "A+ p3", "B+ p6", …), then
+   **cut back and tape off the other ~22**. Your 27-core cable becomes a 5-wire harness.
+4. **Confirm pin-1 orientation** (molded triangle/notch on the plug) so you're
+   counting pins the same way the manual's J1 table does — otherwise pin 3 could be
+   mirrored.
+
+This is mandatory for aftermarket cables (Donghoo etc.) — their colour code won't
+match Teledyne's. The beep test is colour-agnostic, so it always works.
+
 ## Behaviour nuance
 
 Encoder-sim locks the line trigger to **commanded** motion (the drawn curve), not
