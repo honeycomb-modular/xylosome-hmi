@@ -79,6 +79,16 @@ Then `sudo reboot` and `ssh hoyte@192.168.10.3` — confirmed it now comes back 
 - **Build**: `make` (Unix Makefiles, not Ninja)
 - **SVG export path**: `/home/hoyte/xylosome_exports/`
 
+> 📌 **TODO — next time SSH'd into the Pi: make root read-only (power-loss safety).**
+> The cart cuts power to the Pi with no soft shutdown (PoE drops when the cart
+> switches off) → SD/NVMe corruption risk that accumulates over power cycles.
+> Fix: `raspi-config` → Performance → **Overlay File System** (read-only root + RAM
+> overlay) → abrupt power-off can't corrupt it. **Catch:** the metadata exports
+> (`/home/hoyte/xylosome_exports/`) need a *writable* target — give them a small
+> separate writable partition / USB, or move metadata ownership to the suite/capture
+> PC. (Teensy needs nothing — MCUs are fine with power yanks. NVMe > SD for
+> robustness.) Optional later: a supercap/UPS HAT for graceful auto-shutdown.
+
 ### Pi 4 deploy sequence
 
 ```bash
