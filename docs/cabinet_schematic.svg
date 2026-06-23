@@ -1,0 +1,105 @@
+<svg viewBox="0 0 1000 760" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,sans-serif" role="img">
+<title>Xylosome cart control cabinet — stack layout and connections</title>
+<desc>Two-row control cabinet: top row C6920 PC, Beckhoff EtherCAT modules, PoE switch, A6-EC servo drive; bottom row breaker/GFCI, 110V+24V splitters, 24V PSUs, 12V PSU, and a 110-to-220V transformer. Colour-coded lines show mains AC, DC power, EtherCAT, Ethernet/PoE, motor, and Camera Link/sync to external blocks (servo motor, Pi HMI, capture PC + camera, and the operator computer).</desc>
+<style>
+  svg{--ink:var(--color-text-primary,#20242b);--mut:var(--color-text-secondary,#6c727a);
+      --ln:var(--color-border-secondary,#cdd2d8);--box:var(--color-bg-primary,#fff);
+      --plate:var(--color-bg-secondary,#f5f6f8);
+      --ac:#c0392b;--dc:#d98a00;--ec:#2d6fb0;--net:#2f8f57;--mot:#7a4fb0;--cl:#138d8d;}
+  .ti{fill:var(--ink);font-weight:600;font-size:12px}
+  .s{fill:var(--mut);font-size:9px}
+  .box{fill:var(--box);stroke:var(--ln);stroke-width:1}
+  .h{font-size:10.5px;font-weight:700;letter-spacing:.4px;fill:var(--mut)}
+  .ll{font-size:8.5px;font-weight:600}
+</style>
+
+<text x="500" y="24" text-anchor="middle" class="ti" font-size="17">Xylosome cart — cabinet stack &amp; connections</text>
+
+<rect x="26" y="44" width="556" height="356" rx="9" fill="var(--plate)" stroke="var(--ln)"/>
+<text x="38" y="62" class="h">CONTROL CABINET</text>
+
+<text x="38" y="78" class="s">top row · logic / signal</text>
+<g>
+ <rect x="40" y="84" width="124" height="60" rx="4" class="box"/><text x="50" y="106" class="ti">C6920 PC</text><text x="50" y="120" class="s">EtherCAT master</text><text x="50" y="131" class="s">Linux · xylod</text>
+ <rect x="172" y="84" width="124" height="60" rx="4" class="box"/><text x="182" y="106" class="ti">EK1100 + EL</text><text x="182" y="120" class="s">DI/DO · stepper</text><text x="182" y="131" class="s">(+ EL2521 planned)</text>
+ <rect x="304" y="84" width="124" height="60" rx="4" class="box"/><text x="314" y="106" class="ti">PoE+ switch</text><text x="314" y="120" class="s">network hub</text><text x="314" y="131" class="s">powers Pi (PoE)</text>
+ <rect x="436" y="84" width="126" height="60" rx="4" class="box"/><text x="446" y="106" class="ti">A6-EC drive</text><text x="446" y="120" class="s">EtherCAT servo</text><text x="446" y="131" class="s">220 V in</text>
+</g>
+
+<rect x="40" y="152" width="522" height="14" rx="2" fill="var(--plate)" stroke="var(--ln)"/>
+<line x1="40" y1="159" x2="562" y2="159" stroke="var(--ln)" stroke-dasharray="3 4"/>
+<text x="46" y="163" class="s">wire duct — keep mains ⟂ signal</text>
+
+<text x="38" y="184" class="s">bottom row · power</text>
+<g>
+ <rect x="40" y="190" width="124" height="56" rx="4" class="box"/><text x="50" y="210" class="ti">Breaker / GFCI</text><text x="50" y="224" class="s">frame protection</text><text x="50" y="235" class="s">120 V main</text>
+ <rect x="172" y="190" width="124" height="56" rx="4" class="box"/><text x="182" y="210" class="ti">Splitters</text><text x="182" y="224" class="s">110 V + 24 V</text><text x="182" y="235" class="s">distribution</text>
+ <rect x="304" y="190" width="124" height="56" rx="4" class="box"/><text x="314" y="210" class="ti">2× 24 V PSU</text><text x="314" y="224" class="s">PC · PoE ·</text><text x="314" y="235" class="s">Beckhoff modules</text>
+ <rect x="436" y="190" width="126" height="56" rx="4" class="box"/><text x="446" y="210" class="ti">12 V PSU</text><text x="446" y="224" class="s">camera</text>
+</g>
+
+<rect x="40" y="256" width="522" height="46" rx="4" class="box"/><text x="50" y="276" class="ti">Transformer 110 → 220 V</text><text x="50" y="291" class="s">isolation · feeds the servo drive (heavy, low)</text>
+
+<line x1="8" y1="218" x2="40" y2="218" stroke="var(--ac)" stroke-width="2.2" marker-end="url(#mac)"/>
+<text x="6" y="212" class="ll" fill="var(--ac)">120 V in</text>
+
+<text x="648" y="62" class="h">OFF-CABINET (on the cart)</text>
+<rect x="648" y="74" width="150" height="50" rx="5" class="box"/><text x="658" y="94" class="ti">Servo motor</text><text x="658" y="108" class="s">+ harmonic 50:1 → scan axis</text>
+<rect x="648" y="150" width="150" height="54" rx="5" class="box"/><text x="658" y="170" class="ti">Pi HMI + pendant</text><text x="658" y="184" class="s">touchscreen · Teensy</text><text x="658" y="195" class="s">dial + buttons</text>
+<rect x="648" y="228" width="306" height="92" rx="5" class="box"/><text x="658" y="248" class="ti">Capture PC (Windows)</text><text x="658" y="262" class="s">Sapera — owns the image</text>
+ <rect x="662" y="270" width="130" height="40" rx="3" class="box"/><text x="670" y="287" class="s" font-weight="600" fill="var(--ink)">Xtium-CL MX4</text><text x="670" y="300" class="s">grabber</text>
+ <rect x="808" y="270" width="132" height="40" rx="3" class="box"/><text x="816" y="287" class="s" font-weight="600" fill="var(--ink)">Piranha HS</text><text x="816" y="300" class="s">line-scan camera</text>
+<rect x="648" y="344" width="150" height="46" rx="5" class="box"/><text x="658" y="364" class="ti">Mac / garage PC</text><text x="658" y="378" class="s">dev · GitHub</text>
+
+<path d="M164 218 H172" stroke="var(--ac)" stroke-width="2" marker-end="url(#mac)"/>
+<path d="M234 246 V279 H40 M234 279 H40" fill="none" stroke="var(--ac)" stroke-width="1.6"/>
+<path d="M234 246 V256" stroke="var(--ac)" stroke-width="1.8" marker-end="url(#mac)"/>
+<text x="240" y="254" class="ll" fill="var(--ac)">110 V → PSUs &amp; xfmr</text>
+<path d="M499 256 V150 H499 V144" fill="none" stroke="var(--ac)" stroke-width="1.8" marker-end="url(#mac)"/>
+<text x="503" y="172" class="ll" fill="var(--ac)">220 V</text>
+
+<path d="M366 190 V150 H366 V144" fill="none" stroke="var(--dc)" stroke-width="1.8" marker-end="url(#mdc)"/>
+<text x="370" y="168" class="ll" fill="var(--dc)">24 V → PC · switch · modules</text>
+<path d="M562 218 H874 V270" fill="none" stroke="var(--dc)" stroke-width="1.8" marker-end="url(#mdc)"/>
+<text x="700" y="214" class="ll" fill="var(--dc)">12 V → camera</text>
+
+<path d="M164 100 H172" stroke="var(--ec)" stroke-width="2" marker-end="url(#mec)"/>
+<path d="M296 128 H436" stroke="var(--ec)" stroke-width="2" marker-end="url(#mec)"/>
+<text x="330" y="124" class="ll" fill="var(--ec)">EtherCAT</text>
+<text x="120" y="98" class="ll" fill="var(--ec)">EtherCAT</text>
+
+<path d="M366 84 V72 H103 V100 H164" fill="none" stroke="var(--net)" stroke-width="1.6"/>
+<path d="M428 110 H648" stroke="var(--net)" stroke-width="1.6" marker-end="url(#mnet)"/>
+<path d="M428 118 C 560 118, 560 175, 648 175" fill="none" stroke="var(--net)" stroke-width="1.6" marker-end="url(#mnet)"/>
+<path d="M428 124 C 540 124, 540 248, 648 248" fill="none" stroke="var(--net)" stroke-width="1.6" marker-end="url(#mnet)"/>
+<path d="M428 132 C 520 132, 520 366, 648 366" fill="none" stroke="var(--net)" stroke-width="1.6" marker-end="url(#mnet)"/>
+<text x="455" y="106" class="ll" fill="var(--net)">Ethernet / PoE → Pi, capture PC, Mac, C6920</text>
+
+<path d="M562 99 H648" stroke="var(--mot)" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#mmot)"/>
+<text x="566" y="93" class="ll" fill="var(--mot)">motor cable (shielded)</text>
+
+<path d="M808 290 H792" stroke="var(--cl)" stroke-width="2" marker-end="url(#mcl)"/>
+<text x="700" y="335" class="ll" fill="var(--cl)">Camera Link (camera ↔ grabber) · EXSYNC</text>
+<path d="M234 144 C 234 360, 470 340, 662 300" fill="none" stroke="var(--cl)" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#mcl)"/>
+<text x="300" y="392" class="ll" fill="var(--cl)">EL2521 → grabber I/O sync (RS-422, planned)</text>
+
+<g transform="translate(30,640)" font-size="9.5px">
+ <text x="0" y="-6" class="h">CONNECTIONS</text>
+ <g><line x1="0" y1="6" x2="26" y2="6" stroke="var(--ac)" stroke-width="2.4"/><text x="32" y="9" fill="var(--ink)">mains AC (120/220 V)</text></g>
+ <g><line x1="190" y1="6" x2="216" y2="6" stroke="var(--dc)" stroke-width="2.4"/><text x="222" y="9" fill="var(--ink)">DC power (24/12 V)</text></g>
+ <g><line x1="360" y1="6" x2="386" y2="6" stroke="var(--ec)" stroke-width="2.4"/><text x="392" y="9" fill="var(--ink)">EtherCAT (motion)</text></g>
+ <g><line x1="540" y1="6" x2="566" y2="6" stroke="var(--net)" stroke-width="2.4"/><text x="572" y="9" fill="var(--ink)">Ethernet / PoE</text></g>
+ <g><line x1="0" y1="28" x2="26" y2="28" stroke="var(--mot)" stroke-width="2.4" stroke-dasharray="6 3"/><text x="32" y="31" fill="var(--ink)">motor cable</text></g>
+ <g><line x1="190" y1="28" x2="216" y2="28" stroke="var(--cl)" stroke-width="2.4"/><text x="222" y="31" fill="var(--ink)">Camera Link / sync</text></g>
+ <text x="392" y="31" class="s">⏚ all enclosures + 4040 frame → PE bar (bond through anodize)</text>
+</g>
+
+<defs>
+ <marker id="mac" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L6,3.5 L0,7 Z" fill="var(--ac)"/></marker>
+ <marker id="mdc" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L6,3.5 L0,7 Z" fill="var(--dc)"/></marker>
+ <marker id="mec" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L6,3.5 L0,7 Z" fill="var(--ec)"/></marker>
+ <marker id="mnet" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L6,3.5 L0,7 Z" fill="var(--net)"/></marker>
+ <marker id="mmot" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L6,3.5 L0,7 Z" fill="var(--mot)"/></marker>
+ <marker id="mcl" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L6,3.5 L0,7 Z" fill="var(--cl)"/></marker>
+</defs>
+</svg>
