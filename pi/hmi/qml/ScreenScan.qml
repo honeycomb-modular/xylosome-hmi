@@ -92,8 +92,8 @@ Item {
     // Reachable axis range — mirrors xylod.conf soft_min_deg / soft_max_deg. The
     // daemon clamps targets authoritatively; these just stop the hands where the
     // machine stops, so the start hand roams the real travel (not a fake 360°).
-    readonly property real axisMinDeg: -10
-    readonly property real axisMaxDeg: 200
+    readonly property real axisMinDeg: -180
+    readonly property real axisMaxDeg: 180
     readonly property real redHandAngle: playheadX < 0
         ? hand1Angle
         : hand1Angle + (Math.min(playheadX, boxW) / boxW) * (hand2Angle - hand1Angle)
