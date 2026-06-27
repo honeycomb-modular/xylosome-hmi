@@ -233,6 +233,13 @@ absolute + backup battery + a stored home offset**. No homing move at all: on
 power-up the drive already knows true position; `xylod` applies a fixed offset so
 "home" is the same physical place every boot. Cleanest fit given no switch/stop.
 
+**✅ DRIVE-SIDE ACTIVATED 2026-06-27:** battery cable fitted, `C00.07 = 2`
+(absolute mode) set on the panel, `F31.10 = 4` cleared the first-connect `Er208`,
+whole-cabinet power-cycle done. Drive reaches OP with no fault; multi-turn count
+is now battery-backed. **Still TODO:** teach the home offset + replace `xylod`'s
+wake-zero with absolute+offset (the code change below) — until then `xylod` still
+zeros to the boot pose (`axis zero @ N counts`), so behaviour is unchanged.
+
 To build later (NOT done) — hardware path now committed:
 - **Encoder battery cable ORDERED 2026-06-13: StepperOnline `AS7-C-ENC076-BAT-3.0`**
   (3 m, A6 17-bit, battery box inline). It **replaces** the current encoder cable
