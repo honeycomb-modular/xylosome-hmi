@@ -89,6 +89,11 @@ Item {
     // AR 1 → hand2 ≈ 90°   AR 3 → hand2 ≈ 180°   formula: 45*AR + 45
     property real hand1Angle:  0
     property real hand2Angle:  0
+    // Reachable axis range — mirrors xylod.conf soft_min_deg / soft_max_deg. The
+    // daemon clamps targets authoritatively; these just stop the hands where the
+    // machine stops, so the start hand roams the real travel (not a fake 360°).
+    readonly property real axisMinDeg: -10
+    readonly property real axisMaxDeg: 200
     readonly property real redHandAngle: playheadX < 0
         ? hand1Angle
         : hand1Angle + (Math.min(playheadX, boxW) / boxW) * (hand2Angle - hand1Angle)
@@ -347,9 +352,9 @@ Item {
         // "move": rotate moves the selected hand
         var step = 2   // degrees per detent
         if (root.dialSel === 1)
-            root.hand1Angle = Math.max(0, Math.min(root.hand2Angle - 10, root.hand1Angle + d * step))
+            root.hand1Angle = Math.max(root.axisMinDeg, Math.min(root.hand2Angle - 10, root.hand1Angle + d * step))
         else if (root.dialSel === 2)
-            root.hand2Angle = Math.min(360, Math.max(root.hand1Angle + 10, root.hand2Angle + d * step))
+            root.hand2Angle = Math.min(root.axisMaxDeg, Math.max(root.hand1Angle + 10, root.hand2Angle + d * step))
         // Keep boxW in sync with the arc, same as the hand-tip drag handlers.
         var arc = root.hand2Angle - root.hand1Angle
         root._dialDriving = true
@@ -1071,7 +1076,7 @@ Item {
                     var p   = mapToItem(motorCircle, mouse.x, mouse.y)
                     var ang = Math.atan2(p.x - motorCircle.cx, -(p.y - motorCircle.cy)) * 180 / Math.PI
                     root._dialDriving = true
-                    root.hand1Angle   = Math.min(root.hand2Angle - 10, ang)
+                    root.hand1Angle   = Math.max(root.axisMinDeg, Math.min(root.hand2Angle - 10, ang))
                     var arc = root.hand2Angle - root.hand1Angle
                     root.boxW = Math.max(root.boxMinW,
                                 Math.min(root.canvasW - 45, Math.round(arc * (root.canvasW - 45) / 180)))
@@ -1101,7 +1106,7 @@ Item {
                     var p   = mapToItem(motorCircle, mouse.x, mouse.y)
                     var ang = Math.atan2(p.x - motorCircle.cx, -(p.y - motorCircle.cy)) * 180 / Math.PI
                     root._dialDriving = true
-                    root.hand2Angle   = Math.max(root.hand1Angle + 10, ang)
+                    root.hand2Angle   = Math.min(root.axisMaxDeg, Math.max(root.hand1Angle + 10, ang))
                     var arc = root.hand2Angle - root.hand1Angle
                     root.boxW = Math.max(root.boxMinW,
                                 Math.min(root.canvasW - 45, Math.round(arc * (root.canvasW - 45) / 180)))
