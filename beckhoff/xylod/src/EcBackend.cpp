@@ -80,35 +80,50 @@ bool EcBackend::busInit() {
     for (int i = 1; i <= ec_slavecount; i++)
         LOGI("ec:   %d: %-20s 0x%08x", i, ec_slave[i].name, uint32_t(ec_slave[i].eep_id));
 
+    // Locate the A6-EC drive by its product ID (0x715), wherever it sits — so
+    // adding/removing terminals never shifts it out from under us. pos_drive in
+    // the conf is now only a fallback if the ID match ever fails.
+    m_drivePos = 0;
+    for (int i = 1; i <= ec_slavecount; i++)
+        if (uint32_t(ec_slave[i].eep_id) == 0x00000715u) { m_drivePos = i; break; }
+    if (m_drivePos > 0)
+        LOGI("ec: A6-EC drive auto-located at slave %d (product 0x715)", m_drivePos);
+    else if (m_cfg.posDrive > 0) {
+        m_drivePos = m_cfg.posDrive;
+        LOGW("ec: drive 0x715 not found — falling back to pos_drive=%d", m_drivePos);
+    } else {
+        LOGE("ec: A6-EC drive not found (no product 0x715; pos_drive unset)");
+        return false;
+    }
+
     // position ≤ 0 in the conf = device not fitted (bench configs)
-    const int need = std::max({m_cfg.posDrive, m_cfg.posEk1100, m_cfg.posEl7031,
+    const int need = std::max({m_drivePos, m_cfg.posEk1100, m_cfg.posEl7031,
                                m_cfg.posEl2521, m_cfg.posEl5152, m_cfg.posElDout, m_cfg.posElDin});
     if (ec_slavecount < need) {
         LOGE("ec: expected %d slaves (config positions), found %d", need, ec_slavecount);
         return false;
     }
-    if (m_cfg.posDrive <= 0) { LOGE("ec: pos_drive not set"); return false; }
 
     // PDO config is legal ONLY in PRE-OP (drive manual 8.3.1) — enforce; an
     // unclean previous exit leaves the drive elsewhere and it rejects remap.
-    ec_slave[m_cfg.posDrive].state = EC_STATE_PRE_OP;
-    ec_writestate(uint16(m_cfg.posDrive));
-    ec_statecheck(uint16(m_cfg.posDrive), EC_STATE_PRE_OP, EC_TIMEOUTSTATE * 4);
-    if (ec_slave[m_cfg.posDrive].state != EC_STATE_PRE_OP) {
+    ec_slave[m_drivePos].state = EC_STATE_PRE_OP;
+    ec_writestate(uint16(m_drivePos));
+    ec_statecheck(uint16(m_drivePos), EC_STATE_PRE_OP, EC_TIMEOUTSTATE * 4);
+    if (ec_slave[m_drivePos].state != EC_STATE_PRE_OP) {
         LOGE("ec: drive not in PRE-OP (al=0x%02x) — power-cycle the drive",
-             unsigned(ec_slave[m_cfg.posDrive].state));
+             unsigned(ec_slave[m_drivePos].state));
         return false;
     }
 
-    if (!remapDriveCsp(m_cfg.posDrive)) return false;
-    sdoWrite<int8_t>(m_cfg.posDrive, 0x6060, 0x00, 8);            // CSP
+    if (!remapDriveCsp(m_drivePos)) return false;
+    sdoWrite<int8_t>(m_drivePos, 0x6060, 0x00, 8);            // CSP
     // SM sync config: DC-SYNC0 at the cycle time. TwinCAT writes these from
     // the ESI; SOEM leaves them to us. Bench-proven vs Er74.1 (DEVLOG
     // 2026-06-12); drive panel C13.05 must be 2 for a userspace master.
-    sdoWrite<uint16_t>(m_cfg.posDrive, 0x1C32, 0x01, 2);
-    sdoWrite<uint32_t>(m_cfg.posDrive, 0x1C32, 0x02, uint32_t(m_cfg.cycleUs) * 1000u);
-    sdoWrite<uint16_t>(m_cfg.posDrive, 0x1C33, 0x01, 2);
-    sdoWrite<uint32_t>(m_cfg.posDrive, 0x1C33, 0x02, uint32_t(m_cfg.cycleUs) * 1000u);
+    sdoWrite<uint16_t>(m_drivePos, 0x1C32, 0x01, 2);
+    sdoWrite<uint32_t>(m_drivePos, 0x1C32, 0x02, uint32_t(m_cfg.cycleUs) * 1000u);
+    sdoWrite<uint16_t>(m_drivePos, 0x1C33, 0x01, 2);
+    sdoWrite<uint32_t>(m_drivePos, 0x1C33, 0x02, uint32_t(m_cfg.cycleUs) * 1000u);
     // EL7031 — velocity direct mode (0x8012:01 = 0). Verify on bench.
     if (m_cfg.posEl7031 > 0)
         sdoWrite<uint8_t>(m_cfg.posEl7031, 0x8012, 0x01, 0);
@@ -116,7 +131,7 @@ bool EcBackend::busInit() {
     // DC measurement + SYNC0 BEFORE the SAFE-OP transition — the drive
     // samples its sync configuration on PREOP→SAFEOP.
     ec_configdc();
-    ec_dcsync0(uint16(m_cfg.posDrive), TRUE, uint32_t(m_cfg.cycleUs) * 1000u, 0);
+    ec_dcsync0(uint16(m_drivePos), TRUE, uint32_t(m_cfg.cycleUs) * 1000u, 0);
 
     ec_config_map(s_ioMap);
     ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
@@ -125,8 +140,8 @@ bool EcBackend::busInit() {
     auto outOf = [](int s) { return ec_slave[s].outputs; };
     auto inOf  = [](int s) { return ec_slave[s].inputs;  };
 
-    m_drvRx  = reinterpret_cast<DriveRx *>(outOf(m_cfg.posDrive));
-    m_drvTx  = reinterpret_cast<DriveTx *>(inOf(m_cfg.posDrive));
+    m_drvRx  = reinterpret_cast<DriveRx *>(outOf(m_drivePos));
+    m_drvTx  = reinterpret_cast<DriveTx *>(inOf(m_drivePos));
     m_fwRx   = m_cfg.posEl7031 > 0 ? reinterpret_cast<El7031Rx *>(outOf(m_cfg.posEl7031)) : nullptr;
     m_fwTx   = m_cfg.posEl7031 > 0 ? reinterpret_cast<El7031Tx *>(inOf(m_cfg.posEl7031))  : nullptr;
     m_ltRx   = m_cfg.posEl2521 > 0 ? reinterpret_cast<El2521Rx *>(outOf(m_cfg.posEl2521)) : nullptr;
@@ -141,17 +156,17 @@ bool EcBackend::busInit() {
                  "verify PDO assignment", s, n, int(ec_slave[s].Obytes), int(ec_slave[s].Ibytes),
                  obytes, ibytes);
     };
-    check("A6-EC",  m_cfg.posDrive,  int(sizeof(DriveRx)),  int(sizeof(DriveTx)));
+    check("A6-EC",  m_drivePos,  int(sizeof(DriveRx)),  int(sizeof(DriveTx)));
     check("EL7031", m_cfg.posEl7031, int(sizeof(El7031Rx)), int(sizeof(El7031Tx)));
     check("EL2521", m_cfg.posEl2521, int(sizeof(El2521Rx)), 0);
     check("EL5152", m_cfg.posEl5152, 0, 4);
     check("ELxxxx-dout", m_cfg.posElDout, 1, 0);
     check("ELxxxx-din",  m_cfg.posElDin,  0, 1);
 
-    if (int(ec_slave[m_cfg.posDrive].Obytes) != int(sizeof(DriveRx)) ||
-        int(ec_slave[m_cfg.posDrive].Ibytes) != int(sizeof(DriveTx))) {
+    if (int(ec_slave[m_drivePos].Obytes) != int(sizeof(DriveRx)) ||
+        int(ec_slave[m_drivePos].Ibytes) != int(sizeof(DriveTx))) {
         LOGE("ec: drive process image mismatch O=%d I=%d (want %zu/%zu) — refusing to run",
-             int(ec_slave[m_cfg.posDrive].Obytes), int(ec_slave[m_cfg.posDrive].Ibytes),
+             int(ec_slave[m_drivePos].Obytes), int(ec_slave[m_drivePos].Ibytes),
              sizeof(DriveRx), sizeof(DriveTx));
         return false;
     }
@@ -175,7 +190,7 @@ void EcBackend::shutdown() {
     if (!m_running) return;
     m_running = false;
     if (m_thread.joinable()) m_thread.join();
-    if (m_cfg.posDrive > 0) ec_dcsync0(uint16(m_cfg.posDrive), FALSE, 0, 0);
+    if (m_drivePos > 0) ec_dcsync0(uint16(m_drivePos), FALSE, 0, 0);
     ec_slave[0].state = EC_STATE_INIT;       // clean slate: PDO remap needs PRE-OP
     ec_writestate(0);
     ec_close();

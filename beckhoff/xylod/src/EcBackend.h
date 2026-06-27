@@ -74,6 +74,7 @@ private:
                      uint16_t errorCode; int8_t opModeDisp; } __attribute__((packed));
     DriveRx *m_drvRx = nullptr;
     DriveTx *m_drvTx = nullptr;
+    int      m_drivePos = 0;   // A6-EC slave index — auto-located by product ID in busInit()
     // EL7031 velocity-control PDO (16-bit ctrl + 16-bit velocity; status + 32-bit counter)
     struct El7031Rx { uint16_t ctrl; int16_t velocity; } __attribute__((packed));
     struct El7031Tx { uint16_t status; uint32_t counter; } __attribute__((packed));
