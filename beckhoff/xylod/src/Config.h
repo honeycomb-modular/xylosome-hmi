@@ -48,6 +48,11 @@ struct Config {
     int    rtPrio    = 60;                   // SCHED_FIFO priority (0 = no RT)
     double settleMsD = 300.0;                // default pre-pass settle
 
+    // ── absolute home ──────────────────────────────────────────────────────────
+    // Taught home offset (raw encoder counts) persisted here. Requires the drive
+    // in multiturn-absolute mode (C00.07=2) + battery. Empty/missing = wake-zero.
+    std::string homeFile = "/var/lib/xylod/home_counts";
+
     bool load(const std::string &path);      // missing file → defaults, warn
     static Config fromArgs(int argc, char **argv, bool &sim);
 };

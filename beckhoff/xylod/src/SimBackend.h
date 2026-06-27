@@ -22,6 +22,7 @@ public:
     void   axisSetTargetDeg(double deg) override { m_target = deg; }
     double axisPosDeg() const override { return m_pos; }
     double axisVelDegS() const override { return m_vel; }
+    void   setHome() override {}   // sim has no absolute encoder to re-reference
     DriveState drive() const override {
         DriveState d; d.enabled = m_enabled;
         d.statusword = m_enabled ? 0x1237 : 0x1231;

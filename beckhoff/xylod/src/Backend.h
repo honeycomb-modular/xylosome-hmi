@@ -42,6 +42,7 @@ public:
     virtual void   axisSetTargetDeg(double deg) = 0;   // CSP setpoint, every cycle
     virtual double axisPosDeg() const = 0;             // actual position
     virtual double axisVelDegS() const = 0;
+    virtual void   setHome() = 0;                      // current pose → 0°, persisted
     virtual DriveState drive() const = 0;
 
     // ── filter wheel (EL7031) ────────────────────────────────────────────────

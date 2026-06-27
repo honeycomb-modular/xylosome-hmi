@@ -236,9 +236,16 @@ power-up the drive already knows true position; `xylod` applies a fixed offset s
 **✅ DRIVE-SIDE ACTIVATED 2026-06-27:** battery cable fitted, `C00.07 = 2`
 (absolute mode) set on the panel, `F31.10 = 4` cleared the first-connect `Er208`,
 whole-cabinet power-cycle done. Drive reaches OP with no fault; multi-turn count
-is now battery-backed. **Still TODO:** teach the home offset + replace `xylod`'s
-wake-zero with absolute+offset (the code change below) — until then `xylod` still
-zeros to the boot pose (`axis zero @ N counts`), so behaviour is unchanged.
+is now battery-backed.
+
+**✅ CODE BUILT 2026-06-27 (pending bench test):** absolute-home implemented in
+`xylod` + HMI. New `set_home` command (TcpServer→Sequencer→`IBackend::setHome`)
+captures the current pose as 0° and persists raw counts to `home_file`
+(`/var/lib/xylod/home_counts`); at OP `EcBackend` loads it (else wake-zero
+fallback). A one-shot `m_setpoint = axisPosDeg()` on the first OP cycle prevents
+a boot snap now that boot pose ≠ 0. HMI: `BeckhoffLink::setHome()` + a
+`[set home]` button on ScreenCapture (jog-and-teach). **TEST:** jog to home, tap
+[set home], power-cycle, confirm 0° lands on the same physical spot.
 
 To build later (NOT done) — hardware path now committed:
 - **Encoder battery cable ORDERED 2026-06-13: StepperOnline `AS7-C-ENC076-BAT-3.0`**

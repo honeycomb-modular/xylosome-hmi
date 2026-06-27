@@ -19,6 +19,7 @@ Every command may carry an optional `"id"` (int) which is echoed in the ack.
 | `enable` | — | CiA-402 → Operation Enabled |
 | `disable` | — | drive → Switched On (no torque) |
 | `home` | `{"velDegS":10.0}` (optional) | move scan axis to configured home position |
+| `set_home` | — | teach: current pose becomes 0°, persisted to `home_file`. Idle only; needs drive in absolute mode (C00.07=2) |
 | `jog` | `{"velDegS":-5.0}` | constant velocity jog; `0` stops |
 | `moveTo` | `{"posDeg":12.5,"velDegS":20.0}` | absolute move (output degrees) |
 | `filter` | `{"slot":2}` | filter wheel → slot 0=R 1=G 2=B 3=C |

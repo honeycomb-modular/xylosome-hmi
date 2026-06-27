@@ -71,6 +71,7 @@ public:
     Q_INVOKABLE void resume();
     Q_INVOKABLE void stop();
     Q_INVOKABLE void home();
+    Q_INVOKABLE void setHome();                              // teach current pose as 0°
     Q_INVOKABLE void enable(bool on);
     Q_INVOKABLE void jog(double velDegS);
     Q_INVOKABLE void moveTo(double posDeg, double velDegS);   // absolute step moves (dial jog)

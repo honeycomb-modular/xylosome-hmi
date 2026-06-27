@@ -7,10 +7,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <pthread.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 static char s_ioMap[4096];
 
@@ -28,6 +30,39 @@ double EcBackend::countsToDeg(int32_t c) const {
 int32_t EcBackend::degToCounts(double d) const {
     const double cpd = m_cfg.motorCountsPerRev * m_cfg.gearRatio / 360.0;
     return int32_t(std::llround((m_cfg.invertAxis ? -d : d) * cpd)) + m_zeroCounts;
+}
+
+// ── absolute home ──────────────────────────────────────────────────────────────
+// Teach: the current shaft pose becomes 0°, persisted so it survives reboot
+// (only meaningful once the drive is in multiturn-absolute mode + battery).
+void EcBackend::setHome() {
+    if (!m_drvTx) return;
+    m_zeroCounts = m_drvTx->actualPos;
+    saveHomeCounts(m_zeroCounts);
+    LOGI("ec: home taught — current pose is now 0° (%d counts)", int(m_zeroCounts));
+}
+
+bool EcBackend::loadHomeCounts(int32_t &out) const {
+    FILE *f = std::fopen(m_cfg.homeFile.c_str(), "r");
+    if (!f) return false;
+    long v = 0;
+    const int n = std::fscanf(f, "%ld", &v);
+    std::fclose(f);
+    if (n != 1) return false;
+    out = int32_t(v);
+    return true;
+}
+
+void EcBackend::saveHomeCounts(int32_t v) const {
+    const std::string &p = m_cfg.homeFile;
+    const auto slash = p.find_last_of('/');
+    if (slash != std::string::npos && slash > 0)
+        ::mkdir(p.substr(0, slash).c_str(), 0755);   // create state dir; ignore EEXIST
+    FILE *f = std::fopen(p.c_str(), "w");
+    if (!f) { LOGW("ec: cannot write home file %s — home not persisted", p.c_str()); return; }
+    std::fprintf(f, "%ld\n", long(v));
+    std::fclose(f);
+    LOGI("ec: home offset saved (%d counts) → %s", int(v), p.c_str());
 }
 
 // ── SDO helpers ───────────────────────────────────────────────────────────────
@@ -348,8 +383,18 @@ void EcBackend::cyclicLoop(CycleFn cycle) {
         m_op = false;
         return;
     }
-    // wake-up pose becomes axis zero (absolute multiturn encoder)
-    if (m_drvTx) m_zeroCounts = m_drvTx->actualPos;
+    // Absolute home: with the drive in multiturn-absolute mode (C00.07=2) + battery,
+    // a taught offset maps to the same physical 0° every boot. No home file yet =
+    // fall back to wake-zero (current pose becomes 0°). Either way the sequencer
+    // adopts actual position as its setpoint on cycle 1, so no boot snap.
+    int32_t savedHome = 0;
+    if (loadHomeCounts(savedHome)) {
+        m_zeroCounts = savedHome;
+        LOGI("ec: absolute home loaded (%d counts) from %s", int(savedHome), m_cfg.homeFile.c_str());
+    } else if (m_drvTx) {
+        m_zeroCounts = m_drvTx->actualPos;
+        LOGI("ec: no home file (%s) — wake-zero to current pose", m_cfg.homeFile.c_str());
+    }
     m_op = true;
     LOGI("ec: OPERATIONAL (phase-locked) — cycle %d us, axis zero @ %d counts",
          m_cfg.cycleUs, int(m_zeroCounts));

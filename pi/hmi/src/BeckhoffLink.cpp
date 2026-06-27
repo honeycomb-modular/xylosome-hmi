@@ -177,6 +177,7 @@ void BeckhoffLink::pause()  { sendJson({{QStringLiteral("cmd"), QStringLiteral("
 void BeckhoffLink::resume() { sendJson({{QStringLiteral("cmd"), QStringLiteral("resume")}}); }
 void BeckhoffLink::stop()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("stop")}}); }
 void BeckhoffLink::home()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("home")}}); }
+void BeckhoffLink::setHome(){ sendJson({{QStringLiteral("cmd"), QStringLiteral("set_home")}}); }
 void BeckhoffLink::faultReset() { sendJson({{QStringLiteral("cmd"), QStringLiteral("fault_reset")}}); }
 
 void BeckhoffLink::enable(bool on) {

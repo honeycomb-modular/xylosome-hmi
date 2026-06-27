@@ -39,7 +39,7 @@ struct ScanJob {
 
 struct SeqCommand {
     enum Type { Enable, Disable, Home, Jog, MoveTo, Filter, Execute,
-                Pause, Resume, Stop, FaultReset } type;
+                Pause, Resume, Stop, FaultReset, SetHome } type;
     double  a = 0.0, b = 0.0;      // vel / pos arguments
     int     slot = 0;
     ScanJob job;
@@ -102,6 +102,7 @@ private:
     int    m_pass = -1, m_passCount = 4;
     double m_arcS = 0.0;            // distance along arc within pass, deg
     double m_setpoint = 0.0;        // current CSP target, output deg
+    bool   m_spInit = false;        // adopt actual pos as setpoint on 1st OP cycle (no boot snap)
     double m_moveTarget = 0.0, m_moveVel = 0.0, m_moveVelMax = 10.0;
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;

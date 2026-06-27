@@ -99,6 +99,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
                                  sc.a = req.value("posDeg", 0.0);
                                  sc.b = req.value("velDegS", 20.0); }
     else if (cmd == "filter")  { sc.type = SeqCommand::Filter; sc.slot = req.value("slot", 3); }
+    else if (cmd == "set_home") sc.type = SeqCommand::SetHome;
     else if (cmd == "execute") {
         sc.type = SeqCommand::Execute;
         ScanJob &j = sc.job;

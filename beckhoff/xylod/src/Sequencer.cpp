@@ -73,6 +73,15 @@ void Sequencer::enterPass(int pass) {
 }
 
 void Sequencer::cycle(double dt) {
+    // On the first operational cycle, adopt the backend's actual position as the
+    // setpoint so we HOLD instead of snapping. Critical with absolute home, where
+    // boot position ≠ 0; harmless with wake-zero (actual == 0).
+    if (!m_spInit && m_bk.operational()) {
+        m_setpoint = m_bk.axisPosDeg();
+        m_moveTarget = m_setpoint;
+        m_spInit = true;
+    }
+
     // ── drain commands ───────────────────────────────────────────────────────
     std::deque<SeqCommand> cmds;
     { std::lock_guard<std::mutex> l(m_mx); cmds.swap(m_cmds); }
@@ -132,6 +141,14 @@ void Sequencer::cycle(double dt) {
             m_bk.axisEnable(true);
             m_jogVel = c.a;
             m_st = (std::fabs(c.a) < 1e-6) ? St::Idle : St::Jogging;
+            break;
+        case SeqCommand::SetHome:
+            // teach current pose as 0° — only at rest; re-sync setpoint so we hold
+            if (m_st == St::Idle) {
+                m_bk.setHome();
+                m_setpoint = m_bk.axisPosDeg();
+                m_moveTarget = m_setpoint;
+            }
             break;
         case SeqCommand::MoveTo:
             m_bk.axisEnable(true);

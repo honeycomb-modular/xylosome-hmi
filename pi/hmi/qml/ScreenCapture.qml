@@ -319,6 +319,15 @@ Item {
             }
         }
         TerminalButton {
+            id: btnSetHome; controller: capFocus
+            x: 386; y: 202; width: 120; height: root.btnH
+            // jog to the spot, then teach it as 0° (stored, survives reboot)
+            label: "[set home]"
+            onClicked: {
+                if (Beckhoff.connected && !Beckhoff.running) Beckhoff.setHome()
+            }
+        }
+        TerminalButton {
             id: btnJogCapture; controller: capFocus
             x: 614; y: 202; width: 300; height: root.btnH
             label: "[capture]"; onClicked: console.log("jog capture — TODO")

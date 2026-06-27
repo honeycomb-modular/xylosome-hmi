@@ -35,6 +35,7 @@ public:
     void   axisSetTargetDeg(double deg) override;
     double axisPosDeg() const override;
     double axisVelDegS() const override;
+    void   setHome() override;
     DriveState drive() const override;
 
     void fwMoveToSlot(int slot) override;
@@ -61,6 +62,9 @@ private:
     double countsToDeg(int32_t c) const;      // position: zero-referenced
     double countsToDegRel(int32_t c) const;   // scale only (velocities)
     int32_t degToCounts(double d) const;
+
+    bool loadHomeCounts(int32_t &out) const;  // taught home offset ← homeFile
+    void saveHomeCounts(int32_t v) const;     //                   → homeFile
 
     const Config &m_cfg;
     std::atomic<bool> m_running{false};
