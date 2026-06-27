@@ -181,6 +181,18 @@ first (`printf '{"cmd":"status"}\n' | nc -w1 127.0.0.1 5510 | head -1`).
 - Longer-term: `192.168.2.2` rides the Mac-shared net (gw `192.168.2.1` = Mac).
   For a standalone cart, pin C6920 + Pi onto one subnet and record it here.
 
+### ✅ Network topology CONFIRMED 2026-06-27 (end the confusion)
+- **Beckhoff `eno1`:** static `192.168.2.2/24`, gw `192.168.2.1` (Mac). `enp4s0` = EtherCAT (no IP).
+- **Pi `eth0`:** `ipv4.method = manual` (STATIC), addresses **`192.168.10.3` + `192.168.2.3`**,
+  gw `192.168.2.1`. NM connection name = `eth0`. So the Pi↔Beckhoff link does NOT
+  depend on DHCP — both ends are static on `192.168.2.x`.
+- **All network devices on ONE PoE switch:** `eno1`, Pi, Mac, capture PC.
+  **EtherCAT (`enp4s0` → EK1100 → drive) stays OFF the switch** (private daisy-chain).
+- **Lesson:** the recurring "Pi unreachable" outages were a **SWITCH ISLAND** — a 2nd
+  PoE switch that wasn't uplinked, so the Pi had no L2 path to the Beckhoff. NOT a
+  lost address. Fix = keep everything on one switch. The Mac (`.2.1`) is only the
+  internet gateway; the rig runs fine without it.
+
 ### ⚠️ Three gotchas solved 2026-06-16
 
 **1. Motor wouldn't run — `xylod` crash-looping ("A6-EC PDO remap failed / slave 5").**
