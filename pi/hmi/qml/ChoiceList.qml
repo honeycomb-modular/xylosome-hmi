@@ -31,6 +31,10 @@ Item {
 
     signal rowActivated(int index)
 
+    // Current displayed value of a row (after option cycling) — lets a sub-page
+    // persist the choice it made.
+    function rowValue(i) { return (i >= 0 && i < rowModel.count) ? rowModel.get(i).value : "" }
+
     // Exposed to the main.qml key router.
     property var focusController: listFocus
     function focusBack() { root.StackView.view.pop() }

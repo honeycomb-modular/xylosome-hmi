@@ -60,14 +60,14 @@ Item {
     property bool   _settingsDirty: true      // true = unsaved changes exist
     property bool   _suppressDirty: false     // true = suppress dirty marking during sync/load
     readonly property real arcDegrees: Math.max(10, hand2Angle - hand1Angle)
-    readonly property real maxSpeed:   100.0  // deg/s — Panasonic servo reference speed
+    readonly property real maxSpeed:   300.0  // deg/s output — safe headroom under motor max (~360)
 
     // ── Curve speed semantics ─────────────────────────────────────────────────
     // The CENTER LINE of the curve editor = the STANDARD scanning speed
-    // (stdSpeedFactor × maxSpeed — the rate for a normal, undistorted image).
+    // (Motor.stdSpeedDegS, set in Settings — the rate for a normal, undistorted image).
     // Drawing ABOVE center accelerates toward maxSpeed; BELOW center slows
-    // toward standstill. A flat center curve = a plain scan.
-    readonly property real stdSpeedFactor: 0.40   // TBD — calibrate on first real scans
+    // toward standstill (near-pause floor). A flat center curve = a plain scan.
+    readonly property real stdSpeedFactor: Math.max(0, Math.min(1, Motor.stdSpeedDegS / maxSpeed))
     function speedOfNy(ny) {
         ny = Math.max(0, Math.min(1, ny))
         if (ny <= 0.5) return stdSpeedFactor + (0.5 - ny) * 2.0 * (1.0 - stdSpeedFactor)
@@ -168,10 +168,11 @@ Item {
             prof.push(root.speedAtX(i / (n - 1) * root.boxW))
         return prof
     }
-    // Velocity floor — same floor the local sim applies (0.3 px / 16 ms frame),
-    // converted to output deg/s so real motion matches the on-screen physics.
+    // Velocity floor for the bottom of the curve: a near-pause (~1°/s ≈ 1/300 of
+    // max = heavy smear) instead of a literal 0, which would hang the scan — the
+    // daemon integrates position from velocity, so 0 never advances past that point.
     function minVelDegS() {
-        return 0.3 * root.arcDegrees / root.boxW / 0.016
+        return 1.0
     }
 
     Connections {

@@ -1,18 +1,24 @@
-// ScreenAxis.qml — settings ▸ axis / motion. Panasonic Minas A6 servo +
-// 30:10 tooth gear (3.0:1), orchestrated by ClearCore M-1.
+// ScreenAxis.qml — settings ▸ axis / motion. Speeds + drive info.
+// A6-EC servo + 50:1 harmonic drive, over EtherCAT (xylod).
 import QtQuick
 import XylosomeHMI 1.0
 
 ChoiceList {
     title: "axis / motion"
     entries: [
-        { key: "active.axis",     value: "M1  panasonic minas a6" },
-        { key: "gear.ratio",      value: "3.0  (30:10 tooth)" },
-        { key: "max.speed",       value: "100 deg/s", options: ["50 deg/s", "100 deg/s", "200 deg/s"] },
-        { key: "home.speed",      value: "20 deg/s",  options: ["5 deg/s", "20 deg/s", "50 deg/s"] },
+        { key: "active.axis",     value: "A6-EC  ANCTL AS715N" },
+        { key: "gear.ratio",      value: "50.0  (harmonic drive)" },
+        { key: "max.speed",       value: "300 deg/s  (curve top)" },
+        { key: "std.scan.speed",  value: "" + Motor.stdSpeedDegS + " deg/s",
+          options: ["40 deg/s", "60 deg/s", "100 deg/s", "140 deg/s", "180 deg/s", "220 deg/s"] },
+        { key: "min.speed",       value: "1 deg/s  (curve floor)" },
         { key: "accel",           value: "medium",    options: ["low", "medium", "high"] },
-        { key: "homing.dir",      value: "ccw",       options: ["cw", "ccw"] },
-        { key: "spline.interval", value: "50 ms",     options: ["25 ms", "50 ms", "100 ms"] },
-        { key: "motion.bus",      value: "clearcore / tcp / port 23" }
+        { key: "motion.bus",      value: "beckhoff / ethercat" }
     ]
+
+    // Persist the standard (curve-centre) scan speed when its row is cycled.
+    onRowActivated: function(index) {
+        if (entries[index] && entries[index].key === "std.scan.speed")
+            Motor.stdSpeedDegS = parseFloat(rowValue(index))
+    }
 }

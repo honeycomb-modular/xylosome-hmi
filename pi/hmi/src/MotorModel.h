@@ -44,6 +44,8 @@ class MotorModel : public QObject
     Q_PROPERTY(int          seqBoxW         READ seqBoxW         WRITE setSeqBoxW         NOTIFY seqBoxWChanged)
     // 0 = full color (4-pass R/G/B/C), 1 = BW (single pass)
     Q_PROPERTY(int          colorMode       READ colorMode       WRITE setColorMode       NOTIFY colorModeChanged)
+    // Standard (curve-centre) scan speed in output deg/s — set in Settings, used by the curve
+    Q_PROPERTY(double       stdSpeedDegS    READ stdSpeedDegS    WRITE setStdSpeedDegS    NOTIFY stdSpeedDegSChanged)
     // Saved capture recipes — each entry is a QVariantMap (name/colorMode/boxW/hand1/hand2/nodes)
     Q_PROPERTY(QVariantList presets         READ presets                                  NOTIFY presetsChanged)
 
@@ -68,6 +70,7 @@ public:
     QVariantList nodes()           const { return m_nodes; }
     int          seqBoxW()         const { return m_seqBoxW; }
     int          colorMode()       const { return m_colorMode; }
+    double       stdSpeedDegS()     const { return m_stdSpeedDegS; }
     QVariantList presets()        const { return m_presets; }
     QString    modeName()        const;
 
@@ -79,6 +82,7 @@ public:
     void setNodes(const QVariantList &nodes);
     void setSeqBoxW(int w);
     void setColorMode(int c);
+    void setStdSpeedDegS(double v);
     // hand1/hand2 are QML-only state; caller passes them so the preset is complete.
     Q_INVOKABLE void savePreset(double hand1Angle, double hand2Angle);
     Q_INVOKABLE void loadPreset(int index);
@@ -106,6 +110,7 @@ signals:
     void nodesChanged();
     void seqBoxWChanged();
     void colorModeChanged();
+    void stdSpeedDegSChanged();
     void presetsChanged();
 
 private slots:
@@ -130,6 +135,7 @@ private:
     QVariantList m_nodes;            // initialised in constructor, overridden by QSettings
     int          m_seqBoxW          = 520;
     int          m_colorMode        = 0;   // 0=color, 1=BW
+    double       m_stdSpeedDegS      = 100.0; // standard curve-centre speed, output deg/s
     QVariantList m_presets;
 
     QTimer m_timer;

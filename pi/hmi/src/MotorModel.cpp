@@ -140,6 +140,14 @@ void MotorModel::setColorMode(int c) {
     qDebug() << "[motor] colorMode =" << (c == 0 ? "COLOR" : "BW");
 }
 
+void MotorModel::setStdSpeedDegS(double v) {
+    v = qMax(0.0, v);
+    if (qFuzzyCompare(m_stdSpeedDegS, v)) return;
+    m_stdSpeedDegS = v;
+    emit stdSpeedDegSChanged();
+    m_settingsTimer.start();   // persist after brief settle
+}
+
 void MotorModel::savePreset(double hand1Angle, double hand2Angle) {
     QVariantMap p;
     p[QStringLiteral("name")]       = QStringLiteral("preset %1").arg(m_presets.size() + 1);
@@ -208,6 +216,7 @@ void MotorModel::loadFromSettings() {
     // ── Last scan state ───────────────────────────────────────────────────────
     m_colorMode = s.value(QStringLiteral("last/colorMode"), 0).toInt();
     m_seqBoxW   = s.value(QStringLiteral("last/seqBoxW"),  520).toInt();
+    m_stdSpeedDegS = s.value(QStringLiteral("scan/stdSpeedDegS"), 100.0).toDouble();
 
     const QString nodesJson = s.value(QStringLiteral("last/nodes")).toString();
     if (!nodesJson.isEmpty()) {
@@ -268,6 +277,7 @@ void MotorModel::saveLastToSettings() {
     s.setValue(QStringLiteral("last/colorMode"), m_colorMode);
     s.setValue(QStringLiteral("last/seqBoxW"),   m_seqBoxW);
     s.setValue(QStringLiteral("last/nodes"),     nodesToJson(m_nodes));
+    s.setValue(QStringLiteral("scan/stdSpeedDegS"), m_stdSpeedDegS);
     qDebug() << "[settings] scan state saved";
 }
 
