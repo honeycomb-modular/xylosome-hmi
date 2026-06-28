@@ -41,6 +41,7 @@ public:
     void setPassIndex(bool) override {}
 
     int32_t echoCounts() const override { return int32_t(m_pos * 1000.0); }
+    bool    shutdownPressed() const override { return false; }
 
 private:
     void loop(CycleFn cycle);

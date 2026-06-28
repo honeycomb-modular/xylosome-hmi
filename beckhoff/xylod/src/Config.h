@@ -53,6 +53,13 @@ struct Config {
     // in multiturn-absolute mode (C00.07=2) + battery. Empty/missing = wake-zero.
     std::string homeFile = "/var/lib/xylod/home_counts";
 
+    // ── shutdown button (digital input, separate from E-stop/din) ───────────────
+    // A momentary on an EL1008 channel; held ≥ hold_s → clean poweroff (which
+    // fires the Pi shutdown hook too). 0 = not fitted.
+    int    posShutdown   = 0;     // EL1008 slave position (1-based)
+    int    diShutdown    = 0;     // input bit (channel N → bit N-1)
+    double shutdownHoldS = 2.0;   // hold time to trigger
+
     bool load(const std::string &path);      // missing file → defaults, warn
     static Config fromArgs(int argc, char **argv, bool &sim);
 };

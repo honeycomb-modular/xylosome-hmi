@@ -63,6 +63,7 @@ public:
     // ── server-thread API ────────────────────────────────────────────────────
     void post(const SeqCommand &c) { std::lock_guard<std::mutex> l(m_mx); m_cmds.push_back(c); }
     SeqStatus status() const       { std::lock_guard<std::mutex> l(m_mx); return m_status; }
+    bool shutdownInput() const     { return m_bk.shutdownPressed(); }   // raw DI, main-thread poll
     std::vector<std::string> drainEvents() {
         std::lock_guard<std::mutex> l(m_mx);
         std::vector<std::string> out(m_events.begin(), m_events.end());

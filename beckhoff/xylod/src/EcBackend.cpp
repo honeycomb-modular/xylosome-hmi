@@ -183,6 +183,7 @@ bool EcBackend::busInit() {
     m_echoIn = m_cfg.posEl5152 > 0 ? reinterpret_cast<uint32_t *>(inOf(m_cfg.posEl5152))  : nullptr;
     m_dout   = m_cfg.posElDout > 0 ? outOf(m_cfg.posElDout) : nullptr;
     m_dinRaw = m_cfg.posElDin  > 0 ? inOf(m_cfg.posElDin)   : nullptr;
+    m_shutdownRaw = m_cfg.posShutdown > 0 ? inOf(m_cfg.posShutdown) : nullptr;
 
     auto check = [](const char *n, int s, int obytes, int ibytes) {
         if (s <= 0) return;                                   // not fitted
@@ -289,6 +290,7 @@ void EcBackend::readInputs() {
         m_din.estopOk = m_cfg.estopActiveLow ? raw : !raw;   // active-low: HIGH = safe
     }
     if (m_echoIn) m_echo = int32_t(*m_echoIn);
+    if (m_shutdownRaw) m_shutdownBit = ((*m_shutdownRaw >> m_cfg.diShutdown) & 1) != 0;
 }
 
 void EcBackend::fwCycle(double dt) {

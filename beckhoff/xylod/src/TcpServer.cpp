@@ -13,6 +13,7 @@ using json = nlohmann::json;
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
+#include <cstdlib>
 #include <chrono>
 
 bool TcpServer::listen() {
@@ -133,6 +134,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
 void TcpServer::run(volatile bool &keepRunning) {
     using clock = std::chrono::steady_clock;
     auto lastStatus = clock::now();
+    clock::time_point shutdownSince{};      // when the shutdown button first went high
 
     while (keepRunning) {
         std::vector<pollfd> fds;
@@ -173,6 +175,21 @@ void TcpServer::run(volatile bool &keepRunning) {
         if (!m_clients.empty() && clock::now() - lastStatus > std::chrono::milliseconds(40)) {
             broadcast(statusJson());
             lastStatus = clock::now();
+        }
+
+        // shutdown button: held continuously ≥ hold_s → clean poweroff.
+        // The OS shutdown then fires poweroff-pi.service, taking the Pi down too.
+        if (m_cfg.shutdownHoldS > 0 && m_seq.shutdownInput()) {
+            if (shutdownSince == clock::time_point{}) shutdownSince = clock::now();
+            else if (std::chrono::duration<double>(clock::now() - shutdownSince).count()
+                         >= m_cfg.shutdownHoldS) {
+                LOGW("shutdown button held %.1fs — powering off", m_cfg.shutdownHoldS);
+                if (std::system("systemctl poweroff") != 0)
+                    LOGE("tcp: 'systemctl poweroff' failed");
+                keepRunning = false;
+            }
+        } else {
+            shutdownSince = clock::time_point{};
         }
     }
 

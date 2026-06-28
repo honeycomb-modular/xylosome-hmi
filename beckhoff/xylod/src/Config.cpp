@@ -52,6 +52,8 @@ bool Config::load(const std::string &path) {
     b("estop_active_low", estopActiveLow);
     i("cycle_us", cycleUs);            i("rt_prio", rtPrio);
     s("home_file", homeFile);
+    i("pos_shutdown", posShutdown);    i("di_shutdown", diShutdown);
+    d("shutdown_hold_s", shutdownHoldS);
 
     LOGI("config: loaded %s (iface=%s port=%d)", path.c_str(), ecIface.c_str(), tcpPort);
     return true;

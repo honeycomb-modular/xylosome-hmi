@@ -61,4 +61,5 @@ public:
 
     // ── telemetry ────────────────────────────────────────────────────────────
     virtual int32_t echoCounts() const = 0;            // EL5152 ch1
+    virtual bool    shutdownPressed() const = 0;       // dedicated shutdown DI (raw, no debounce)
 };

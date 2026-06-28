@@ -50,6 +50,7 @@ public:
     void setPassIndex(bool on) override { m_passIndex = on; }
 
     int32_t echoCounts() const override { return m_echo; }
+    bool    shutdownPressed() const override { return m_shutdownBit; }
 
 private:
     bool busInit();                       // config_init/map, PDO remap, → OP
@@ -90,6 +91,7 @@ private:
     uint32_t *m_echoIn = nullptr;         // EL5152 ch1 counter
     uint8_t  *m_dout = nullptr;
     uint8_t  *m_dinRaw = nullptr;
+    uint8_t  *m_shutdownRaw = nullptr;    // dedicated shutdown-button DI (EL1008)
 
     // ── control-context state ────────────────────────────────────────────────
     bool   m_wantEnable = false;
@@ -106,6 +108,7 @@ private:
 
     // mirrored telemetry (written only in cyclic thread)
     DigitalIn m_din;
+    std::atomic<bool> m_shutdownBit{false};   // cyclic-thread write, main-thread read
     int32_t   m_echo = 0;
     int       m_wkcFails = 0;
 
