@@ -38,6 +38,7 @@ bool Config::load(const std::string &path) {
     d("motor_counts_per_rev", motorCountsPerRev);
     d("gear_ratio", gearRatio);        b("invert_axis", invertAxis);
     d("acc_limit_degs2", accLimitDegS2);
+    d("jog_acc_degs2", jogAccDegS2);
     d("home_deg", homeDeg);            d("home_vel_degs", homeVelDegS);
     d("soft_min_deg", softMinDeg);     d("soft_max_deg", softMaxDeg);
     d("fw_steps_per_rev", fwStepsPerRev);

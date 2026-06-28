@@ -22,7 +22,8 @@ struct Config {
     double motorCountsPerRev = 131072.0;     // 17-bit absolute encoder
     double gearRatio         = 50.0;         // harmonic drive
     bool   invertAxis        = false;
-    double accLimitDegS2     = 400.0;        // output-side accel clamp (all moves)
+    double accLimitDegS2     = 400.0;        // output-side accel clamp (scan moves)
+    double jogAccDegS2       = 4000.0;       // higher accel for jog / dial-step moves (snappy)
     double homeDeg           = 0.0;          // home position, output degrees
     double homeVelDegS       = 10.0;
     double softMinDeg        = -10.0;        // soft travel limits, output degrees

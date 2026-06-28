@@ -82,7 +82,7 @@ private:
     void publish();
     const char *stName(St s) const;
 
-    void startMove(double target, double vel);
+    void startMove(double target, double vel, double accel = 0.0);   // accel<=0 → scan accel
     bool stepMove(double dt);                 // trapezoid toward m_moveTarget
     void enterPass(int pass);
     double profileAt(double x) const;         // linear interp, 0..1 → 0..1
@@ -105,6 +105,7 @@ private:
     double m_setpoint = 0.0;        // current CSP target, output deg
     bool   m_spInit = false;        // adopt actual pos as setpoint on 1st OP cycle (no boot snap)
     double m_moveTarget = 0.0, m_moveVel = 0.0, m_moveVelMax = 10.0;
+    double m_moveAcc = 0.0;        // accel for the current point-to-point move (set by startMove)
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;
     double m_pauseRamp = 1.0;       // 1 running → 0 paused (slewed)

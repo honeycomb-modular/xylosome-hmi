@@ -42,10 +42,11 @@ double Sequencer::profileAt(double x) const {
     return p[i] * (1.0 - t) + p[i + 1] * t;
 }
 
-void Sequencer::startMove(double target, double vel) {
+void Sequencer::startMove(double target, double vel, double accel) {
     m_moveTarget = target;
     m_moveVelMax = std::max(0.5, vel);
     m_moveVel = 0.0;
+    m_moveAcc = (accel > 0.0) ? accel : m_cfg.accLimitDegS2;
 }
 
 // trapezoidal point-to-point on m_setpoint; true when arrived
@@ -57,9 +58,9 @@ bool Sequencer::stepMove(double dt) {
         return true;
     }
     const double dir = err > 0 ? 1.0 : -1.0;
-    const double vStop = std::sqrt(2.0 * m_cfg.accLimitDegS2 * std::fabs(err));
+    const double vStop = std::sqrt(2.0 * m_moveAcc * std::fabs(err));
     const double vWant = dir * std::min(m_moveVelMax, vStop);
-    const double dvMax = m_cfg.accLimitDegS2 * dt;
+    const double dvMax = m_moveAcc * dt;
     m_moveVel += std::max(-dvMax, std::min(dvMax, vWant - m_moveVel));
     m_setpoint += m_moveVel * dt;
     return false;
@@ -152,7 +153,7 @@ void Sequencer::cycle(double dt) {
             break;
         case SeqCommand::MoveTo:
             m_bk.axisEnable(true);
-            startMove(c.a, c.b > 0 ? c.b : 20.0);
+            startMove(c.a, c.b > 0 ? c.b : 20.0, m_cfg.jogAccDegS2);   // snappy dial-step jog
             m_st = St::Moving;
             break;
         case SeqCommand::Filter:
@@ -198,7 +199,7 @@ void Sequencer::cycle(double dt) {
         break;
 
     case St::Jogging: {
-        const double dvMax = m_cfg.accLimitDegS2 * dt;
+        const double dvMax = m_cfg.jogAccDegS2 * dt;
         m_moveVel += std::max(-dvMax, std::min(dvMax, m_jogVel - m_moveVel));
         m_setpoint += m_moveVel * dt;
         m_setpoint = std::min(m_cfg.softMaxDeg, std::max(m_cfg.softMinDeg, m_setpoint));
