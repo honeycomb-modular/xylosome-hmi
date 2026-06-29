@@ -59,7 +59,7 @@ struct Config {
     // fires the Pi shutdown hook too). 0 = not fitted.
     int    posShutdown   = 0;     // EL1008 slave position (1-based)
     int    diShutdown    = 0;     // input bit (channel N → bit N-1)
-    double shutdownHoldS = 2.0;   // hold time to trigger
+    double shutdownHoldS = 0.1;   // press debounce (≈ a click); was a 2 s hold
 
     bool load(const std::string &path);      // missing file → defaults, warn
     static Config fromArgs(int argc, char **argv, bool &sim);

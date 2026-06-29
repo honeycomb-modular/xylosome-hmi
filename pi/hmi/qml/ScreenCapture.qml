@@ -171,7 +171,7 @@ Item {
         visible: root.activeMode === 1
 
         property int jogSpeed: 1   // 0=slow, 1=medium, 2=fast
-        readonly property var speedValues: [5, 30, 120]      // move velocity, deg/s
+        readonly property var speedValues: [30, 150, 250]    // move velocity, deg/s (snappy w/ jog accel)
         readonly property var stepValues:  [0.1, 1.0, 5.0]   // dial-jog step per click, deg
 
         // dial-jog: encoder rotation moves the axis one step per click
