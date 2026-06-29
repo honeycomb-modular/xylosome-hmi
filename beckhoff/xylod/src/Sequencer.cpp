@@ -165,6 +165,7 @@ void Sequencer::cycle(double dt) {
             m_passCount = (m_job.colorMode == 1) ? 1 : 4;
             m_bk.axisEnable(true);
             m_pauseRamp = 1.0; m_pausing = false;
+            m_lineCount = 0.0; m_blinkTick = 0; m_blinkLeft = 0.0;
             enterPass(0);
             LOGI("seq: execute — %d pass(es), arc %.1f→%.1f deg, %zu profile samples",
                  m_passCount, m_job.arcStartDeg, m_job.arcEndDeg, m_job.profile.size());
@@ -258,9 +259,17 @@ void Sequencer::cycle(double dt) {
         m_setpoint = m_job.arcStartDeg + (arc > 0 ? m_arcS : -m_arcS);
 
         // line trigger follows the velocity (the third creative axis)
-        m_bk.setLineHz(m_job.lineCurve
-                       ? m_job.lineBaseHz * (v / std::max(1e-6, m_job.maxVelDegS))
-                       : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0));
+        const double lineHzNow = m_job.lineCurve
+            ? m_job.lineBaseHz * (v / std::max(1e-6, m_job.maxVelDegS))
+            : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+        m_bk.setLineHz(lineHzNow);
+
+        // line-count blink: a snappy pulse every line_blink_div scanned lines
+        if (m_st == St::SeqRun && m_cfg.lineBlinkDiv > 0.0) {
+            m_lineCount += lineHzNow * dt;
+            const long tick = long(m_lineCount / m_cfg.lineBlinkDiv);
+            if (tick != m_blinkTick) { m_blinkTick = tick; m_blinkLeft = m_cfg.lineBlinkMs * 1e-3; }
+        }
 
         if (m_arcS >= arcAbs) {
             m_setpoint = m_job.arcEndDeg;
@@ -291,6 +300,10 @@ void Sequencer::cycle(double dt) {
         m_indexPulseLeft -= dt;
         if (m_indexPulseLeft <= 0.0) m_bk.setPassIndex(false);
     }
+
+    // line-count blink pulse (drives the EL2008 channel LED / a light)
+    if (m_blinkLeft > 0.0) m_blinkLeft -= dt;
+    m_bk.setLineBlink(m_blinkLeft > 0.0);
 
     // ── push setpoint + publish status ───────────────────────────────────────
     m_bk.axisSetTargetDeg(m_setpoint);

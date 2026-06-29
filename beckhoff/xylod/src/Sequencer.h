@@ -108,6 +108,9 @@ private:
     double m_moveAcc = 0.0;        // accel for the current point-to-point move (set by startMove)
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;
+    double m_lineCount  = 0.0;      // accumulated scanned lines this sequence
+    long   m_blinkTick  = 0;        // last line_blink_div boundary crossed
+    double m_blinkLeft  = 0.0;      // remaining pulse time, s
     double m_pauseRamp = 1.0;       // 1 running → 0 paused (slewed)
     bool   m_pausing = false;
     double m_indexPulseLeft = 0.0;  // pass_index pulse timer, s

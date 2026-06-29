@@ -39,6 +39,7 @@ public:
     DigitalIn din() const override { DigitalIn d; d.estopOk = true; return d; }
     void setPassActive(bool on) override { m_passActive = on; }
     void setPassIndex(bool) override {}
+    void setLineBlink(bool) override {}
 
     int32_t echoCounts() const override { return int32_t(m_pos * 1000.0); }
     bool    shutdownPressed() const override { return false; }

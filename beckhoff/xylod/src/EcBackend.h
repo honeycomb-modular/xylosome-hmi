@@ -48,6 +48,7 @@ public:
     DigitalIn din() const override { return m_din; }
     void setPassActive(bool on) override { m_passActive = on; }
     void setPassIndex(bool on) override { m_passIndex = on; }
+    void setLineBlink(bool on) override { m_lineBlink = on; }
 
     int32_t echoCounts() const override { return m_echo; }
     bool    shutdownPressed() const override { return m_shutdownBit; }
@@ -98,7 +99,7 @@ private:
     bool   m_faultReset = false;
     double m_targetDeg  = 0.0;
     bool   m_targetValid = false;         // until first set, echo actual back
-    bool   m_passActive = false, m_passIndex = false;
+    bool   m_passActive = false, m_passIndex = false, m_lineBlink = false;
     double m_lineHzCmd  = 0.0;
 
     // filter wheel

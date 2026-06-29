@@ -58,6 +58,7 @@ public:
     virtual DigitalIn din() const = 0;
     virtual void setPassActive(bool on) = 0;
     virtual void setPassIndex(bool on) = 0;            // sequencer shapes the pulse
+    virtual void setLineBlink(bool on) = 0;            // line-count blink output (EL2008 LED)
 
     // ── telemetry ────────────────────────────────────────────────────────────
     virtual int32_t echoCounts() const = 0;            // EL5152 ch1

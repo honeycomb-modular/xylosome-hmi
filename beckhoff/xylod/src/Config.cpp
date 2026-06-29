@@ -50,6 +50,8 @@ bool Config::load(const std::string &path) {
     i("di_end_max", diEndMax);         i("di_estop", diEstop);
     i("di_fw_index", diFwIndex);
     i("do_pass_active", doPassActive); i("do_pass_index", doPassIndex);
+    i("do_line_blink", doLineBlink);   d("line_blink_div", lineBlinkDiv);
+    d("line_blink_ms", lineBlinkMs);
     b("estop_active_low", estopActiveLow);
     i("cycle_us", cycleUs);            i("rt_prio", rtPrio);
     s("home_file", homeFile);

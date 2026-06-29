@@ -335,6 +335,7 @@ void EcBackend::writeOutputs() {
         uint8_t b = 0;
         if (m_passActive) b |= (1 << m_cfg.doPassActive);
         if (m_passIndex)  b |= (1 << m_cfg.doPassIndex);
+        if (m_lineBlink)  b |= (1 << m_cfg.doLineBlink);
         *m_dout = b;
     }
 }

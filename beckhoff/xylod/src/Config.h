@@ -42,6 +42,10 @@ struct Config {
     // ── digital I/O bit map ──────────────────────────────────────────────────
     int diHome = 0, diEndMin = 1, diEndMax = 2, diEstop = 3, diFwIndex = 4;
     int doPassActive = 0, doPassIndex = 1;
+    // line-count blink: pulse an EL2008 channel (LED) every line_blink_div lines
+    int    doLineBlink  = 2;       // EL2008 channel bit (0-7); same terminal as pass LEDs
+    double lineBlinkDiv = 1000;    // pulse once per this many scanned lines
+    double lineBlinkMs  = 30;      // pulse width, ms (snappy/visible)
     bool estopActiveLow = true;              // true: input LOW = e-stop tripped (fail-safe)
 
     // ── control loop ─────────────────────────────────────────────────────────
