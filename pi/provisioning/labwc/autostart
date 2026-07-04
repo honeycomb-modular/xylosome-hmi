@@ -1,0 +1,4 @@
+swaybg -c '#000000' &
+sleep 1 && WAYLAND_DISPLAY=wayland-0 wlr-randr --output HDMI-A-1 --transform 270 --scale 2.0 &
+sleep 2 && XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 swaybg -i /home/hoyte/xylosome-hmi/pi/hmi/HMLOGO.png -m fit -c '#000000' &
+sleep 3 && XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland /home/hoyte/xylosome-hmi/pi/hmi/build/xylosome_hmi &

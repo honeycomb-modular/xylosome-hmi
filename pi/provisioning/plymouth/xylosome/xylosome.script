@@ -1,0 +1,20 @@
+// Xylosome boot/shutdown splash — bright logo, aspect-fit, centered on black.
+// NOTE: the boot framebuffer is in the panel's native orientation, so the BOOT
+// logo comes up rotated (Plymouth.GetMode() does not work on this build to
+// branch boot vs shutdown). Shutdown is upright. To fix boot one day: bake a
+// rotated logo.png into the initramfs only (see README) — needs a photo to get
+// the angle right.
+Window.SetBackgroundTopColor(0,0,0);
+Window.SetBackgroundBottomColor(0,0,0);
+logo = Image("logo.png");
+sw = Window.GetWidth();
+sh = Window.GetHeight();
+fw = sw / logo.GetWidth();
+fh = sh / logo.GetHeight();
+f = fw;
+if (fh < fw) { f = fh; }
+logo = logo.Scale(logo.GetWidth() * f, logo.GetHeight() * f);
+sprite = Sprite(logo);
+sprite.SetX((sw - logo.GetWidth())  / 2);
+sprite.SetY((sh - logo.GetHeight()) / 2);
+sprite.SetZ(-100);

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Xylosome
+Description=Xylosome HMI Boot Screen
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/xylosome
+ScriptFile=/usr/share/plymouth/themes/xylosome/xylosome.script
