@@ -11,6 +11,8 @@
 #include <QStandardPaths>
 #include <QUrl>
 
+#include "LiveImageProvider.h"
+#include "LiveLink.h"
 #include "SessionStore.h"
 #include "XylodLink.h"
 
@@ -65,7 +67,11 @@ int main(int argc, char *argv[])
     auto *sessions = new SessionStore(xylod, &app);
     qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Sessions", sessions);
 
+    auto *live = new LiveLink(&app);
+    qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Live", live);
+
     QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("live"), new LiveImageProvider(live));
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreated, &app,
         [](QObject *obj, const QUrl &) {

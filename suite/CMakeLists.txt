@@ -23,6 +23,9 @@ qt_add_executable(xylosome-suite
     src/SessionStore.cpp
     src/VipsEngine.h
     src/VipsEngine.cpp
+    src/LiveLink.h
+    src/LiveLink.cpp
+    src/LiveImageProvider.h
 )
 
 # App icon (the HMI rainbow void, miniaturized)

@@ -289,6 +289,21 @@ ApplicationWindow {
                         onClicked: root.libraryOpen = !root.libraryOpen
                     }
                 }
+                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
+                Label {
+                    text: qsTr("live")
+                    color: Live.running ? root.chR : root.inkMuted
+                    font.pixelSize: 11
+                    font.bold: Live.running
+                    font.underline: liveMouse.containsMouse
+                    MouseArea {
+                        id: liveMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Live.running ? Live.stop() : Live.start()
+                    }
+                }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
         }
@@ -757,6 +772,112 @@ ApplicationWindow {
                         onClicked: strip.currentIndex = cell.index
                     }
                 }
+            }
+        }
+    }
+
+    // ── Live focus overlay — camera free-runs, waterfall + focus metric
+    Rectangle {
+        visible: Live.running || Live.error !== ""
+        anchors.fill: parent
+        anchors.topMargin: 36
+        anchors.bottomMargin: 72
+        color: "#0A0A0A"
+        z: 45
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 16
+            width: Math.min(parent.width - 96, 1024)
+
+            RowLayout {
+                width: parent.width
+                Label {
+                    text: qsTr("live · focus")
+                    color: "#FFFFFF"
+                    font.pixelSize: 12
+                    font.letterSpacing: 2
+                }
+                Item { Layout.fillWidth: true }
+                Label {
+                    text: Live.connected ? qsTr("agent connected") : qsTr("waiting for agent…")
+                    color: Live.connected ? "#AAAAAA" : root.chR
+                    font.pixelSize: 11
+                }
+                Label {
+                    text: qsTr("stop ×")
+                    color: "#FFFFFF"
+                    font.pixelSize: 11
+                    leftPadding: 16
+                    font.underline: stopMouse.containsMouse
+                    MouseArea {
+                        id: stopMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Live.stop()
+                    }
+                }
+            }
+
+            // waterfall — newest lines at the bottom
+            Rectangle {
+                width: parent.width
+                height: 380
+                color: "#000000"
+                border.width: 1
+                border.color: "#333333"
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    source: "image://live/w?" + Live.frameSerial
+                    cache: false
+                    fillMode: Image.Stretch
+                    smooth: false
+                }
+            }
+
+            // focus metric — the number that climbs as the lens gets there
+            RowLayout {
+                width: parent.width
+                spacing: 16
+                Label {
+                    text: qsTr("focus")
+                    color: "#AAAAAA"
+                    font.pixelSize: 11
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 6
+                    color: "#222222"
+                    Rectangle {
+                        width: parent.width * Math.min(1, Live.focus)
+                        height: parent.height
+                        color: "#FFFFFF"
+                    }
+                    // peak marker
+                    Rectangle {
+                        x: parent.width * Math.min(1, Live.focusPeak) - 1
+                        width: 2
+                        height: parent.height
+                        color: root.chR
+                    }
+                }
+                Label {
+                    text: (Live.focus * 100).toFixed(1)
+                          + qsTr("  peak ") + (Live.focusPeak * 100).toFixed(1)
+                    color: "#FFFFFF"
+                    font.pixelSize: 14
+                }
+            }
+
+            Label {
+                visible: Live.error !== ""
+                width: parent.width
+                wrapMode: Text.Wrap
+                text: Live.error
+                color: root.chR
+                font.pixelSize: 11
             }
         }
     }
