@@ -46,7 +46,7 @@ void LiveLink::start()
         return;
     m_error.clear();
     emit errorChanged();
-    m_waterfall = QImage(1024, kRows, QImage::Format_Grayscale8);
+    m_waterfall = QImage(kCols, 1024, QImage::Format_Grayscale8);
     m_waterfall.fill(16);
     m_focusPeak = 0;
     m_running = true;
@@ -93,18 +93,26 @@ void LiveLink::onReadyRead()
         if (m_pendingBytes > 0) {
             if (m_rx.size() < m_pendingBytes)
                 return;                       // wait for the full payload
-            // roll the waterfall up by pendingCount lines, blit new ones
-            const int rows = m_pendingCount;
-            const int w = qMin(m_pendingWidth, m_waterfall.width());
-            std::memmove(m_waterfall.bits(),
-                         m_waterfall.constBits()
-                             + qsizetype(rows) * m_waterfall.bytesPerLine(),
-                         qsizetype(kRows - rows) * m_waterfall.bytesPerLine());
-            for (int r = 0; r < rows; ++r) {
-                uchar *dst = m_waterfall.bits()
-                             + qsizetype(kRows - rows + r) * m_waterfall.bytesPerLine();
-                std::memcpy(dst,
-                            m_rx.constData() + qsizetype(r) * m_pendingWidth, w);
+
+            // camera lines are COLUMNS: scroll history left by count,
+            // write the new lines as columns at the right edge
+            if (m_waterfall.height() != m_pendingWidth) {
+                m_waterfall = QImage(kCols, m_pendingWidth,
+                                     QImage::Format_Grayscale8);
+                m_waterfall.fill(16);
+            }
+            const int cols = qMin(m_pendingCount, kCols);
+            const int h = m_waterfall.height();
+            const qsizetype bpl = m_waterfall.bytesPerLine();
+            uchar *bits = m_waterfall.bits();
+            for (int y = 0; y < h; ++y)
+                std::memmove(bits + y * bpl, bits + y * bpl + cols, kCols - cols);
+            const uchar *src =
+                reinterpret_cast<const uchar *>(m_rx.constData());
+            for (int c = 0; c < cols; ++c) {
+                const uchar *lineData = src + qsizetype(c) * m_pendingWidth;
+                for (int y = 0; y < h; ++y)
+                    bits[y * bpl + (kCols - cols + c)] = lineData[y];
             }
             m_rx.remove(0, m_pendingBytes);
             m_pendingBytes = 0;

@@ -61,7 +61,10 @@ private:
     int m_pendingCount = 0;
     int m_pendingWidth = 0;
 
-    static constexpr int kRows = 480;   // waterfall height (lines kept)
+    // The camera is a VERTICAL line scanner: every line is a column, the
+    // image builds left→right. The live strip does the same: kCols columns
+    // of history, newest at the right edge.
+    static constexpr int kCols = 640;
     QImage m_waterfall;
     bool m_running = false;
     double m_focus = 0;

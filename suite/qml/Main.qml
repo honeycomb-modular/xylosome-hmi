@@ -289,13 +289,41 @@ ApplicationWindow {
                         onClicked: root.libraryOpen = !root.libraryOpen
                     }
                 }
-                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
-                Label {
-                    text: qsTr("live")
-                    color: Live.running ? root.chR : root.inkMuted
-                    font.pixelSize: 11
-                    font.bold: Live.running
-                    font.underline: liveMouse.containsMouse
+                Item { width: 8; height: 1 }
+                // LIVE — a mode switch, so the only bordered control in the
+                // header: unmissable but still in the language.
+                Rectangle {
+                    Layout.preferredWidth: liveRow.width + 24
+                    Layout.preferredHeight: 24
+                    color: Live.running ? root.ink : (liveMouse.containsMouse ? "#F2F2F2" : "#FFFFFF")
+                    border.width: 1
+                    border.color: root.ink
+                    Row {
+                        id: liveRow
+                        anchors.centerIn: parent
+                        spacing: 7
+                        Rectangle {
+                            id: liveDot
+                            width: 7; height: 7; radius: 3.5
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Live.running ? root.chR : "transparent"
+                            border.width: Live.running ? 0 : 1
+                            border.color: root.inkFaint
+                            SequentialAnimation on opacity {
+                                running: Live.running
+                                loops: Animation.Infinite
+                                onStopped: liveDot.opacity = 1
+                                NumberAnimation { to: 0.3; duration: 600 }
+                                NumberAnimation { to: 1.0; duration: 600 }
+                            }
+                        }
+                        Label {
+                            text: Live.running ? qsTr("LIVE — STOP") : qsTr("LIVE")
+                            color: Live.running ? "#FFFFFF" : root.ink
+                            font.pixelSize: 11
+                            font.letterSpacing: 2
+                        }
+                    }
                     MouseArea {
                         id: liveMouse
                         anchors.fill: parent
