@@ -113,6 +113,7 @@ def handle(conn, addr):
                 msg = json.loads(line)
             except ValueError:
                 send(conn, {"ack": "?", "ok": False, "error": "bad json"}); continue
+            print("recv from %s: %s" % (addr, msg))
             cmd = msg.get("cmd")
             if cmd == "hello":
                 send(conn, {"ev": "welcome", "camera": read_state().get("model"), "version": "0.1"})
@@ -121,6 +122,7 @@ def handle(conn, addr):
             elif cmd == "set":
                 key, val = msg.get("key"), msg.get("value")
                 ok, note = apply_set(key, val)
+                print("  set %s=%s -> ok=%s (%s)" % (key, val, ok, note))
                 send(conn, {"ack": "set", "ok": ok, "key": key, "value": val, "note": note})
                 if ok:
                     broadcast(dict({"ev": "state"}, **read_state()))
