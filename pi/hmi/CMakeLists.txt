@@ -37,6 +37,8 @@ qt_add_executable(xylosome_hmi
     src/PendantReader.cpp
     src/BeckhoffLink.h
     src/BeckhoffLink.cpp
+    src/CameraLink.h
+    src/CameraLink.cpp
 )
 
 qt_add_qml_module(xylosome_hmi

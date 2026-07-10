@@ -34,6 +34,8 @@ Item {
     // Current displayed value of a row (after option cycling) — lets a sub-page
     // persist the choice it made.
     function rowValue(i) { return (i >= 0 && i < rowModel.count) ? rowModel.get(i).value : "" }
+    // Key of a row — lets a sub-page tell which row was activated.
+    function rowKey(i)   { return (i >= 0 && i < rowModel.count) ? rowModel.get(i).key : "" }
 
     // Exposed to the main.qml key router.
     property var focusController: listFocus

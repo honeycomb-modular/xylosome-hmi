@@ -25,6 +25,7 @@
 #include "MetadataRecorder.h"
 #include "PendantReader.h"
 #include "BeckhoffLink.h"
+#include "CameraLink.h"
 
 int main(int argc, char *argv[])
 {
@@ -43,6 +44,9 @@ int main(int argc, char *argv[])
     // ── 1c. Beckhoff link (C6920 / xylod over TCP — auto-reconnects) ──────────
     BeckhoffLink beckhoff;
 
+    // ── 1d. Camera link (capture agent over TCP — auto-reconnects) ────────────
+    CameraLink camera;
+
     // ── 2. HTTP server ────────────────────────────────────────────────────────
     HttpServer httpServer(&motor);
     if (httpServer.listen(8080))
@@ -52,6 +56,7 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonInstance<MotorModel>("XylosomeHMI", 1, 0, "Motor", &motor);
     qmlRegisterSingletonInstance<MetadataRecorder>("XylosomeHMI", 1, 0, "Recorder", &recorder);
     qmlRegisterSingletonInstance<BeckhoffLink>("XylosomeHMI", 1, 0, "Beckhoff", &beckhoff);
+    qmlRegisterSingletonInstance<CameraLink>("XylosomeHMI", 1, 0, "Camera", &camera);
 
     QQmlApplicationEngine engine;
 
