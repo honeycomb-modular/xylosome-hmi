@@ -42,10 +42,30 @@ endif()
 # binaries; vips-cpp would not.
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
-    pkg_check_modules(VIPS IMPORTED_TARGET vips)
+    # Not IMPORTED_TARGET: on msys2 pkgconf reports the shell include path
+    # (/ucrt64/include) which native CMake rejects on an imported target.
+    # Use the raw vars instead and only add include dirs that actually exist
+    # — the UCRT64 toolchain already has C:/msys64/ucrt64/{include,lib} on its
+    # default search paths, so linking libvips by name is enough.
+    pkg_check_modules(VIPS vips)
 endif()
 if(VIPS_FOUND)
-    target_link_libraries(xylosome-suite PRIVATE PkgConfig::VIPS)
+    target_link_libraries(xylosome-suite PRIVATE ${VIPS_LIBRARIES})
+    if(VIPS_LIBRARY_DIRS)
+        foreach(_vips_libdir ${VIPS_LIBRARY_DIRS})
+            if(EXISTS "${_vips_libdir}")
+                target_link_directories(xylosome-suite PRIVATE "${_vips_libdir}")
+            endif()
+        endforeach()
+    endif()
+    foreach(_vips_incdir ${VIPS_INCLUDE_DIRS})
+        if(EXISTS "${_vips_incdir}")
+            target_include_directories(xylosome-suite PRIVATE "${_vips_incdir}")
+        endif()
+    endforeach()
+    if(VIPS_CFLAGS_OTHER)
+        target_compile_options(xylosome-suite PRIVATE ${VIPS_CFLAGS_OTHER})
+    endif()
     target_compile_definitions(xylosome-suite PRIVATE HAVE_VIPS)
     message(STATUS "libvips found — ingest enabled")
 else()
