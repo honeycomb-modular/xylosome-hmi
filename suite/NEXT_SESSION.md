@@ -3,6 +3,13 @@
 Read `docs/concept/review_suite_plan.md` for the full plan; this file is
 only what's needed to resume.
 
+> **UPDATE 2026-07-10** — the Windows build is no longer parked. The Suite
+> was built and run on the **capture PC** via **msys2 UCRT64** (Qt6 + gcc
+> from pacman, no libvips), and the **LIVE** button drives the real capture
+> agent (`capture/live_agent.py`) on `:5520` — live focus works in the Suite
+> on Windows. Recipe in `suite/README.md`. Remaining Windows item is only
+> libvips-for-ingest (one `pacman -S mingw-w64-ucrt-x86_64-libvips`).
+
 ## Where things stand
 
 Phases 0–3 built, tested live on the Mac, CI green on all three platforms
@@ -35,6 +42,12 @@ Gotchas learned the hard way:
 
 ## Parked: Windows libvips (the one open wound)
 
+> **RESOLVED 2026-07-10 (toolchain).** Built + ran on the capture PC via
+> **msys2 UCRT64** — one toolchain, Qt6 + gcc from pacman, no import-lib
+> archaeology. Live focus + judging build with **no libvips**. Only ingest
+> (pyramids) still wants libvips, now a one-line `pacman -S` on msys2. The
+> MSVC + MinGW-libvips notes below are superseded; kept for history.
+
 MSVC + official MinGW-built libvips binaries (`build-win64-mxe` releases;
 vcpkg has **no** libvips port). C API rewrite fixed the ABI question and
 Windows *compiles* — but linking dies at `LNK1181: cannot open intl.lib`
@@ -48,11 +61,13 @@ log was never read**; check it first if retrying the current approach
 (`msys2/setup-msys2` action, UCRT64: `mingw-w64-ucrt-x86_64-qt6` +
 `-libvips` + `-gcc`) — one toolchain, both packages native, no import-lib
 archaeology. windeployqt exists there too. Replace the aqt/MSVC Windows job
-wholesale.
+wholesale. (Proven locally 2026-07-10 — see the UPDATE banner.)
 
 ## Next build steps (in plan order)
 
-1. **Windows ingest via msys2** (above) — cart's platform needs pyramids.
+1. **Windows ingest via msys2** — toolchain now proven locally; remaining is
+   `pacman -S mingw-w64-ucrt-x86_64-libvips` + reconfigure to enable pyramids,
+   then port the CI Windows job to `msys2/setup-msys2` (UCRT64).
 2. **Phase 4**: library grid ⇄ timeline toggle (`G`?), notes input field,
    quarantine → permanent delete with GB-reclaimed report + deletion log,
    disk gauge ("sessions remaining"), incomplete-session salvage UI.

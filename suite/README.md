@@ -31,25 +31,38 @@ cmake -S suite -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-- **Windows**: use the Qt 6 MSVC kit (Qt Creator opens `CMakeLists.txt`
-  directly), or run the commands above in a "x64 Native Tools" prompt with
-  Qt in `CMAKE_PREFIX_PATH`.
+- **Windows (proven, recommended): msys2 UCRT64** — see the block below.
 - **macOS**: `brew install qt vips pkgconf` then the commands above;
   produces `xylosome-suite.app`.
 - **Linux**: `apt install qt6-base-dev qt6-declarative-dev libqt6svg6-dev
   qml6-module-qtquick-controls qml6-module-qtquick-dialogs libvips-dev`
   then the commands above (needs a distro shipping Qt ≥ 6.4).
-- **Windows**: download `vips-dev-x64-all-<version>.zip` from
-  github.com/libvips/build-win64-mxe/releases, extract, put its `bin` on
-  PATH and `lib\pkgconfig` in PKG_CONFIG_PATH (see the CI workflow for the
-  exact recipe). The suite uses the libvips C API, so the official
-  binaries link fine from MSVC.
 
-libvips is optional at build time: without it the suite still builds and
-runs (sessions, pairing, judging), with ingest disabled and a warning in
-the log. **Current CI state**: macOS and Linux build with ingest; the
-Windows CI artifact is judging-only until the job moves to msys2
-(MSVC ⇄ MinGW-libvips link issues, see workflow comment).
+### Windows via msys2 UCRT64 (proven 2026-07-10, capture PC)
+
+This replaces the old MSVC + MinGW-libvips route (the `LNK1181: intl.lib`
+wound). One toolchain, Qt6 + gcc from pacman, **no libvips needed** for the
+live-focus + judging build:
+
+```
+winget install MSYS2.MSYS2
+# then in the "MSYS2 UCRT64" shell (not MINGW64/MSYS):
+pacman -Syu                          # rerun if it closes the terminal
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake \
+    mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6 mingw-w64-ucrt-x86_64-pkgconf
+cd /c/dev/xylosome-hmi
+cmake -S suite -B build-suite -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-suite
+./build-suite/xylosome-suite.exe     # run from the UCRT64 shell (Qt DLLs on PATH)
+```
+
+- Configure reports `libvips NOT found — building without ingest
+  (judging-only)`; that is expected and fine. Live focus + judging work.
+- The **LIVE** button drives the real capture agent (`capture/live_agent.py`)
+  on `:5520` — live waterfall + focus, verified in the Suite on Windows.
+- To add image ingest (tile pyramids), one line, no MSVC pain:
+  `pacman -S mingw-w64-ucrt-x86_64-libvips`, then re-run cmake. libvips is
+  optional (`HAVE_VIPS`): without it the suite still builds and runs.
 
 ## Conventions
 
