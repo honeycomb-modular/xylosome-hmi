@@ -54,6 +54,34 @@ Get-Content C:\dev\capture_agent.log -Tail 20
 **COM3 is single-occupant** — stop the task before opening CamExpert, start it
 again after. `run_agent.cmd` hard-codes the Python path; update it if Python moves.
 
+## Grabber config at boot (D3 green headless)
+
+The grabber's FPGA boots into its default (Medium) config — CL2 (D3 LED) red —
+until a Sapera app loads the Full `.ccf`. `configure_grabber_boot.ps1` does that
+once at boot via the Sapera .NET API (no CamExpert). The FPGA keeps the config
+until the next reboot even after the script exits, so it's a one-shot.
+
+Runs as the `XylosomeGrabberConfig` scheduled task (SYSTEM, at boot, 64-bit).
+Logs to `C:\dev\grabber_config.log`. Install once, in an **Administrator** PowerShell:
+
+```powershell
+$ps  = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+$scr = "C:\dev\xylosome-hmi\capture\configure_grabber_boot.ps1"
+$action    = New-ScheduledTaskAction -Execute $ps -Argument "-ExecutionPolicy Bypass -NoProfile -File `"$scr`""
+$trigger   = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName "XylosomeGrabberConfig" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
+```
+
+Notes:
+- Uses **only** `DALSA.SaperaLT.SapClassBasic.dll` (64-bit). The mixed-mode
+  `...Core.dll` isn't loaded (not needed for acquisition config, and it fails to
+  load standalone) — that's expected.
+- Configures the board only; it does **not** capture images yet. Actual frame
+  grab + save to `D:` is the next step (extend into a held acquisition).
+- Independent of the camera-settings agent (that owns COM3; this owns the board).
+
 ## Status (2026-07-10)
 
 - Camera control proven end-to-end over the bus: networked `set` → COM3 → camera
