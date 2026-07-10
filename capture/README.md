@@ -82,6 +82,36 @@ Notes:
   grab + save to `D:` is the next step (extend into a held acquisition).
 - Independent of the camera-settings agent (that owns COM3; this owns the board).
 
+## Live focus (Suite waterfall)
+
+`live_agent.py` is the **real** live-focus agent — the drop-in replacement for
+`suite/tools/fake_capture_agent.py`. It serves the `:5520` protocol
+(`suite/LIVE_PROTOCOL.md`): on `live_start` it opens the grabber, grabs frames
+from the free-running camera (Sapera via pythonnet), downsamples each 8192-px
+line to the requested width, computes the focus metric (RMS of horizontal
+gradient), and streams line blocks; on `live_stop` it releases the board.
+
+The Suite's live button drives this unchanged. For use without the Suite,
+`live_viewer.py` is a standalone OpenCV viewer (rolling waterfall + focus number)
+that connects to `:5520` — pull focus with just these two scripts.
+
+Deps: `pip install pythonnet numpy opencv-python`. Run (CamExpert closed):
+
+```powershell
+python live_agent.py      # window A - serves :5520
+python live_viewer.py     # window B - shows the waterfall
+```
+
+Notes / next:
+- Buffer format is **Mono16**; the camera's 8-bit data is in the low byte
+  (`clip(0,255)`), confirmed on the bench.
+- `grab_test.py` is the minimal grab diagnostic (dimensions + per-line stats).
+- Camera is already internal-sync (exposure mode 7), so no trigger switching yet.
+  When scanning uses the EL2521 external trigger, `live_start`/`live_stop` should
+  switch the camera internal↔external over COM3 (per `LIVE_PROTOCOL.md`).
+- One streaming session at a time (single board); `live_agent` holds the board
+  only while streaming.
+
 ## Status (2026-07-10)
 
 - Camera control proven end-to-end over the bus: networked `set` → COM3 → camera
