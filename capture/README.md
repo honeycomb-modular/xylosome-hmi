@@ -26,6 +26,34 @@ window:
 powershell -ExecutionPolicy Bypass -File .\test_camera_client.ps1
 ```
 
+## Auto-start (Windows, headless)
+
+The agent runs at boot as a Scheduled Task (`XylosomeCaptureAgent`) under the
+SYSTEM account — no login needed, auto-restarts on crash. It runs `run_agent.cmd`
+(this folder), which launches `python -u capture_agent.py` and appends live
+output to `C:\dev\capture_agent.log`.
+
+Install once, in an **Administrator** PowerShell:
+
+```powershell
+$action    = New-ScheduledTaskAction -Execute "C:\dev\xylosome-hmi\capture\run_agent.cmd"
+$trigger   = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings  = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName "XylosomeCaptureAgent" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
+```
+
+Manage it:
+
+```powershell
+Start-ScheduledTask -TaskName XylosomeCaptureAgent
+Stop-ScheduledTask  -TaskName XylosomeCaptureAgent    # frees COM3 so CamExpert can use it
+Get-Content C:\dev\capture_agent.log -Tail 20
+```
+
+**COM3 is single-occupant** — stop the task before opening CamExpert, start it
+again after. `run_agent.cmd` hard-codes the Python path; update it if Python moves.
+
 ## Status (2026-07-10)
 
 - Camera control proven end-to-end over the bus: networked `set` → COM3 → camera
