@@ -1,0 +1,14 @@
+[Unit]
+Description=Power off the Windows capture PC cleanly when this PC shuts down
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/bin/poweroff-capture.sh
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

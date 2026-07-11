@@ -28,9 +28,9 @@ What it sets up:
 to the Plymouth theme, the command that actually reaches the boot screen is
 `sudo update-initramfs -u -k all` — *not* `plymouth-set-default-theme -R`.
 
-## Beckhoff side (shutdown button → also powers off the Pi)
+## Beckhoff side (shutdown button → also powers off the Pi + capture PC)
 
-On the Beckhoff:
+On the Beckhoff. This powers off the **Pi HMI**:
 
 ```bash
 sudo install -m755 pi/provisioning/beckhoff/poweroff-pi.sh   /usr/local/bin/poweroff-pi.sh
@@ -38,10 +38,40 @@ sudo install -m644 pi/provisioning/beckhoff/poweroff-pi.service /etc/systemd/sys
 sudo systemctl daemon-reload && sudo systemctl enable poweroff-pi.service
 ```
 
+…and this powers off the **Windows capture PC** (`shutdown /s /t 0` over SSH):
+
+```bash
+sudo install -m755 pi/provisioning/beckhoff/poweroff-capture.sh   /usr/local/bin/poweroff-capture.sh
+sudo install -m644 pi/provisioning/beckhoff/poweroff-capture.service /etc/systemd/system/poweroff-capture.service
+sudo systemctl daemon-reload && sudo systemctl enable poweroff-capture.service
+```
+
+Both are oneshot services whose `ExecStop` runs on shutdown, ordered after
+`network-online.target` so the SSH goes out while the network is still up. One
+Beckhoff shutdown → Pi and capture PC both go down cleanly with it.
+
 ## Manual steps (not scriptable)
 
 - **Beckhoff → Pi SSH key:** `sudo ssh-keygen -t ed25519 -f /root/.ssh/id_pi -N ''`
   then `sudo ssh-copy-id -i /root/.ssh/id_pi.pub hoyte@192.168.2.3`.
+- **Beckhoff → capture-PC SSH key** (Windows, so no `ssh-copy-id`):
+  1. Beckhoff: `sudo ssh-keygen -t ed25519 -f /root/.ssh/id_capture -N '' ; sudo cat /root/.ssh/id_capture.pub`
+  2. Capture PC (Windows, admin): install the OpenSSH **server** —
+     `winget install --id Microsoft.OpenSSH.Preview -e`, then start it:
+     `Start-Service sshd; Set-Service sshd -StartupType Automatic` (add a firewall
+     rule for TCP 22 if needed).
+  3. Capture PC: because the login user is an **administrator**, the key goes in
+     `C:\ProgramData\ssh\administrators_authorized_keys` (NOT `~/.ssh`), and that
+     file must be readable only by `Administrators` + `SYSTEM`:
+     ```powershell
+     $akf = "$env:ProgramData\ssh\administrators_authorized_keys"
+     Add-Content $akf 'ssh-ed25519 AAAA... root@beckhoff-pc' -Encoding ascii
+     icacls $akf /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+     ```
+  4. Verify from the Beckhoff (should print the PC's name, no password):
+     `sudo ssh -i /root/.ssh/id_capture hoyte@192.168.2.50 hostname`
+  - Capture PC is `192.168.2.50` on the cart subnet; `shutdown /s /t 0` works for
+    the standard user (holds the shutdown privilege) and returns immediately.
 - **C6920 BIOS:** "Restore on AC Power Loss" = **Power On** (so mains-on = boot).
 - **Touch calibration** (if reflashed): `~/.config/labwc/rc.xml` touch
   `mapToOutput="HDMI-A-1"` + udev `LIBINPUT_CALIBRATION_MATRIX` (see SESSION_NOTES).
