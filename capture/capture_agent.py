@@ -46,7 +46,8 @@ CAPTURE_DIR = os.environ.get("CAPTURE_DIR", r"D:\capture")
 CAM_WIDTH   = 8192                       # sensor width (fixed)
 LINE_MIN, LINE_MAX = 1, 65000
 CAP_LINES   = max(LINE_MIN, min(LINE_MAX, int(os.environ.get("CAP_LINES", "8192"))))
-LINES_PER_BLOCK = 8
+LIVE_LINES = 64     # short live-focus frame: fast (~ms) grabs of consecutive
+                    # lines so the waterfall flows smoothly (vs a full 8192 grab)
 os.makedirs(CAPTURE_DIR, exist_ok=True)
 
 # ---------- camera serial (COM3) ----------
@@ -126,9 +127,9 @@ def _ccf_for(lines):
     return out
 
 class Grabber:
-    def __init__(self):
+    def __init__(self, lines=CAP_LINES):
         self.loc = SapLocation(SERVER, 0)
-        self.acq = SapAcquisition(self.loc, _ccf_for(CAP_LINES))
+        self.acq = SapAcquisition(self.loc, _ccf_for(lines))
         self.buf = SapBuffer(1, self.acq, SapBuffer.MemoryType.ScatterGather)
         self.xfer = SapAcqToBuf(self.acq, self.buf)
         for o in (self.acq, self.buf, self.xfer):
@@ -182,7 +183,7 @@ def live_client(conn, addr):
                             if not board_lock.acquire(blocking=False):
                                 conn.sendall(b'{"ev":"error","text":"board busy (scan running?)"}\n'); continue
                             have = True
-                            try: grab = Grabber()
+                            try: grab = Grabber(lines=LIVE_LINES)
                             except Exception as e:
                                 board_lock.release(); have = False
                                 conn.sendall((json.dumps({"ev": "error", "text": str(e)}) + "\n").encode()); continue
@@ -198,15 +199,18 @@ def live_client(conn, addr):
             try: img = grab.frame()
             except Exception as e:
                 conn.sendall((json.dumps({"ev": "error", "text": "grab: " + str(e)}) + "\n").encode()); break
-            h, w = img.shape; rows = np.linspace(0, h - 1, LINES_PER_BLOCK).astype(int)
-            step = max(1, w // width); block = bytearray(); lf = 0.0
-            for r in rows:
-                l8 = np.clip(img[r], 0, 255).astype(np.uint8); lf = focus_metric(l8)
-                ds = l8[::step][:width]
-                if ds.shape[0] < width: ds = np.pad(ds, (0, width - ds.shape[0]))
-                block += ds.tobytes()
+            # send ALL the (consecutive) lines of the short live frame — a fast,
+            # smooth waterfall. Downsample the sensor width + cast in one shot.
+            h, w = img.shape
+            step = max(1, w // width)
+            ds = np.clip(img[:, ::step][:, :width], 0, 255).astype(np.uint8)
+            if ds.shape[1] < width:
+                ds = np.pad(ds, ((0, 0), (0, width - ds.shape[1])))
+            g = np.diff(ds.astype(np.float32), axis=1)
+            lf = float(np.sqrt(np.mean(g * g)))          # focus over the whole block
+            block = ds.tobytes()
             peak = max(peak, lf); fn = min(1.0, lf / peak)
-            hdr = json.dumps({"ev": "lines", "count": LINES_PER_BLOCK, "width": width,
+            hdr = json.dumps({"ev": "lines", "count": h, "width": width,
                               "bytes": len(block), "focus": round(fn, 4), "tMs": int(time.time() * 1000)}) + "\n"
             try: conn.sendall(hdr.encode() + bytes(block))
             except OSError: break
