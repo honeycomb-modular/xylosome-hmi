@@ -274,6 +274,7 @@ def _max_seq():
 
 def xylod_client():
     seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
+    ps_time = {}   # pass -> (recv_monotonic, pass_start tMs) for trigger-timing checks
     while True:
         try:
             c = socket.create_connection((XYLOD_HOST, XYLOD_PORT)); f = c.makefile("r")
@@ -285,11 +286,10 @@ def xylod_client():
                 m = json.loads(line); ev = m.get("ev")
                 if ev == "pass_start":
                     p = int(m.get("pass", -1)); filt = m.get("filter", p)
+                    pass_filter[p] = filt
+                    t_ps = time.monotonic(); ps_time[p] = (t_ps, m.get("tMs"))
                     if p == 0:
                         seq += 1
-                        # snapshot the camera config once per scan — baked into
-                        # every pass TIFF below so the scan is self-describing
-                        scan_settings = read_state()
                         if board_lock.acquire(blocking=False):
                             have = True
                             try: grab = Grabber(); print("CAPTURE seq %d armed" % seq)
@@ -297,19 +297,35 @@ def xylod_client():
                                 print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
                         else:
                             print("capture: board busy (live?), skipping seq %d" % seq); grab = None
-                    pass_filter[p] = filt
-                elif ev == "pass_end":
-                    p = int(m.get("pass", -1)); filt = pass_filter.get(p, p)
+                    # FREERUN STOPGAP (until the EL2521 line trigger + EXSYNC is
+                    # wired): the camera free-runs, so grab HERE — at motion start
+                    # — to image the sweep, not the parked axis. NOTHING slow (no
+                    # gcp read_state) may run before the Snap or it lands after a
+                    # short pass; settings are snapshotted AFTER the grab instead.
+                    # Snap blocks ~CAP_LINES/line_rate s; set line_rate so that
+                    # span ≈ the pass duration to cover the arc.
                     if grab:
                         try:
+                            t0 = time.monotonic()
                             img = grab.frame()
+                            t1 = time.monotonic()
+                            if p == 0:
+                                scan_settings = read_state()   # after the Snap: no delay on the grab
                             name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                             tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
                             tifffile.imwrite(tmp, img, metadata={"camera": scan_settings})
                             os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            print("saved", name)
+                            print("saved %s | GRAB began +%.0fms after pass_start, lasted %.0fms"
+                                  % (name, (t0 - t_ps) * 1000, (t1 - t0) * 1000))
                         except Exception as e:
                             print("capture save failed:", e)
+                elif ev == "pass_end":
+                    p = int(m.get("pass", -1))
+                    t_ps, ps_tMs = ps_time.get(p, (None, None))
+                    pe_tMs = m.get("tMs")
+                    if ps_tMs is not None and pe_tMs is not None:
+                        print("TIMING pass %d: motion window %dms (pass_start..pass_end)"
+                              % (p, pe_tMs - ps_tMs))
                 elif ev == "seq_done":
                     if grab: grab.close(); grab = None
                     if have: board_lock.release(); have = False
