@@ -112,13 +112,23 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
     VipsImage *src = vips_image_new_from_file(pathU.constData(), nullptr);
     if (!src) { fail("open"); return; }
     const bool sixteen = vips_image_get_format(src) == VIPS_FORMAT_USHORT;
-    const int pxW = vips_image_get_width(src);
-    const int pxH = vips_image_get_height(src);
 
     // ── tile pyramid + fit preview, both from ONE 8-bit mapping so the
     //    filmstrip, fit view and 1:1 tiles all agree (TIFF stays truth).
-    VipsImage *v8 = sixteen ? to8(src) : (VipsImage *)g_object_ref(src);
-    if (!v8) { fail("to8"); g_object_unref(src); return; }
+    VipsImage *mapped = sixteen ? to8(src) : (VipsImage *)g_object_ref(src);
+    if (!mapped) { fail("to8"); g_object_unref(src); return; }
+
+    // Display orientation: the scan axis runs across the sensor, so the raw
+    // frame is 90° off. Rotate CW for the proxies (tiles + preview); the
+    // original TIFF is never touched. Histogram below uses the unrotated src
+    // (orientation-independent), so clip stats are unchanged.
+    VipsImage *v8 = nullptr;
+    if (vips_rot(mapped, &v8, VIPS_ANGLE_D90, nullptr)) {
+        fail("rot"); g_object_unref(mapped); g_object_unref(src); return;
+    }
+    g_object_unref(mapped);
+    const int pxW = vips_image_get_width(v8);   // rotated (display) dims
+    const int pxH = vips_image_get_height(v8);
     int r = vips_dzsave(v8, base.toUtf8().constData(),
                         "layout", VIPS_FOREIGN_DZ_LAYOUT_DZ,
                         "suffix", ".jpg[Q=90]",
