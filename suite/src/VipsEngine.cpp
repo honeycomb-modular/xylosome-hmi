@@ -118,16 +118,21 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
     VipsImage *mapped = sixteen ? to8(src) : (VipsImage *)g_object_ref(src);
     if (!mapped) { fail("to8"); g_object_unref(src); return; }
 
-    // Display orientation: the scan axis runs across the sensor, so the raw
-    // frame is 90° off. Rotate CW for the proxies (tiles + preview); the
-    // original TIFF is never touched. Histogram below uses the unrotated src
-    // (orientation-independent), so clip stats are unchanged.
-    VipsImage *v8 = nullptr;
-    if (vips_rot(mapped, &v8, VIPS_ANGLE_D90, nullptr)) {
+    // Display orientation (proxies only — the original TIFF is never touched):
+    // the scan axis runs across the sensor, so rotate 90° CW, then flip
+    // horizontal to undo the reverse-readout mirror. Histogram below uses the
+    // unrotated src (orientation-independent), so clip stats are unchanged.
+    VipsImage *rot = nullptr;
+    if (vips_rot(mapped, &rot, VIPS_ANGLE_D90, nullptr)) {
         fail("rot"); g_object_unref(mapped); g_object_unref(src); return;
     }
     g_object_unref(mapped);
-    const int pxW = vips_image_get_width(v8);   // rotated (display) dims
+    VipsImage *v8 = nullptr;
+    if (vips_flip(rot, &v8, VIPS_DIRECTION_HORIZONTAL, nullptr)) {
+        fail("flip"); g_object_unref(rot); g_object_unref(src); return;
+    }
+    g_object_unref(rot);
+    const int pxW = vips_image_get_width(v8);   // oriented (display) dims
     const int pxH = vips_image_get_height(v8);
     int r = vips_dzsave(v8, base.toUtf8().constData(),
                         "layout", VIPS_FOREIGN_DZ_LAYOUT_DZ,
