@@ -273,7 +273,7 @@ def _max_seq():
     return mx
 
 def xylod_client():
-    seq = _max_seq(); pass_filter = {}; grab = None; have = False
+    seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
     while True:
         try:
             c = socket.create_connection((XYLOD_HOST, XYLOD_PORT)); f = c.makefile("r")
@@ -287,6 +287,9 @@ def xylod_client():
                     p = int(m.get("pass", -1)); filt = m.get("filter", p)
                     if p == 0:
                         seq += 1
+                        # snapshot the camera config once per scan — baked into
+                        # every pass TIFF below so the scan is self-describing
+                        scan_settings = read_state()
                         if board_lock.acquire(blocking=False):
                             have = True
                             try: grab = Grabber(); print("CAPTURE seq %d armed" % seq)
@@ -302,7 +305,8 @@ def xylod_client():
                             img = grab.frame()
                             name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                             tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
-                            tifffile.imwrite(tmp, img); os.replace(tmp, os.path.join(CAPTURE_DIR, name))
+                            tifffile.imwrite(tmp, img, metadata={"camera": scan_settings})
+                            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
                             print("saved", name)
                         except Exception as e:
                             print("capture save failed:", e)
