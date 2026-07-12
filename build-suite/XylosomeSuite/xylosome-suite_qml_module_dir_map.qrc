@@ -1,6 +1,0 @@
-<RCC>
-  <qresource prefix="/">
-    <file alias="/qt/qml/XylosomeSuite">C:/dev/xylosome-hmi/build-suite/XylosomeSuite</file>
-
-  </qresource>
-</RCC>

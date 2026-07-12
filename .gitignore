@@ -24,3 +24,5 @@ xylosome_*.svg
 .wokwi/
 .zprofile
 .DS_Store
+
+build-suite/

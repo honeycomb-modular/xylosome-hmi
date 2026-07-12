@@ -1,7 +1,0 @@
-module XylosomeSuite
-typeinfo xylosome-suite.qmltypes
-prefer :/qt/qml/XylosomeSuite/
-Main 1.0 qml/Main.qml
-ZoomView 1.0 qml/ZoomView.qml
-depends QtQuick
-

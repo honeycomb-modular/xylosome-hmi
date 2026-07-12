@@ -1,8 +1,0 @@
---resource
-C:/dev/xylosome-hmi/build-suite/.qt/rcc/qmake_XylosomeSuite.qrc
---resource
-C:/dev/xylosome-hmi/build-suite/.qt/rcc/xylosome-suite_raw_qml_0.qrc
---resource
-C:/dev/xylosome-hmi/build-suite/.qt/rcc/xylosome-suite_raw_res_0.qrc
-/qt/qml/XylosomeSuite/qml/Main.qml
-/qt/qml/XylosomeSuite/qml/ZoomView.qml

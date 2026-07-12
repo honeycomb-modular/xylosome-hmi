@@ -1,7 +1,0 @@
-<RCC>
-  <qresource prefix="/qt/qml/XylosomeSuite/">
-    <file alias="assets/hm_logo_black.svg">C:/dev/xylosome-hmi/suite/assets/hm_logo_black.svg</file>
-    <file alias="assets/icon.png">C:/dev/xylosome-hmi/suite/assets/icon.png</file>
-  </qresource>
-</RCC>
-
