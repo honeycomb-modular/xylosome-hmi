@@ -26,6 +26,10 @@ qt_add_executable(xylosome-suite
     src/LiveLink.h
     src/LiveLink.cpp
     src/LiveImageProvider.h
+    src/CameraLink.h
+    src/CameraLink.cpp
+    src/HmiLink.h
+    src/HmiLink.cpp
 )
 
 # App icon (the HMI rainbow void, miniaturized)
@@ -80,6 +84,7 @@ qt_add_qml_module(xylosome-suite
         qml/Main.qml
         qml/ZoomView.qml
         qml/ToggleChip.qml
+        qml/StatusPanel.qml
     RESOURCES
         assets/hm_logo_black.svg
         assets/icon.png

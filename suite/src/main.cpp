@@ -11,6 +11,8 @@
 #include <QStandardPaths>
 #include <QUrl>
 
+#include "CameraLink.h"
+#include "HmiLink.h"
 #include "LiveImageProvider.h"
 #include "LiveLink.h"
 #include "SessionStore.h"
@@ -69,6 +71,12 @@ int main(int argc, char *argv[])
 
     auto *live = new LiveLink(&app);
     qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Live", live);
+
+    auto *camera = new CameraLink(&app);
+    qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Camera", camera);
+
+    auto *hmi = new HmiLink(&app);
+    qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Hmi", hmi);
 
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("live"), new LiveImageProvider(live));

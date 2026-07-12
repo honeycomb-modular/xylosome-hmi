@@ -92,6 +92,11 @@ ApplicationWindow {
     Shortcut { enabled: root.libraryOpen; sequences: ["Escape"]
                onActivated: root.libraryOpen = false }
 
+    // System status panel (cart health + camera)
+    Shortcut { enabled: root.keysLive; sequences: ["S"]; onActivated: root.statusOpen = !root.statusOpen }
+    Shortcut { enabled: root.statusOpen; sequences: ["Escape"]; onActivated: root.statusOpen = false }
+
+    property bool statusOpen: false
     property bool libraryOpen: false
     property bool libraryTimeline: false
     property bool metaShown: true
@@ -274,6 +279,32 @@ ApplicationWindow {
                           : qsTr("xylod · offline")
                     color: Xylod.connected ? root.inkMuted : root.inkFaint
                     font.pixelSize: 11
+                }
+                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
+                // system health at a glance: a dot goes hollow if any link drops
+                Row {
+                    spacing: 6
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 7; height: 7; radius: 3.5
+                        readonly property bool allUp: Hmi.connected && Xylod.connected && Camera.connected
+                        color: allUp ? root.ink : "transparent"
+                        border.width: allUp ? 0 : 1
+                        border.color: allUp ? root.ink : root.chR
+                    }
+                    Label {
+                        text: qsTr("system")
+                        color: root.statusOpen ? root.ink : root.inkMuted
+                        font.pixelSize: 11
+                        font.underline: sysMouse.containsMouse
+                        MouseArea {
+                            id: sysMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.statusOpen = !root.statusOpen
+                        }
+                    }
                 }
                 Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
                 Label {
@@ -1149,6 +1180,19 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // ── System status panel — cart health + camera (S toggles) ──────
+    StatusPanel {
+        visible: root.statusOpen
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.topMargin: 36
+        anchors.bottomMargin: 72
+        width: 340
+        z: 44
+        onCloseRequested: root.statusOpen = false
     }
 
     // ── Import proposals overlay ─────────────────────────────────────
