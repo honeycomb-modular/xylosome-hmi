@@ -47,10 +47,25 @@ bool VipsEngine::available()
 }
 
 #ifdef HAVE_VIPS
-// 16-bit → 8-bit fixed mapping (rshift 8 + cast). Returns new ref or null.
+// 16-bit → 8-bit. Genuine 16-bit data is left-justified, so the meaningful
+// bits are the top 8 (>> 8). But this camera is 8-bit *right*-justified in a
+// 16-bit container (values 0..255, high byte empty); there, >> 8 would zero
+// everything (black scans, grey in the live view). So probe the actual max:
+// ≤255 means the data lives in the low byte — cast straight down like the live
+// view does; otherwise shift. Returns a new ref or null.
 static VipsImage *to8(VipsImage *in)
 {
-    VipsImage *shifted = nullptr, *out = nullptr;
+    double maxval = 0;
+    const bool lowByte = vips_max(in, &maxval, nullptr) == 0 && maxval <= 255.0;
+
+    VipsImage *out = nullptr;
+    if (lowByte) {
+        if (vips_cast(in, &out, VIPS_FORMAT_UCHAR, nullptr))   // 0..255 already
+            return nullptr;
+        return out;
+    }
+
+    VipsImage *shifted = nullptr;
     double c = 8;
     if (vips_boolean_const(in, &shifted, VIPS_OPERATION_BOOLEAN_RSHIFT, &c, 1, nullptr))
         return nullptr;
@@ -100,7 +115,8 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
     const int pxW = vips_image_get_width(src);
     const int pxH = vips_image_get_height(src);
 
-    // ── tile pyramid (fixed 16→8 mapping for judging; TIFF stays truth)
+    // ── tile pyramid + fit preview, both from ONE 8-bit mapping so the
+    //    filmstrip, fit view and 1:1 tiles all agree (TIFF stays truth).
     VipsImage *v8 = sixteen ? to8(src) : (VipsImage *)g_object_ref(src);
     if (!v8) { fail("to8"); g_object_unref(src); return; }
     int r = vips_dzsave(v8, base.toUtf8().constData(),
@@ -110,22 +126,22 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
                         "overlap", 0,
                         "depth", VIPS_FOREIGN_DZ_DEPTH_ONEPIXEL,
                         nullptr);
-    g_object_unref(v8);
-    if (r) { fail("dzsave"); g_object_unref(src); return; }
+    if (r) { fail("dzsave"); g_object_unref(v8); g_object_unref(src); return; }
 
-    // ── fit preview (filmstrip + fit-to-screen view)
+    // fit preview: shrink the same mapping to ≤2048 px. (Was vips_thumbnail,
+    // which re-scaled the full 16-bit range and blacked out 8-bit-low data.)
     VipsImage *prev = nullptr;
-    if (vips_thumbnail(pathU.constData(), &prev, 2048, nullptr)) {
-        fail("thumbnail");
-        g_object_unref(src);
-        return;
+    const double scale = qMin(1.0, 2048.0 / double(vips_image_get_width(v8)));
+    if (scale < 1.0) {
+        if (vips_resize(v8, &prev, scale, nullptr)) {
+            fail("resize"); g_object_unref(v8); g_object_unref(src); return;
+        }
+    } else {
+        prev = (VipsImage *)g_object_ref(v8);
     }
-    VipsImage *prev8 = vips_image_get_format(prev) == VIPS_FORMAT_USHORT
-                           ? to8(prev) : (VipsImage *)g_object_ref(prev);
+    g_object_unref(v8);
+    r = vips_jpegsave(prev, previewPath.toUtf8().constData(), "Q", 90, nullptr);
     g_object_unref(prev);
-    if (!prev8) { fail("to8 preview"); g_object_unref(src); return; }
-    r = vips_jpegsave(prev8, previewPath.toUtf8().constData(), "Q", 90, nullptr);
-    g_object_unref(prev8);
     if (r) { fail("jpegsave"); g_object_unref(src); return; }
 
     // ── histogram + clip stats, one pass over the original
