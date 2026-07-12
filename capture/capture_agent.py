@@ -274,7 +274,8 @@ def _max_seq():
 
 def xylod_client():
     seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
-    ps_time = {}   # pass -> (recv_monotonic, pass_start tMs) for trigger-timing checks
+    ps_time = {}   # pass -> (recv_monotonic, pass_start tMs)
+    pending = {}   # pass -> (full frame, filter) held between pass_start and pass_end
     while True:
         try:
             c = socket.create_connection((XYLOD_HOST, XYLOD_PORT)); f = c.makefile("r")
@@ -297,35 +298,44 @@ def xylod_client():
                                 print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
                         else:
                             print("capture: board busy (live?), skipping seq %d" % seq); grab = None
-                    # FREERUN STOPGAP (until the EL2521 line trigger + EXSYNC is
-                    # wired): the camera free-runs, so grab HERE — at motion start
-                    # — to image the sweep, not the parked axis. NOTHING slow (no
-                    # gcp read_state) may run before the Snap or it lands after a
-                    # short pass; settings are snapshotted AFTER the grab instead.
-                    # Snap blocks ~CAP_LINES/line_rate s; set line_rate so that
-                    # span ≈ the pass duration to cover the arc.
+                    # FREERUN, GATED TO THE MOTION (no EXSYNC cable yet): grab a
+                    # generous frame starting at motion start, then HOLD it until
+                    # pass_end and crop to just the sweep — the reset/return after
+                    # the axis stops is dropped. Keep line_rate low enough that
+                    # 8192 lines (8192/line_rate s) covers the sweep; the crop
+                    # trims the rest. Nothing slow may run before the Snap
+                    # (settings are read after it). Reverts to EXSYNC when wired.
                     if grab:
                         try:
                             t0 = time.monotonic()
                             img = grab.frame()
-                            t1 = time.monotonic()
                             if p == 0:
-                                scan_settings = read_state()   # after the Snap: no delay on the grab
-                            name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
-                            tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
-                            tifffile.imwrite(tmp, img, metadata={"camera": scan_settings})
-                            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            print("saved %s | GRAB began +%.0fms after pass_start, lasted %.0fms"
-                                  % (name, (t0 - t_ps) * 1000, (t1 - t0) * 1000))
+                                scan_settings = read_state()
+                            pending[p] = (img, filt)
+                            print("grabbed pass %d: %d lines, snap +%.0fms after pass_start"
+                                  % (p, img.shape[0], (t0 - t_ps) * 1000))
                         except Exception as e:
-                            print("capture save failed:", e)
+                            print("capture grab failed:", e); pending.pop(p, None)
                 elif ev == "pass_end":
                     p = int(m.get("pass", -1))
-                    t_ps, ps_tMs = ps_time.get(p, (None, None))
+                    _t, ps_tMs = ps_time.get(p, (None, None))
                     pe_tMs = m.get("tMs")
-                    if ps_tMs is not None and pe_tMs is not None:
-                        print("TIMING pass %d: motion window %dms (pass_start..pass_end)"
-                              % (p, pe_tMs - ps_tMs))
+                    if p in pending:
+                        img, filt = pending.pop(p)
+                        rate = float(scan_settings.get("line.rate") or 0)
+                        motion_ms = (pe_tMs - ps_tMs) if (ps_tMs is not None and pe_tMs is not None) else -1
+                        want = int(motion_ms / 1000.0 * rate) if (motion_ms > 0 and rate > 0) else img.shape[0]
+                        lines = max(1, min(img.shape[0], want))
+                        over = " (sweep exceeded frame — lower line rate)" if want > img.shape[0] else ""
+                        name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
+                        tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
+                        try:
+                            tifffile.imwrite(tmp, img[:lines], metadata={"camera": scan_settings})
+                            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
+                            print("saved %s | motion %dms -> cropped %d/%d lines%s"
+                                  % (name, motion_ms, lines, img.shape[0], over))
+                        except Exception as e:
+                            print("capture save failed:", e)
                 elif ev == "seq_done":
                     if grab: grab.close(); grab = None
                     if have: board_lock.release(); have = False
