@@ -272,6 +272,22 @@ ApplicationWindow {
                     color: Sessions.captureDir === "" ? root.inkFaint : root.inkMuted
                     font.pixelSize: 11
                 }
+                // one-click delete of all rejected sessions (only when any exist)
+                Label { text: "·"; color: root.inkFaint; font.pixelSize: 11; visible: Sessions.rejectedCount > 0 }
+                Label {
+                    visible: Sessions.rejectedCount > 0
+                    text: qsTr("%1 rejected — delete").arg(Sessions.rejectedCount)
+                    color: rejMouse.containsMouse ? root.ink : root.inkMuted
+                    font.pixelSize: 11
+                    font.underline: rejMouse.containsMouse
+                    MouseArea {
+                        id: rejMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.confirmMode = 2
+                    }
+                }
                 Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
                 Label {
                     text: Xylod.connected
