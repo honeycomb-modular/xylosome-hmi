@@ -482,24 +482,38 @@ ApplicationWindow {
                 }
             }
 
-            // channel badge — bottom left, the only color on the field
+            // channel solo — bottom-left segmented control; the active
+            // channel fills with its own color, auto fills ink. Click a lit
+            // channel to clear it. (mirrors the R/G/B/C · A keys and the
+            // per-pass labels in the metadata strip)
             Row {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.margins: 12
-                spacing: 8
-                visible: root.shownPass >= 0 && strip.currentItem !== null
-                Label {
-                    text: strip.currentItem && root.shownPass >= 0
-                          ? strip.currentItem.sPassFilters[root.shownPass] : ""
-                    color: root.filterColor(text)
-                    font.pixelSize: 13
+                spacing: 2
+                visible: strip.currentItem !== null
+                Repeater {
+                    model: ["R", "G", "B", "C"]
+                    ToggleChip {
+                        required property string modelData
+                        text: modelData
+                        minWidth: 26
+                        fontPx: 12
+                        active: root.soloChannel === modelData
+                        activeColor: root.filterColor(modelData)
+                        idleText: root.filterColor(modelData)
+                        hoverColor: "#9A9A9A"
+                        onClicked: root.soloChannel =
+                            root.soloChannel === modelData ? "auto" : modelData
+                    }
                 }
-                Label {
-                    text: root.soloChannel === "auto" ? qsTr("auto") : qsTr("solo")
-                    color: "#CCCCCC"
-                    font.pixelSize: 11
-                    anchors.verticalCenter: parent.verticalCenter
+                ToggleChip {
+                    text: qsTr("auto")
+                    active: root.soloChannel === "auto"
+                    activeColor: root.ink
+                    idleText: "#CCCCCC"
+                    hoverColor: "#9A9A9A"
+                    onClicked: root.soloChannel = "auto"
                 }
             }
 

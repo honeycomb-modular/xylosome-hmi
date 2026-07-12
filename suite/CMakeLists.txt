@@ -79,6 +79,7 @@ qt_add_qml_module(xylosome-suite
     QML_FILES
         qml/Main.qml
         qml/ZoomView.qml
+        qml/ToggleChip.qml
     RESOURCES
         assets/hm_logo_black.svg
         assets/icon.png
