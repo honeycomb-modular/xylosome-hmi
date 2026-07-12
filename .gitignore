@@ -26,3 +26,6 @@ xylosome_*.svg
 .DS_Store
 
 build-suite/
+
+# Per-machine Claude Code settings (personal, not shared)
+.claude/settings.local.json
