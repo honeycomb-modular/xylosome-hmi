@@ -1,0 +1,109 @@
+{
+    "classes": [
+        {
+            "className": "VipsEngine",
+            "lineNumber": 24,
+            "object": true,
+            "qualifiedClassName": "VipsEngine",
+            "signals": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "sessionUuid",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "passIndex",
+                            "type": "int"
+                        },
+                        {
+                            "name": "previewAbs",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "pxW",
+                            "type": "int"
+                        },
+                        {
+                            "name": "pxH",
+                            "type": "int"
+                        },
+                        {
+                            "name": "clipBlackPct",
+                            "type": "double"
+                        },
+                        {
+                            "name": "clipWhitePct",
+                            "type": "double"
+                        },
+                        {
+                            "name": "hist256",
+                            "type": "QVariantList"
+                        }
+                    ],
+                    "index": 0,
+                    "lineNumber": 41,
+                    "name": "ingested",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "sessionUuid",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "passIndex",
+                            "type": "int"
+                        },
+                        {
+                            "name": "error",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 1,
+                    "lineNumber": 45,
+                    "name": "failed",
+                    "returnType": "void"
+                }
+            ],
+            "slots": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "sessionUuid",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "passIndex",
+                            "type": "int"
+                        },
+                        {
+                            "name": "absPath",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "proxyDir",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 2,
+                    "lineNumber": 36,
+                    "name": "ingest",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QObject"
+                }
+            ]
+        }
+    ],
+    "inputFile": "VipsEngine.h",
+    "outputRevision": 69
+}

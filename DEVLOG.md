@@ -935,3 +935,42 @@ architecture diagram (it wrongly labelled the link "CoaXPress / CLHS").
   (68 kHz); set the real value from CamExpert.
 - Diagram fix: `docs/architecture/xylosome_beckhoff.svg` link label
   "CoaXPress / CLHS" -> "Camera Link / EXSYNC"; grabber box -> "Xcelera-CL PX4".
+
+---
+
+## 2026-07-11
+
+### Capture agent — consolidated + running on the capture PC
+- `capture/capture_agent.py` is now the **consolidated always-on agent**, replacing
+  the old settings-only one. One board lock owns the grabber+camera and serves all
+  three: settings `:5521`, live-focus `:5520` (Suite LIVE), and per-pass TIFF capture
+  from xylod `:5510` -> `CAPTURE_DIR`. LIVE and capture are mutually exclusive by design.
+- Runs under **Windows Python** (Sapera/pythonnet); grabber server `Xtium-CL_MX4_1`,
+  camera Piranha HS-80-08K80 on COM3 (TLC 9600). Killed a stray SYSTEM-session python
+  running the OLD repo agent that was holding COM3.
+- **Filename fix:** `seq` now seeds from the highest `scan_NNNN` on disk (`_max_seq`)
+  so a restart never reuses a name — reused names get absorbed by old sidecars and
+  the new session shows blank.
+
+### Grabber-side line count = aspect (NOT a camera setting)
+- Line count is the vertical resolution; width is fixed 8192, so it IS the aspect
+  ratio (square = 8192x8192). Per `docs/camera_capture_note.md` it belongs to the
+  motion/trigger domain: HMI aspect box -> xylod -> EL2521 line trigger -> EXSYNC ->
+  grabber captures that many lines.
+- Trigger/pulse not wired yet, so the agent sets the grabber **frame height** directly
+  as the internal-sync stand-in: `CAP_LINES` env (default 8192 square, range 1..65000)
+  by deriving a `.ccf` with `Crop Height`/`Scale Vertical` = N from the WORKING base ccf.
+  65000 lines ~= 1 GB/frame. This is the same value the aspect box will feed later.
+- Camera `:5521` bus stays creative-knobs only (line.rate, tdi.stages, gain, scan.dir).
+
+### Suite — ZoomView deep-zoom fix (blank main window on real scans)
+- Real 8192-tall scans rendered blank: ZoomView requested tiles at level 0 with a
+  full-resolution tile grid (only ever tested on 256x160 fakes before). Cause:
+  `level`/`levelScale`/`maxLevel` bindings were stale vs `imgW` when `rebuild()` ran,
+  and there was no rebuild on dimension change. Fix: compute level/scale locally inside
+  `rebuild()`; add `onImgWChanged`/`onImgHChanged`. Real scans render; square confirmed.
+- Suite built + run on the capture PC via msys2 UCRT64 (Qt6 + libvips ingest working).
+
+### Exposure note
+- Line rate 57.6 kHz -> 7000 Hz (each halving ~= +1 stop, no noise); stages up to 96.
+  Scans still dark — tune line rate/stages for real exposure.

@@ -1,0 +1,5 @@
+C:/dev/xylosome-hmi/build-suite/xylosome-suite_autogen/include/../UVLADIE3JM/moc_FolderWatcher.cpp.json
+C:/dev/xylosome-hmi/build-suite/xylosome-suite_autogen/include/../UVLADIE3JM/moc_LiveLink.cpp.json
+C:/dev/xylosome-hmi/build-suite/xylosome-suite_autogen/include/../UVLADIE3JM/moc_SessionStore.cpp.json
+C:/dev/xylosome-hmi/build-suite/xylosome-suite_autogen/include/../UVLADIE3JM/moc_VipsEngine.cpp.json
+C:/dev/xylosome-hmi/build-suite/xylosome-suite_autogen/include/../UVLADIE3JM/moc_XylodLink.cpp.json

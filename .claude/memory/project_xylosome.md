@@ -49,3 +49,17 @@ Mac path: /Users/hoytevhoytema/Library/Mobile Documents/com~apple~CloudDocs/Docu
 - pi/hmi/METADATA_INFUSER.md — infuser spec and implementation notes
 - DEVLOG.md — session-by-session dev log
 - SESSION_NOTES.md — deploy procedures for both Pi 4 and Pi 5
+
+## Update 2026-07-11 — capture agent consolidated; Suite renders real scans
+
+- `capture/capture_agent.py` (on the capture PC) is the consolidated always-on agent:
+  settings `:5521` + live-focus `:5520` + per-pass capture from xylod `:5510` -> `D:\capture`,
+  one board lock (LIVE and capture mutually exclusive). Runs under Windows Python
+  (Sapera/pythonnet); grabber `Xtium-CL_MX4_1`, camera Piranha HS-80-08K80, COM3 TLC 9600.
+- Grabber-side **line count = aspect** (width fixed 8192; square = 8192x8192). `CAP_LINES`
+  env (default 8192, range 1..65000) sets the frame height via a derived `.ccf`. This is the
+  internal-sync stand-in for the EXSYNC/EL2521 trigger-driven line count that the HMI aspect
+  box (green-box drag) will drive once the trigger/pulse is wired. Camera `:5521` bus stays
+  creative-knobs only.
+- Review Suite builds+runs on the capture PC (msys2 UCRT64, Qt6 + libvips). ZoomView deep-zoom
+  tile bug fixed (blank main window on real 8192-tall scans) — real scans render, square confirmed.

@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/dev/xylosome-hmi/build-suite/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

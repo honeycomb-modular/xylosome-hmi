@@ -127,3 +127,18 @@ Notes / next:
   per-pass auto-save; live-focus `:5520` for the Suite; auto-report real
   `line_max_hz`; load the `.ccf` via Sapera at startup; run as an auto-start
   Windows service (see `docs/cart_startup_checklist.md`).
+
+## UPDATE 2026-07-11 — consolidated agent (settings + live + capture)
+
+`capture_agent.py` is no longer settings-only. It owns the grabber via Sapera and does
+all three on one board lock: settings `:5521`, live-focus `:5520` (Suite LIVE button),
+and per-pass TIFF capture from xylod `:5510` -> `CAPTURE_DIR`.
+
+It also carries a **grabber-side line-count control**: `CAP_LINES` env (default 8192 =
+square; range 1..65000) sets the frame height via a derived `.ccf` (Crop Height /
+Scale Vertical). This is the internal-sync stand-in for the future EXSYNC/EL2521
+trigger-driven line count — the same knob the HMI aspect box will drive. Width is
+fixed 8192, so line count = aspect ratio.
+
+Run (capture PC, CamExpert closed — COM3 + board single-occupant):
+`python capture_agent.py`   ·   env: `XYLOD_HOST`, `CAPTURE_DIR`, `CAP_LINES`.

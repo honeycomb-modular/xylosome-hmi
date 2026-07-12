@@ -69,3 +69,12 @@ applied.
 - Live-focus stream on `:5520` for the Suite (`suite/LIVE_PROTOCOL.md`).
 - Report the real max line rate → auto-set `xylod.conf` `line_max_hz`.
 - Load the working `.ccf` on the grabber via Sapera at startup.
+
+## Line count / aspect — NOT on this bus (grabber-side)
+
+Line count = vertical resolution = aspect (width fixed 8192; square = 8192x8192). It
+belongs to the motion/trigger domain: HMI aspect box -> xylod -> EL2521 line trigger ->
+EXSYNC -> grabber captures that many lines. Until the trigger is wired, the agent sets
+the grabber frame height directly via `CAP_LINES` (env, default 8192, range 1..65000)
+by deriving a `.ccf` with `Crop Height`/`Scale Vertical` = N. Keep this bus (`:5521`)
+strictly for the camera creative knobs (line.rate, tdi.stages, gain, scan.dir).

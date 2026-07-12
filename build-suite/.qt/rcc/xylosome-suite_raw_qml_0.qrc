@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/qt/qml/XylosomeSuite/">
+    <file alias="qml/Main.qml">C:/dev/xylosome-hmi/suite/qml/Main.qml</file>
+    <file alias="qml/ZoomView.qml">C:/dev/xylosome-hmi/suite/qml/ZoomView.qml</file>
+  </qresource>
+</RCC>
+
