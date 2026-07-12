@@ -20,6 +20,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 class VipsEngine : public QObject
 {
