@@ -31,8 +31,11 @@ Before touching any code, read:
 - `pi/hmi/METADATA_INFUSER.md` — metadata infuser spec and implementation notes
 - `docs/concept/xylosome_ui_concept.docx` — full screen spec and pendant interaction model
 
-**Active dev target is Pi 4 at 192.168.10.2 (EGLFS, TigerVNC, make).
-Pi 5 is future — do not conflate the two deploy workflows.**
+**Active (and only) Pi is the Pi 5 `xylosome-pi` at 192.168.10.3 — labwc/Wayland,
+Ninja. Reach it: `ssh -o PubkeyAuthentication=no hoyte@192.168.10.3` (password auth).
+It also carries 192.168.2.3 to talk to the Beckhoff (192.168.2.2:5510).
+The old Pi 4 at 192.168.10.2 has NOT been part of xylosome for a long time —
+ignore every "Pi 4 = active dev unit" note below as stale.**
 
 ---
 

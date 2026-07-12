@@ -10,10 +10,10 @@ A Qt6/QML port of the XYLOSOME HMI.
 Art installation controller — Panasonic servo + NEMA 17 stepper via ClearCore,
 line scanner camera, pendant controls (Teensy 4.1 + Grayhill encoder + 3 buttons).
 
-> ⚠️ **Two Pi targets — read carefully before deploying.**
-> All active development as of 2026-05-24 is on **Pi 4** (dev unit).
-> The final pendant hardware is **Pi 5**. The two have different display stacks,
-> compositors, and build workflows. Do not mix up deploy commands.
+> ⚠️ **STALE (2026-05-24).** This "Pi 4 = active dev unit" split is obsolete.
+> The **Pi 5 `xylosome-pi` at 192.168.10.3** is the one and only Pi now; the
+> Pi 4 at 192.168.10.2 has been out of xylosome for a long time. See the
+> GARAGE BENCH section below and CLAUDE.md — treat every Pi 4 note here as history.
 
 ---
 
