@@ -103,6 +103,15 @@ def apply_set(key, value):
         return False, "forward|reverse"
     return False, "unknown key"
 
+# Camera settings pushed on agent startup, overriding whatever the camera
+# powered up with. Forward scan direction is markedly sharper on the bench;
+# 48 TDI stages forward is the current best (supersedes the old 16-stage note).
+STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "8500"), ("tdi.stages", "48")]
+def apply_startup_defaults():
+    for key, val in STARTUP_CAM:
+        ok, note = apply_set(key, val)
+        print("  startup %-11s= %-8s -> %s" % (key, val, note))
+
 # ---------- board (Sapera) ----------
 board_lock = threading.Lock()   # single grabber owner
 
@@ -361,6 +370,7 @@ def main():
     print("frame: %d x %d  (aspect %.3f:1%s)  ~%.0f MB/scan"
           % (CAM_WIDTH, CAP_LINES, _ar, " square" if CAP_LINES == CAM_WIDTH else "",
              CAM_WIDTH * CAP_LINES * 2 / 1e6))
+    apply_startup_defaults()
     print("camera:", read_state())
     threading.Thread(target=cam_server, daemon=True).start()
     threading.Thread(target=live_server, daemon=True).start()
