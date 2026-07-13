@@ -14,7 +14,7 @@ ChoiceList {
 
     entries: Camera.connected ? [
         { key: "line.rate",  value: Camera.lineRate.toFixed(0),
-          options: ["7000", "14000", "28000", "57000"] },
+          min: 3500, max: 68610, step: 100, unit: "Hz" },
         { key: "tdi.stages", value: "" + Camera.tdiStages,
           options: ["16", "32", "48", "64", "80", "96"] },
         { key: "gain",       value: Camera.gain,
