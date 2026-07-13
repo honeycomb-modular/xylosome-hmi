@@ -19,6 +19,7 @@
 #include <QTimer>
 #include <QUuid>
 #include <QDebug>
+#include <algorithm>
 
 // Pairing window: a file may land long after its pass (manual CamExpert
 // saves today; the capture agent will tighten this). A file pairs with the
@@ -450,6 +451,18 @@ void SessionStore::loadExisting()
         m_sessions << s;
         m_nextSeq = qMax(m_nextSeq, s.seq + 1);
     }
+
+    // Sidecars load in filename (uuid) order, which is neither capture order nor
+    // the live append order — so the strip looked reshuffled after every
+    // restart. Sort by capture time (seq as tie-break) so it always reads
+    // oldest → newest, matching how sessions arrive live.
+    std::sort(m_sessions.begin(), m_sessions.end(),
+              [](const SessionRecord &a, const SessionRecord &b) {
+                  if (a.createdWallMs != b.createdWallMs)
+                      return a.createdWallMs < b.createdWallMs;
+                  return a.seq < b.seq;
+              });
+
     qInfo() << "[sessions] loaded" << m_sessions.size() << "sidecars from" << sidecarDir();
 
     // Crash-safe ingest: paired but proxy missing/incomplete → re-run.

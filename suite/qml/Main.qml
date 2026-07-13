@@ -756,6 +756,16 @@ ApplicationWindow {
                 model: Sessions
                 onCountChanged: if (Sessions.liveRow >= 0) currentIndex = Sessions.liveRow
                                 else if (currentIndex < 0 && count > 0) currentIndex = count - 1
+
+                // Vertical wheel scrolls the strip left/right (it's horizontal).
+                WheelHandler {
+                    onWheel: (ev) => {
+                        const d = ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.angleDelta.x
+                        strip.contentX = Math.max(0, Math.min(
+                            Math.max(0, strip.contentWidth - strip.width),
+                            strip.contentX - d))
+                    }
+                }
                 delegate: Item {
                     id: cell
                     required property int index
@@ -844,10 +854,19 @@ ApplicationWindow {
                             }
                         }
                         Label {
+                            id: seqLabel
                             text: ("000" + cell.seq).slice(-4)
                                   + (cell.rejected ? " ×" : "")
                             color: cell.ListView.isCurrentItem ? root.ink : root.inkFaint
                             font.pixelSize: 10
+                        }
+                        // selection: a hairline under the numbering
+                        Rectangle {
+                            width: seqLabel.width
+                            height: 1
+                            color: root.ink
+                            visible: cell.ListView.isCurrentItem
+                            opacity: cell.rejected ? 0.5 : 1
                         }
                         Label {
                             visible: cell.rating > 0
