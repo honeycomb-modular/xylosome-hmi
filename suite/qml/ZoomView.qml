@@ -46,6 +46,14 @@ Item {
 
     property var tiles: []
 
+    // Pan offset in viewport px: the viewport shows the content region
+    // [panX, panX+width] × [panY, panY+height]. Managed here (not by a
+    // Flickable) so cursor-locked zoom is exact — a Flickable re-clamps pan to
+    // its own bounds and re-centers content narrower than the viewport, which
+    // fought the zoom anchor at the moment the image grew past the field.
+    property real panX: 0
+    property real panY: 0
+
     onTileBaseChanged: { zoom = Qt.binding(() => fitZoom); rebuild() }
     onZoomChanged: rebuild()
     onWidthChanged: rebuild()
@@ -55,10 +63,18 @@ Item {
 
     function clampPan() {
         const cw = imgW * zoom, ch = imgH * zoom
-        flick.contentX = cw <= width ? (cw - width) / 2
-                       : Math.max(0, Math.min(flick.contentX, cw - width))
-        flick.contentY = ch <= height ? (ch - height) / 2
-                       : Math.max(0, Math.min(flick.contentY, ch - height))
+        if (atFit) {                       // whole image visible → center it
+            panX = (cw - width) / 2
+            panY = (ch - height) / 2
+            return
+        }
+        // Cursor-locked zoom: bound the pan so an image edge can travel to the
+        // viewport centre (you can zoom into any corner) but no further. This
+        // range is continuous across cw == width — it never collapses to a
+        // point — so there's no re-centre "snap" when the image grows past the
+        // field, while still tracking the cursor on both axes.
+        panX = Math.max(-width / 2,  Math.min(panX, cw - width / 2))
+        panY = Math.max(-height / 2, Math.min(panY, ch - height / 2))
     }
 
     function rebuild() {
@@ -73,12 +89,12 @@ Item {
         const lw = Math.ceil(imgW * lScale)
         const lh = Math.ceil(imgH * lScale)
         const disp = zoom / lScale                // display px per level px
-        const x0 = Math.max(0, Math.floor(flick.contentX / (tileSize * disp)))
-        const y0 = Math.max(0, Math.floor(flick.contentY / (tileSize * disp)))
+        const x0 = Math.max(0, Math.floor(panX / (tileSize * disp)))
+        const y0 = Math.max(0, Math.floor(panY / (tileSize * disp)))
         const x1 = Math.min(Math.ceil(lw / tileSize) - 1,
-                            Math.floor((flick.contentX + width) / (tileSize * disp)))
+                            Math.floor((panX + width) / (tileSize * disp)))
         const y1 = Math.min(Math.ceil(lh / tileSize) - 1,
-                            Math.floor((flick.contentY + height) / (tileSize * disp)))
+                            Math.floor((panY + height) / (tileSize * disp)))
         const out = []
         for (let ty = y0; ty <= y1; ty++)
             for (let tx = x0; tx <= x1; tx++) {
@@ -100,11 +116,11 @@ Item {
         // keep the content point under (cx, cy) stationary
         // 1600 % ceiling: pixel-level inspection; floor never below fit
         z = Math.max(Math.min(fitZoom, 1), Math.min(z, Math.max(16, fitZoom)))
-        const px = (flick.contentX + cx) / zoom
-        const py = (flick.contentY + cy) / zoom
+        const px = (panX + cx) / zoom
+        const py = (panY + cy) / zoom
         zoom = z
-        flick.contentX = px * zoom - cx
-        flick.contentY = py * zoom - cy
+        panX = px * zoom - cx
+        panY = py * zoom - cy
         clampPan()
         rebuild()
     }
@@ -115,19 +131,39 @@ Item {
         else { zoom = Qt.binding(() => fitZoom); clampPan(); rebuild() }
     }
 
-    Flickable {
-        id: flick
+    Item {
+        id: viewport
         anchors.fill: parent
-        contentWidth: view.imgW * view.zoom
-        contentHeight: view.imgH * view.zoom
-        boundsBehavior: Flickable.StopAtBounds
-        onContentXChanged: view.rebuild()
-        onContentYChanged: view.rebuild()
-        interactive: !view.atFit
 
+        // Drag to pan — a plain MouseArea under the content. Tiles carry no
+        // MouseArea so their presses fall through to here; the metadata block's
+        // own MouseAreas sit on top and win. Disabled at fit (nothing to pan).
+        MouseArea {
+            id: panArea
+            anchors.fill: parent
+            enabled: !view.atFit
+            cursorShape: view.atFit ? Qt.ArrowCursor
+                       : (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
+            property real lx: 0
+            property real ly: 0
+            onPressed: (m) => { lx = m.x; ly = m.y }
+            onPositionChanged: (m) => {
+                if (!pressed) return
+                view.panX -= (m.x - lx); view.panY -= (m.y - ly)
+                lx = m.x; ly = m.y
+                view.clampPan(); view.rebuild()
+            }
+            onDoubleClicked: (m) => view.toggleFit(m.x, m.y)
+        }
+
+        // The content plane, translated by the pan offset. Everything below is
+        // in content (image·zoom) coordinates.
         Item {
-            width: flick.contentWidth
-            height: flick.contentHeight
+            id: canvas
+            x: -view.panX
+            y: -view.panY
+            width: view.imgW * view.zoom
+            height: view.imgH * view.zoom
             Repeater {
                 model: view.tiles
                 Image {
@@ -188,7 +224,7 @@ Item {
                     // least 28 px so the pan gesture can't steal it
                     anchors.margins: -Math.max(0,
                         (28 - Math.min(meta.width, meta.height)) / 2)
-                    preventStealing: true   // the Flickable must NEVER take
+                    preventStealing: true   // the pan drag must NEVER take
                                             // over a drag that began here
                     hoverEnabled: true
                     cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
@@ -233,15 +269,22 @@ Item {
                 }
             }
         }
-    }
 
-    WheelHandler {
-        target: null
-        onWheel: (ev) => {
-            const factor = Math.pow(1.0015, ev.angleDelta.y)
-            view.zoomTo(view.zoom * factor, ev.x, ev.y)
+        // Wheel = zoom about the cursor, never pan. The anchor is hoverPos, in
+        // view (viewport) coordinates — reliable, unlike the wheel event's own
+        // x/y, which resolve against the translated content plane.
+        WheelHandler {
+            onWheel: (ev) => {
+                const factor = Math.pow(1.0015, ev.angleDelta.y)
+                view.zoomTo(view.zoom * factor, view.hoverPos.x, view.hoverPos.y)
+            }
         }
     }
+
+    // Cursor position in view (viewport) coordinates — the reliable zoom anchor
+    // for the wheel, tracked here so it never depends on child coordinates.
+    HoverHandler { id: hoverHandler }
+    readonly property point hoverPos: hoverHandler.point.position
 
     TapHandler {
         gesturePolicy: TapHandler.ReleaseWithinBounds
