@@ -107,10 +107,32 @@ def apply_set(key, value):
 # powered up with. Forward scan direction is markedly sharper on the bench;
 # 48 TDI stages forward is the current best (supersedes the old 16-stage note).
 STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "8500"), ("tdi.stages", "48")]
+
+def _startup_ok(key, want, got):
+    if got is None: return False
+    if key == "scan.dir":   return str(want).lower() in str(got).lower()
+    if key == "tdi.stages": return str(got) == str(int(want))
+    if key == "line.rate":  return abs(float(got) - float(want)) < 5
+    return True
+
 def apply_startup_defaults():
+    # A freshly powered camera can swallow the first serial command(s) while it
+    # boots — scan.dir (first in the list) was the one silently lost, so the
+    # camera stayed reverse. apply_set never reads back, so it looked "ok".
+    # Wait for the camera to answer, then read back each default and retry
+    # until it actually took.
+    for _ in range(20):
+        if cam_cmd("gcp").rstrip().endswith("OK>"): break
+        time.sleep(0.5)
     for key, val in STARTUP_CAM:
-        ok, note = apply_set(key, val)
-        print("  startup %-11s= %-8s -> %s" % (key, val, note))
+        got = None
+        for _ in range(3):
+            apply_set(key, val)
+            got = read_state().get(key)
+            if _startup_ok(key, val, got): break
+            time.sleep(0.3)
+        print("  startup %-11s= %-8s -> %s%s"
+              % (key, val, got, "" if _startup_ok(key, val, got) else "  (FAILED)"))
 
 # ---------- board (Sapera) ----------
 board_lock = threading.Lock()   # single grabber owner
