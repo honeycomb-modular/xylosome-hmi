@@ -36,6 +36,12 @@ ApplicationWindow {
 
     function stars(n) { return "★".repeat(n) }
 
+    // The session's displayed name = its TIFF scan number (scan_NNNN). "—"
+    // until a file pairs, so imageless sessions never carry a misleading count.
+    function scanLabel(fileSeq) {
+        return fileSeq >= 0 ? ("000" + fileSeq).slice(-4) : "—"
+    }
+
     function folderFromUrl(u) {
         let p = decodeURIComponent(u.toString()).replace(/^file:\/\//, "")
         if (/^\/[A-Za-z]:/.test(p))   // Windows: /C:/… → C:/…
@@ -86,6 +92,12 @@ ApplicationWindow {
 
     // Notes, library, deletion
     Shortcut { enabled: root.keysLive; sequences: ["N"]; onActivated: noteField.beginEdit() }
+    // Del/Backspace erases the selected session (permanent) via the confirm
+    // dialog — X only rejects/quarantines; this is the destructive one. Never
+    // fires while a note is being typed (keysLive guards it) or on a live scan.
+    Shortcut { enabled: root.keysLive; sequences: [StandardKey.Delete, StandardKey.Backspace]
+               onActivated: if (strip.currentItem && strip.currentItem.sState !== "live")
+                   root.confirmMode = 1 }
     Shortcut { enabled: root.keysLive; sequences: ["L"]; onActivated: root.libraryOpen = !root.libraryOpen }
     Shortcut { enabled: root.keysLive && root.libraryOpen; sequences: ["T"]
                onActivated: root.libraryTimeline = !root.libraryTimeline }
@@ -754,6 +766,22 @@ ApplicationWindow {
                 spacing: 8
                 clip: true
                 model: Sessions
+
+                // Startup + folder reload: land on the most recent (rightmost)
+                // session and scroll it into view. Sessions load synchronously
+                // before this component exists, so onCompleted sees the full set.
+                function selectNewest() {
+                    if (count > 0) {
+                        currentIndex = count - 1
+                        positionViewAtEnd()
+                    }
+                }
+                Component.onCompleted: selectNewest()
+                Connections {
+                    target: Sessions
+                    function onCaptureDirChanged() { strip.selectNewest() }
+                }
+
                 onCountChanged: if (Sessions.liveRow >= 0) currentIndex = Sessions.liveRow
                                 else if (currentIndex < 0 && count > 0) currentIndex = count - 1
 
@@ -770,6 +798,7 @@ ApplicationWindow {
                     id: cell
                     required property int index
                     required property int seq
+                    required property int fileSeq
                     required property string sessionState
                     required property int rating
                     required property bool rejected
@@ -788,6 +817,7 @@ ApplicationWindow {
                     required property bool metaWhite
                     // surfaced for the rest of the UI via strip.currentItem
                     readonly property int sSeq: seq
+                    readonly property int sFileSeq: fileSeq
                     readonly property string sState: sessionState
                     readonly property int sRating: rating
                     readonly property bool sRejected: rejected
@@ -855,7 +885,7 @@ ApplicationWindow {
                         }
                         Label {
                             id: seqLabel
-                            text: ("000" + cell.seq).slice(-4)
+                            text: root.scanLabel(cell.fileSeq)
                                   + (cell.rejected ? " ×" : "")
                             color: cell.ListView.isCurrentItem ? root.ink : root.inkFaint
                             font.pixelSize: 10
@@ -878,6 +908,34 @@ ApplicationWindow {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: strip.currentIndex = cell.index
+                    }
+
+                    // hover-reveal delete chip (top-right of the thumbnail).
+                    // Erases this session permanently through the confirm dialog;
+                    // hidden on a live scan (deleteSession refuses those anyway).
+                    HoverHandler { id: cellHover }
+                    Rectangle {
+                        visible: cellHover.hovered && cell.sessionState !== "live"
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        width: 15; height: 15
+                        color: delMouse.containsMouse ? root.chR : "#CC1A1A1A"
+                        Label {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: "#FFFFFF"
+                            font.pixelSize: 12
+                        }
+                        MouseArea {
+                            id: delMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                strip.currentIndex = cell.index
+                                root.confirmMode = 1
+                            }
+                        }
                     }
                 }
             }
@@ -1070,6 +1128,7 @@ ApplicationWindow {
                 id: gcell
                 required property int index
                 required property int seq
+                required property int fileSeq
                 required property int rating
                 required property bool rejected
                 required property string sessionState
@@ -1099,7 +1158,7 @@ ApplicationWindow {
                         }
                     }
                     Label {
-                        text: ("000" + gcell.seq).slice(-4)
+                        text: root.scanLabel(gcell.fileSeq)
                               + (gcell.rejected ? " ×" : "")
                               + (gcell.rating > 0 ? "  " + root.stars(gcell.rating) : "")
                               + (gcell.sessionState === "partial" ? qsTr("  partial") : "")
@@ -1128,6 +1187,7 @@ ApplicationWindow {
                 id: tcell
                 required property int index
                 required property int seq
+                required property int fileSeq
                 required property int rating
                 required property bool rejected
                 required property string note
@@ -1165,7 +1225,7 @@ ApplicationWindow {
                         }
                     }
                     Label {
-                        text: ("000" + tcell.seq).slice(-4)
+                        text: root.scanLabel(tcell.fileSeq)
                         color: root.ink
                         font.pixelSize: 11
                     }
@@ -1352,7 +1412,12 @@ ApplicationWindow {
                 Label {
                     text: root.confirmMode === 2
                           ? qsTr("Empty quarantine")
-                          : qsTr("Delete session %1").arg(strip.currentItem ? strip.currentItem.sSeq : "")
+                          : qsTr("Delete session %1").arg(
+                                strip.currentItem
+                                ? (strip.currentItem.sFileSeq >= 0
+                                   ? root.scanLabel(strip.currentItem.sFileSeq)
+                                   : strip.currentItem.sSeq)
+                                : "")
                     color: root.ink
                     font.pixelSize: 13
                     font.letterSpacing: 1

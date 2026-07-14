@@ -77,6 +77,7 @@ QHash<int, QByteArray> SessionStore::roleNames() const
 {
     return {
         { SeqRole,         "seq" },
+        { FileSeqRole,     "fileSeq" },
         { UuidRole,        "uuid" },
         { StateRole,       "sessionState" },
         { RatingRole,      "rating" },
@@ -106,6 +107,21 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
     const SessionRecord &s = m_sessions[idx.row()];
     switch (role) {
     case SeqRole:       return s.seq;
+    case FileSeqRole: {
+        // The name the reviewer judges by: the capture agent's scan_NNNN file
+        // number, taken from the first paired TIFF. -1 until a file pairs, so
+        // imageless sessions (e.g. an execute pushed during LIVE) show no
+        // number instead of shifting every later session's count.
+        static const QRegularExpression rx(QStringLiteral("scan_(\\d+)"));
+        for (const PassRecord &p : s.passes) {
+            if (p.file.isEmpty())
+                continue;
+            const auto m = rx.match(QFileInfo(p.file).fileName());
+            if (m.hasMatch())
+                return m.captured(1).toInt();
+        }
+        return -1;
+    }
     case CreatedRole:   return s.createdWallMs;
     case MetaSvgRole:   return metaSvgPath(s);
     case MetaXRole:     return s.metaX;

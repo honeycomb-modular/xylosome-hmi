@@ -67,6 +67,7 @@ class SessionStore : public QAbstractListModel
 public:
     enum Roles {
         SeqRole = Qt::UserRole + 1,
+        FileSeqRole,         // scan number parsed from the paired TIFF, -1 if none
         UuidRole,
         StateRole,
         RatingRole,
