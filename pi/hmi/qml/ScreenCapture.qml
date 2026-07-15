@@ -47,7 +47,7 @@ Item {
         id: capFocus
         index: 1   // start on the active "jog" mode button
         targets: {
-            var t = [tabProgram, tabJog, tabStatic]
+            var t = [tabProgram, tabJog, tabStatic, tabTimed]
             if (root.activeMode === 0)      t = t.concat([btnProgColor, btnProgBw, btnOpenScan])
             else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnDialJog, btnEnable, btnZero, btnJogCapture])
             else                            t = t.concat([btnColor, btnBw, btnStaticCapture])
@@ -104,6 +104,15 @@ Item {
         label:  "[static]"
         active: root.activeMode === 2
         onClicked: root.activeMode = 2
+    }
+    // Launcher, not an inline panel — opens the dedicated timed-scan page.
+    TerminalButton {
+        id: tabTimed
+        controller: capFocus
+        x: 454; y: 74; width: 120; height: 40
+        label:  "[timed]"
+        active: false
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenTimed.qml"))
     }
 
     Hairline { x: 0; y: 128; width: 960 }
