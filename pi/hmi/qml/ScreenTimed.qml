@@ -314,33 +314,36 @@ Item {
 
         // Hand 1 — start
         Rectangle {
+            id: fovHand1
             readonly property real handLen: fovCircle.r + 6
             width: 2; height: handLen - 10
             color: (root.editTarget === "dial" && root.dialSel === 1)
                    ? (root.dialLevel === "select" ? (root.dialBlinkOn ? Theme.danger : Theme.accent) : Theme.danger)
                    : Theme.accent
             x: fovCircle.cx - 1; y: fovCircle.cy - handLen
-            transform: Rotation { origin.x: 1; origin.y: parent.handLen; angle: root.hand1Angle }
+            transform: Rotation { origin.x: 1; origin.y: fovHand1.handLen; angle: root.hand1Angle }
         }
         // Hand 2 — end
         Rectangle {
+            id: fovHand2
             readonly property real handLen: fovCircle.r + 6
             width: 2; height: handLen - 10
             color: (root.editTarget === "dial" && root.dialSel === 2)
                    ? (root.dialLevel === "select" ? (root.dialBlinkOn ? Theme.danger : Theme.accent) : Theme.danger)
                    : Theme.accent
             x: fovCircle.cx - 1; y: fovCircle.cy - handLen
-            transform: Rotation { origin.x: 1; origin.y: parent.handLen; angle: root.hand2Angle }
+            transform: Rotation { origin.x: 1; origin.y: fovHand2.handLen; angle: root.hand2Angle }
         }
         // Red hand — progress within the arc
         Rectangle {
+            id: fovHandRed
             readonly property real handLen: fovCircle.r + 6
             width: 2; height: handLen - 10
             color: Theme.danger
             visible: root.execState !== "idle"
             x: fovCircle.cx - 1; y: fovCircle.cy - handLen
             transform: Rotation {
-                origin.x: 1; origin.y: parent.handLen
+                origin.x: 1; origin.y: fovHandRed.handLen
                 angle: root.hand1Angle + root.progressFrac * (root.hand2Angle - root.hand1Angle)
             }
         }
