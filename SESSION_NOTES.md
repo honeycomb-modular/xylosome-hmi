@@ -26,6 +26,52 @@ This is the **day-to-day connection in the garage**, NOT the Mac/192.168.2.2 pat
 - Pi is ALSO on Wi-Fi (`192.168.4.x`) — that's its internet path.
 - Pi powered by the **PoE+ HAT**. After a reboot it can take ~1 min to answer; `arp -a -N 192.168.10.1` should list `192.168.10.3`. Empty arp cache ≠ Pi offline — just `ssh` it.
 
+### ✅ DEPLOY code to the Pi — PC→Pi over the .10 LAN, NO internet needed [2026-07-14]
+**The Pi usually has NO internet in the garage** — wlan0 (its normal internet
+path, `192.168.4.x`) is often down, AND the Mac Internet-Sharing bench path
+(eth0 gw `192.168.2.1`) is gone whenever the Mac isn't on the switch. This
+session BOTH were down. So **do NOT count on `git pull` from GitHub on the Pi**,
+and don't waste time chasing gateways (`.10.1` and `.2.1` never route to the
+internet — see `NETWORK.md`). Push the already-committed code straight from the
+capture PC over the direct `.10` link instead. **GitHub stays source of truth.**
+
+1. On the **PC** (it has Wi-Fi internet): commit + `git push origin main` as usual.
+2. On the **PC** (msys2/git-bash), bundle `main` and serve it on the `.10` NIC:
+   ```
+   git bundle create <scratch>/xylosome.bundle main
+   /c/.../python -m http.server 8099 --bind 192.168.10.1     # temp
+   ```
+   Verify it serves, then kill **only** that server by PID when done
+   (`Get-CimInstance Win32_Process -Filter "Name='python.exe'" | ? CommandLine -like '*http.server*8099*' | % { Stop-Process $_.ProcessId }`) —
+   **never a broad `python` kill: the SYSTEM capture agent is python too.**
+3. On the **Pi** (`ssh -o PubkeyAuthentication=no hoyte@192.168.10.3`, password auth):
+   ```
+   cd ~/xylosome-hmi
+   curl -fSL -o /tmp/xylo.bundle http://192.168.10.1:8099/xylosome.bundle
+   git stash push -u -m "pi-local $(date +%F)"   # Pi carries divergent local work — preserve it
+   git pull /tmp/xylo.bundle main                # fast-forwards clean, matches GitHub exactly
+   ```
+4. **BUILD — this Pi's `build/` is Unix Makefiles, NOT Ninja.** `deploy.sh` /
+   older notes say Ninja, but forcing `-G Ninja` on the existing dir fails
+   ("generator does not match the generator used previously"). Use the
+   generator-agnostic build so it works either way and picks up new QML files:
+   ```
+   cd ~/xylosome-hmi/pi/hmi
+   cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
+   ./build/xylosome_hmi -platform wayland
+   ```
+   `[http] listen failed: address already in use` on launch = a **stale HMI
+   instance** (usually the labwc autostart one) still holds `:8080`. If the
+   touchscreen shows the old UI, `pgrep -af xylosome_hmi` and kill the older PID.
+
+**⚠️ Divergent Pi-local work (reconcile into GitHub someday).** The Pi had
+uncommitted edits on an old base — `CameraLink.cpp/.h`, `ScreenCamera.qml`,
+`ChoiceList.qml`, `src/main.cpp`, `CMakeLists.txt` — stashed 2026-07-14 as
+`"pi-local pre-timed-deploy 2026-07-14"`. Inspect with `git stash show -p`,
+restore with `git stash pop`, drop if confirmed stale. **Rule: edit on the
+PC/Mac and deploy; don't edit source directly on the Pi** — direct-on-Pi edits
+that never get pushed are the workflow gap that caused this.
+
 ### Pi has no internet (THE recurring one — "the Pi's not on the internet")
 The Pi keeps a wired default route via eth0 → `192.168.10.1` (the PC, which does NOT route to the internet), and it beats the Wi-Fi route. Kill it **on the Pi**:
 ```
