@@ -201,13 +201,23 @@ class Grabber:
             if not o.Create(): raise RuntimeError("Sapera Create failed: " + o.GetType().Name)
         self.w = int(self.buf.Width); self.h = int(self.buf.Height); self.n = self.w * self.h
         self.ptr = Marshal.AllocHGlobal(self.n * 2)
-    def frame(self):
+    def arm(self):
+        # Start the transfer. Under ext sync the buffer only fills as EXSYNC pulses
+        # arrive, so this can (and must) happen before the sweep starts emitting.
+        self.xfer.Snap(1)
+    def collect(self, timeout_ms=None, abort=False):
         # allow enough time even for a tall frame at the slowest line rate
-        timeout_ms = max(5000, int(self.h / 3500.0 * 1500) + 3000)
-        self.xfer.Snap(1); self.xfer.Wait(timeout_ms)
+        if timeout_ms is None:
+            timeout_ms = max(5000, int(self.h / 3500.0 * 1500) + 3000)
+        self.full = bool(self.xfer.Wait(timeout_ms))
+        if abort and not self.full:
+            try: self.xfer.Abort()      # partial frame: stop it so the next arm is clean
+            except Exception: pass
         self.buf.Read(0, 0, self.n, self.ptr)
         raw = ctypes.string_at(int(self.ptr.ToInt64()), self.n * 2)
         return np.frombuffer(raw, dtype="<u2").reshape(self.h, self.w)
+    def frame(self):
+        self.arm(); return self.collect()
     def close(self):
         try: Marshal.FreeHGlobal(self.ptr)
         except Exception: pass
@@ -345,6 +355,38 @@ def xylod_client():
     seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
     ps_time = {}   # pass -> (recv_monotonic, pass_start tMs)
     pending = {}   # pass -> (full frame, filter) held between pass_start and pass_end
+    in_seq = False # a sequence is in flight (board opened, or the open was refused)
+    armed = None   # pass index whose EXSYNC snap is running, awaiting collect
+
+    def open_board():
+        nonlocal seq, grab, have
+        seq += 1
+        if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
+        if board_lock.acquire(blocking=False):
+            have = True
+            try: grab = Grabber(); print("CAPTURE seq %d board open (%s)" % (seq, CAP_SYNC))
+            except Exception as e:
+                print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
+                if EXT_SYNC: set_cam_external(False)
+        else:
+            print("capture: board busy (live?), skipping seq %d" % seq); grab = None
+            if EXT_SYNC: set_cam_external(False)
+
+    def close_board():
+        nonlocal grab, have, in_seq, armed
+        if grab:
+            try: grab.close()
+            except Exception: pass
+            grab = None
+        if have:
+            try: board_lock.release()
+            except Exception: pass
+            have = False
+        if EXT_SYNC:   # never strand the camera in sem 3
+            try: set_cam_external(False)
+            except Exception: pass
+        in_seq = False; armed = None
+
     while True:
         try:
             c = socket.create_connection((XYLOD_HOST, XYLOD_PORT)); f = c.makefile("r")
@@ -354,44 +396,67 @@ def xylod_client():
                 line = line.strip()
                 if not line: continue
                 m = json.loads(line); ev = m.get("ev")
-                if ev == "pass_start":
+                if ev == "status":
+                    # EXT_SYNC pre-roll (status is broadcast at 25 Hz). Every pre-pass
+                    # state — filter -> reposition ("moving") -> settle — holds lineHz
+                    # at 0, so the board can be opened and the snap armed there, before
+                    # the first EXSYNC pulse. Arming at pass_start instead cost the
+                    # first ~0.2 s of the sweep. `pass` is -1 outside a sequence, which
+                    # is what separates a scan's reposition from a jog or a home move.
+                    if not EXT_SYNC: continue
+                    st = m.get("state"); p = int(m.get("pass", -1))
+                    if p >= 0 and not in_seq:
+                        in_seq = True; open_board()
+                    if in_seq and grab and armed is None and st == "settle" and p >= 0:
+                        try: grab.arm(); armed = p; print("armed pass %d during settle" % p)
+                        except Exception as e: print("capture: arm failed:", e)
+                    if in_seq and p < 0 and st in ("idle", "fault", "estop"):
+                        close_board()   # stop / fault mid-scan: no seq_done ever comes
+                elif ev == "pass_start":
                     p = int(m.get("pass", -1)); filt = m.get("filter", p)
                     pass_filter[p] = filt
                     t_ps = time.monotonic(); ps_time[p] = (t_ps, m.get("tMs"))
-                    if p == 0:
-                        seq += 1
-                        if EXT_SYNC:
-                            set_cam_external(True)   # camera -> external EXSYNC for the scan
-                        if board_lock.acquire(blocking=False):
-                            have = True
-                            try: grab = Grabber(); print("CAPTURE seq %d armed (%s)" % (seq, CAP_SYNC))
+                    if EXT_SYNC:
+                        # normally armed during settle already; arm here only if that
+                        # window was missed (agent connected mid-sequence)
+                        if not in_seq:
+                            in_seq = True; open_board()
+                        if grab and armed is None:
+                            try: grab.arm(); armed = p; print("capture: late arm at pass_start (settle missed)")
+                            except Exception as e: print("capture: arm failed:", e)
+                        if p == 0 and grab:
+                            scan_settings = read_state()
+                    else:
+                        # freerun fallback: grab a generous free-run frame at motion
+                        # start, HOLD it to pass_end, crop to the sweep by time.
+                        # Nothing slow may run before the Snap.
+                        if p == 0: open_board()
+                        if grab:
+                            try:
+                                t0 = time.monotonic()
+                                img = grab.frame()
+                                if p == 0:
+                                    scan_settings = read_state()
+                                pending[p] = (img, filt)
+                                print("grabbed pass %d: %d lines, snap +%.0fms after pass_start"
+                                      % (p, img.shape[0], (t0 - t_ps) * 1000))
                             except Exception as e:
-                                print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
-                                if EXT_SYNC: set_cam_external(False)
-                        else:
-                            print("capture: board busy (live?), skipping seq %d" % seq); grab = None
-                            if EXT_SYNC: set_cam_external(False)
-                    # EXT_SYNC: the EL2521 line trigger paces the camera (EXSYNC on
-                    # CC1), so grab.frame() fills with CAP_LINES motion-locked lines
-                    # as the sweep emits pulses — every line is a motion step, so no
-                    # time-crop is needed. (freerun fallback: grab a generous
-                    # free-run frame at motion start, HOLD it to pass_end, crop to
-                    # the sweep by time.) Nothing slow may run before the Snap.
-                    if grab:
-                        try:
-                            t0 = time.monotonic()
-                            img = grab.frame()
-                            if p == 0:
-                                scan_settings = read_state()
-                            pending[p] = (img, filt)
-                            print("grabbed pass %d: %d lines, snap +%.0fms after pass_start"
-                                  % (p, img.shape[0], (t0 - t_ps) * 1000))
-                        except Exception as e:
-                            print("capture grab failed:", e); pending.pop(p, None)
+                                print("capture grab failed:", e); pending.pop(p, None)
                 elif ev == "pass_end":
                     p = int(m.get("pass", -1))
                     _t, ps_tMs = ps_time.get(p, (None, None))
                     pe_tMs = m.get("tMs")
+                    if EXT_SYNC and grab and armed == p:
+                        # the sweep is over, so no further EXSYNC pulse can arrive:
+                        # a short grace, then take whatever filled
+                        try:
+                            img = grab.collect(400, abort=True)
+                            pending[p] = (img, pass_filter.get(p, p))
+                            print("collected pass %d: %d lines%s"
+                                  % (p, img.shape[0], "" if grab.full else " (frame not filled)"))
+                        except Exception as e:
+                            print("capture collect failed:", e)
+                        armed = None
                     if p in pending:
                         img, filt = pending.pop(p)
                         motion_ms = (pe_tMs - ps_tMs) if (ps_tMs is not None and pe_tMs is not None) else -1
@@ -413,23 +478,11 @@ def xylod_client():
                         except Exception as e:
                             print("capture save failed:", e)
                 elif ev == "seq_done":
-                    if grab: grab.close(); grab = None
-                    if have: board_lock.release(); have = False
-                    if EXT_SYNC: set_cam_external(False)   # camera back to free-run
+                    close_board()
         except OSError as e:
             print("xylod conn error (%s) - retry" % e); time.sleep(2)
         finally:
-            if grab:
-                try: grab.close()
-                except Exception: pass
-                grab = None
-            if have:
-                try: board_lock.release()
-                except Exception: pass
-                have = False
-            if EXT_SYNC:   # a dropped link mid-scan must not strand the camera in sem 3
-                try: set_cam_external(False)
-                except Exception: pass
+            close_board()   # a dropped link mid-scan must not strand the board or sem 3
 
 def main():
     print("capture agent starting | xylod=%s | capture_dir=%s" % (XYLOD_HOST, CAPTURE_DIR))
