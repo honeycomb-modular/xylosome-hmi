@@ -98,7 +98,12 @@ Pi HMI against it on any machine (even the Pi itself).
       default mapping)
 - [ ] EL7031 in velocity-direct mode (CoE 0x8012:01 = 0) and speed range CoE
       matched to `fw_vel_steps_s`
-- [ ] EL2521 base frequency CoE 0x8000:02 = `el2521_base_hz`
+- [x] EL2521 base frequency CoE **0x8001:02** = `el2521_base_hz` (verified 50000
+      on the terminal 2026-07-24; the old `0x8000:02` here was the wrong index).
+      xylod now writes it, plus output mode 0x8000:0E = 2 (incremental encoder
+      simulation — drives A *and* B, so the grabber can reject the return sweep)
+      and ramp off 0x8000:06 = 0. Read the terminal back with
+      `sudo ./ec_coe enp4s0 5`.
 - [ ] E-stop wired normally-closed → `estop_active_low = true`
 - [ ] PREEMPT_RT installed; `cyclictest` jitter < 100 µs
 - [ ] Encoder-echo (EL5152) wired if locked-mode is pursued

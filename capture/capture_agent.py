@@ -58,11 +58,19 @@ os.makedirs(CAPTURE_DIR, exist_ok=True)
 # to the sweep by time. LIVE focus always stays free-run regardless.
 CAP_SYNC = os.environ.get("CAP_SYNC", "exsync").lower()
 EXT_SYNC = CAP_SYNC == "exsync"
-# WORKING.ccf -> ext-sync: 5-line diff captured from CamExpert. The grabber
+# WORKING.ccf -> ext-sync: 6-line diff captured from CamExpert. The grabber
 # generates EXSYNC on CC1 from the shaft-encoder (EL2521 phase A) pulses.
 # See memory el2521-cable-verified for the derivation.
 EXTSYNC_EDITS = {
     "Shaft Encoder Enable":  "1",
+    # Decode direction from the A/B phase pair and clock lines on the FORWARD
+    # sweep only. The .ccf default is 0 = DIRECTION_IGNORE, which counts the
+    # post-pass return exactly like the sweep — every scan came back as its
+    # forward half plus a mirrored return half, always 50/50 because the return
+    # retraces the identical arc. 1 = DIRECTION_FORWARD, 2 = DIRECTION_REVERSE;
+    # which one is "forward" depends on the phase order, so if this yields an
+    # empty frame, it's the other one.
+    "Shaft Encoder Direction": "1",
     "Line Trigger Enable":   "1",
     "Line Trigger Method":   "1",
     "Line Trigger Duration": "340",

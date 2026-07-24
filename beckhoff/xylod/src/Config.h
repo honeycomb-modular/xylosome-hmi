@@ -36,7 +36,8 @@ struct Config {
     double fwSlotOffset[4] = {0.0, 0.25, 0.50, 0.75};  // R G B C, fraction of a rev
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
-    double el2521BaseHz = 50000.0;           // CoE 0x8000:02 base frequency
+    double el2521BaseHz = 50000.0;           // CoE 0x8001:02 base frequency 1
+                                             // (written at startup by EcBackend)
     double lineMaxHz    = 50000.0;           // absolute clamp; = el2521_base_hz, above
                                              // which freqVal saturates at 32767
 

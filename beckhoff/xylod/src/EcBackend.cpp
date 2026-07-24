@@ -162,6 +162,24 @@ bool EcBackend::busInit() {
     // EL7031 — velocity direct mode (0x8012:01 = 0). Verify on bench.
     if (m_cfg.posEl7031 > 0)
         sdoWrite<uint8_t>(m_cfg.posEl7031, 0x8012, 0x01, 0);
+    // EL2521 — nothing used to configure this terminal, so it ran factory
+    // defaults: frequency modulation (channel A only) with the ramp on.
+    // The grabber decodes A/B quadrature to tell the forward sweep from the
+    // post-pass return; with no B it cannot, so it clocked the return as more
+    // forward lines and every scan came back as its own mirror. And the ramp
+    // (time constant 1000) lags the commanded frequency far enough to starve a
+    // sub-second sweep, then keeps emitting into the return. The artist's speed
+    // curve IS the ramp — the terminal must follow it, not smooth it.
+    // Objects are the legacy/normal set (RxPDO 0x1600 is what's mapped).
+    if (m_cfg.posEl2521 > 0) {
+        bool ok = true;
+        ok &= sdoWrite<uint8_t >(m_cfg.posEl2521, 0x8000, 0x0E, 2);   // incremental encoder sim
+        ok &= sdoWrite<uint8_t >(m_cfg.posEl2521, 0x8000, 0x06, 0);   // ramp off
+        ok &= sdoWrite<uint32_t>(m_cfg.posEl2521, 0x8001, 0x02,
+                                 uint32_t(m_cfg.el2521BaseHz));       // base frequency 1
+        if (ok) LOGI("ec: EL2521 encoder-sim, ramp off, base %.0f Hz", m_cfg.el2521BaseHz);
+        else    LOGW("ec: EL2521 CoE config FAILED — scans will mirror");
+    }
 
     // DC measurement + SYNC0 BEFORE the SAFE-OP transition — the drive
     // samples its sync configuration on PREOP→SAFEOP.
