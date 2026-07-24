@@ -50,6 +50,25 @@ LIVE_LINES = 64     # short live-focus frame: fast (~ms) grabs of consecutive
                     # lines so the waterfall flows smoothly (vs a full 8192 grab)
 os.makedirs(CAPTURE_DIR, exist_ok=True)
 
+# --- line-trigger sync mode -------------------------------------------------
+# 'exsync' (default, verified 2026-07-24): the EL2521 line trigger paces the
+# camera via the grabber (EXSYNC on CC1) — every captured line is motion-locked,
+# so no time-crop is needed. Camera runs external sync (sem 3) during a scan.
+# 'freerun': the old fallback — camera internal-sync + a generous frame cropped
+# to the sweep by time. LIVE focus always stays free-run regardless.
+CAP_SYNC = os.environ.get("CAP_SYNC", "exsync").lower()
+EXT_SYNC = CAP_SYNC == "exsync"
+# WORKING.ccf -> ext-sync: 5-line diff captured from CamExpert. The grabber
+# generates EXSYNC on CC1 from the shaft-encoder (EL2521 phase A) pulses.
+# See memory el2521-cable-verified for the derivation.
+EXTSYNC_EDITS = {
+    "Shaft Encoder Enable":  "1",
+    "Line Trigger Enable":   "1",
+    "Line Trigger Method":   "1",
+    "Line Trigger Duration": "340",
+    "Line Integrate Input":  "0x1020001",   # CC1 = Pulse #1 (EXSYNC out)
+}
+
 # ---------- camera serial (COM3) ----------
 ser_lock = threading.Lock()
 ser = serial.Serial(COM, BAUD, timeout=0.3)
@@ -81,6 +100,13 @@ def read_state():
             "scan.dir": field(g, "CCD Direction") or "",
             "model": field(g, "Camera Model No."),
             "clm": field(g, "Camera Link Mode")}
+
+def set_cam_external(on):
+    # Camera exposure mode over COM3: 3 = external EXSYNC (the grabber, paced by
+    # the EL2521, triggers every line), 7 = internal free-run. Only used in
+    # EXT_SYNC mode; the camera must return to sem 7 for LIVE focus / idle.
+    # Volatile (not saved with wus), so we set it explicitly each scan.
+    cam_cmd("sem 3" if on else "sem 7")
 
 STAGES = {16, 32, 48, 64, 80, 96}
 def apply_set(key, value):
@@ -133,34 +159,42 @@ def apply_startup_defaults():
             time.sleep(0.3)
         print("  startup %-11s= %-8s -> %s%s"
               % (key, val, got, "" if _startup_ok(key, val, got) else "  (FAILED)"))
+    set_cam_external(False)   # free-run baseline (LIVE focus + idle); scans flip to sem 3
+    print("  startup sync       = %-8s (camera sem %s)"
+          % (CAP_SYNC, "3 per-scan" if EXT_SYNC else "7 fixed"))
 
 # ---------- board (Sapera) ----------
 board_lock = threading.Lock()   # single grabber owner
 
 _ccf_cache = {}
-def _ccf_for(lines):
+def _ccf_for(lines, ext=EXT_SYNC):
     # Derive a .ccf whose grabber frame height (Crop Height / Scale Vertical) is
-    # `lines`. The base .ccf is read-only under Program Files, so write the
-    # derived copy to temp. Cached per line count. This is the one place the
-    # aspect box will feed once the trigger is wired.
+    # `lines`. When `ext`, also apply EXTSYNC_EDITS so the grabber is paced by the
+    # EL2521 line trigger (EXSYNC). The base .ccf is read-only under Program
+    # Files, so write the derived copy to temp. Cached per (lines, ext).
     lines = max(LINE_MIN, min(LINE_MAX, int(lines)))
-    cached = _ccf_cache.get(lines)
+    key = (lines, ext)
+    cached = _ccf_cache.get(key)
     if cached and os.path.exists(cached):
         return cached
     with open(BASE_CCF, "r", encoding="latin-1") as fh:
         txt = fh.read()
     txt = re.sub(r"(?m)^Crop Height=.*$",    "Crop Height=%d" % lines, txt)
     txt = re.sub(r"(?m)^Scale Vertical=.*$", "Scale Vertical=%d" % lines, txt)
-    out = os.path.join(tempfile.gettempdir(), "xylosome_lines_%d.ccf" % lines)
+    if ext:
+        for k, v in EXTSYNC_EDITS.items():
+            txt = re.sub(r"(?m)^" + re.escape(k) + r"=.*$", "%s=%s" % (k, v), txt)
+    out = os.path.join(tempfile.gettempdir(),
+                       "xylosome_%s_%d.ccf" % ("ext" if ext else "free", lines))
     with open(out, "w", encoding="latin-1") as fh:
         fh.write(txt)
-    _ccf_cache[lines] = out
+    _ccf_cache[key] = out
     return out
 
 class Grabber:
-    def __init__(self, lines=CAP_LINES):
+    def __init__(self, lines=CAP_LINES, ext=EXT_SYNC):
         self.loc = SapLocation(SERVER, 0)
-        self.acq = SapAcquisition(self.loc, _ccf_for(lines))
+        self.acq = SapAcquisition(self.loc, _ccf_for(lines, ext))
         self.buf = SapBuffer(1, self.acq, SapBuffer.MemoryType.ScatterGather)
         self.xfer = SapAcqToBuf(self.acq, self.buf)
         for o in (self.acq, self.buf, self.xfer):
@@ -214,7 +248,7 @@ def live_client(conn, addr):
                             if not board_lock.acquire(blocking=False):
                                 conn.sendall(b'{"ev":"error","text":"board busy (scan running?)"}\n'); continue
                             have = True
-                            try: grab = Grabber(lines=LIVE_LINES)
+                            try: grab = Grabber(lines=LIVE_LINES, ext=False)  # live focus is always free-run
                             except Exception as e:
                                 board_lock.release(); have = False
                                 conn.sendall((json.dumps({"ev": "error", "text": str(e)}) + "\n").encode()); continue
@@ -326,20 +360,23 @@ def xylod_client():
                     t_ps = time.monotonic(); ps_time[p] = (t_ps, m.get("tMs"))
                     if p == 0:
                         seq += 1
+                        if EXT_SYNC:
+                            set_cam_external(True)   # camera -> external EXSYNC for the scan
                         if board_lock.acquire(blocking=False):
                             have = True
-                            try: grab = Grabber(); print("CAPTURE seq %d armed" % seq)
+                            try: grab = Grabber(); print("CAPTURE seq %d armed (%s)" % (seq, CAP_SYNC))
                             except Exception as e:
                                 print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
+                                if EXT_SYNC: set_cam_external(False)
                         else:
                             print("capture: board busy (live?), skipping seq %d" % seq); grab = None
-                    # FREERUN, GATED TO THE MOTION (no EXSYNC cable yet): grab a
-                    # generous frame starting at motion start, then HOLD it until
-                    # pass_end and crop to just the sweep — the reset/return after
-                    # the axis stops is dropped. Keep line_rate low enough that
-                    # 8192 lines (8192/line_rate s) covers the sweep; the crop
-                    # trims the rest. Nothing slow may run before the Snap
-                    # (settings are read after it). Reverts to EXSYNC when wired.
+                            if EXT_SYNC: set_cam_external(False)
+                    # EXT_SYNC: the EL2521 line trigger paces the camera (EXSYNC on
+                    # CC1), so grab.frame() fills with CAP_LINES motion-locked lines
+                    # as the sweep emits pulses — every line is a motion step, so no
+                    # time-crop is needed. (freerun fallback: grab a generous
+                    # free-run frame at motion start, HOLD it to pass_end, crop to
+                    # the sweep by time.) Nothing slow may run before the Snap.
                     if grab:
                         try:
                             t0 = time.monotonic()
@@ -357,23 +394,28 @@ def xylod_client():
                     pe_tMs = m.get("tMs")
                     if p in pending:
                         img, filt = pending.pop(p)
-                        rate = float(scan_settings.get("line.rate") or 0)
                         motion_ms = (pe_tMs - ps_tMs) if (ps_tMs is not None and pe_tMs is not None) else -1
-                        want = int(motion_ms / 1000.0 * rate) if (motion_ms > 0 and rate > 0) else img.shape[0]
-                        lines = max(1, min(img.shape[0], want))
-                        over = " (sweep exceeded frame — lower line rate)" if want > img.shape[0] else ""
+                        if EXT_SYNC:
+                            # EXSYNC: the whole frame is motion-locked lines — keep it all.
+                            lines = img.shape[0]; over = ""
+                        else:
+                            rate = float(scan_settings.get("line.rate") or 0)
+                            want = int(motion_ms / 1000.0 * rate) if (motion_ms > 0 and rate > 0) else img.shape[0]
+                            lines = max(1, min(img.shape[0], want))
+                            over = " (sweep exceeded frame — lower line rate)" if want > img.shape[0] else ""
                         name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                         tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
                         try:
                             tifffile.imwrite(tmp, img[:lines], metadata={"camera": scan_settings})
                             os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            print("saved %s | motion %dms -> cropped %d/%d lines%s"
+                            print("saved %s | motion %dms -> %d/%d lines%s"
                                   % (name, motion_ms, lines, img.shape[0], over))
                         except Exception as e:
                             print("capture save failed:", e)
                 elif ev == "seq_done":
                     if grab: grab.close(); grab = None
                     if have: board_lock.release(); have = False
+                    if EXT_SYNC: set_cam_external(False)   # camera back to free-run
         except OSError as e:
             print("xylod conn error (%s) - retry" % e); time.sleep(2)
         finally:
@@ -385,6 +427,9 @@ def xylod_client():
                 try: board_lock.release()
                 except Exception: pass
                 have = False
+            if EXT_SYNC:   # a dropped link mid-scan must not strand the camera in sem 3
+                try: set_cam_external(False)
+                except Exception: pass
 
 def main():
     print("capture agent starting | xylod=%s | capture_dir=%s" % (XYLOD_HOST, CAPTURE_DIR))
