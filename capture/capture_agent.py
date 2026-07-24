@@ -193,6 +193,7 @@ def _ccf_for(lines, ext=EXT_SYNC):
 
 class Grabber:
     def __init__(self, lines=CAP_LINES, ext=EXT_SYNC):
+        self.ext = ext
         self.loc = SapLocation(SERVER, 0)
         self.acq = SapAcquisition(self.loc, _ccf_for(lines, ext))
         self.buf = SapBuffer(1, self.acq, SapBuffer.MemoryType.ScatterGather)
@@ -204,6 +205,12 @@ class Grabber:
     def arm(self):
         # Start the transfer. Under ext sync the buffer only fills as EXSYNC pulses
         # arrive, so this can (and must) happen before the sweep starts emitting.
+        # Clear first so the rows past the end of the sweep are deterministically
+        # zero — that is what makes filled_lines() exact, and it stops a short pass
+        # from showing the previous pass's tail. Only under ext sync: this runs in
+        # the settle window there, whereas free-run arms at pass_start where
+        # nothing slow may precede the Snap.
+        if self.ext: self.buf.Clear()
         self.xfer.Snap(1)
     def collect(self, timeout_ms=None, abort=False):
         # allow enough time even for a tall frame at the slowest line rate
@@ -224,6 +231,14 @@ class Grabber:
         for o in (self.xfer, self.buf, self.acq):
             try: o.Destroy()
             except Exception: pass
+
+def filled_lines(img):
+    # How many rows the sweep actually delivered. Under ext sync the grab fills one
+    # row per EXSYNC pulse and stops when the sweep ends, leaving the rest of the
+    # (cleared) buffer at zero — so the last non-zero row is the end of the scan.
+    # 0 means nothing arrived at all, which is a trigger fault, not a short sweep.
+    nz = np.flatnonzero(img.max(axis=1))
+    return int(nz[-1]) + 1 if nz.size else 0
 
 def focus_metric(l8):
     g = np.diff(l8.astype(np.float32)); return float(np.sqrt(np.mean(g * g)))
@@ -355,6 +370,7 @@ def xylod_client():
     seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
     ps_time = {}   # pass -> (recv_monotonic, pass_start tMs)
     pending = {}   # pass -> (full frame, filter) held between pass_start and pass_end
+    ext_lines = {} # pass -> rows the sweep actually delivered (ext sync only)
     in_seq = False # a sequence is in flight (board opened, or the open was refused)
     armed = None   # pass index whose EXSYNC snap is running, awaiting collect
 
@@ -408,7 +424,13 @@ def xylod_client():
                     if p >= 0 and not in_seq:
                         in_seq = True; open_board()
                     if in_seq and grab and armed is None and st == "settle" and p >= 0:
-                        try: grab.arm(); armed = p; print("armed pass %d during settle" % p)
+                        # settle is 300ms; the arm (buffer clear + Snap) must fit inside
+                        # it, so log what it cost — if this approaches 300 the clear has
+                        # to go and the tail crop needs another source.
+                        try:
+                            t_arm = time.monotonic(); grab.arm(); armed = p
+                            print("armed pass %d during settle (%dms)"
+                                  % (p, (time.monotonic() - t_arm) * 1000))
                         except Exception as e: print("capture: arm failed:", e)
                     if in_seq and p < 0 and st in ("idle", "fault", "estop"):
                         close_board()   # stop / fault mid-scan: no seq_done ever comes
@@ -452,8 +474,9 @@ def xylod_client():
                         try:
                             img = grab.collect(400, abort=True)
                             pending[p] = (img, pass_filter.get(p, p))
+                            ext_lines[p] = filled_lines(img)
                             print("collected pass %d: %d lines%s"
-                                  % (p, img.shape[0], "" if grab.full else " (frame not filled)"))
+                                  % (p, ext_lines[p], "" if grab.full else " (frame not filled)"))
                         except Exception as e:
                             print("capture collect failed:", e)
                         armed = None
@@ -461,8 +484,12 @@ def xylod_client():
                         img, filt = pending.pop(p)
                         motion_ms = (pe_tMs - ps_tMs) if (ps_tMs is not None and pe_tMs is not None) else -1
                         if EXT_SYNC:
-                            # EXSYNC: the whole frame is motion-locked lines — keep it all.
-                            lines = img.shape[0]; over = ""
+                            # EXSYNC: every delivered row is a motion-locked line, so keep
+                            # exactly those and drop the unfilled tail. No lines at all is a
+                            # trigger fault — save the whole frame so it stays diagnosable.
+                            n = ext_lines.pop(p, 0)
+                            lines = n or img.shape[0]
+                            over = "" if n else "  (NO LINES — check the EL2521 emit)"
                         else:
                             rate = float(scan_settings.get("line.rate") or 0)
                             want = int(motion_ms / 1000.0 * rate) if (motion_ms > 0 and rate > 0) else img.shape[0]
