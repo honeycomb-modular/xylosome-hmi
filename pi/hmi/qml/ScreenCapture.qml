@@ -49,7 +49,7 @@ Item {
         targets: {
             var t = [tabProgram, tabJog, tabStatic, tabTimed]
             if (root.activeMode === 0)      t = t.concat([btnProgColor, btnProgBw, btnOpenScan])
-            else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnDialJog, btnEnable, btnZero, btnJogCapture])
+            else if (root.activeMode === 1) t = t.concat([btnSlow, btnMed, btnFast, btnDialJog, btnEnable, btnZero, btnSetHome, btnJogCapture])
             else                            t = t.concat([btnColor, btnBw, btnStaticCapture])
             return t.concat([backBtn])
         }
