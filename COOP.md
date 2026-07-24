@@ -114,6 +114,27 @@ Get-NetTCPConnection -OwningProcess <pid>   # want 192.168.2.2:5510 AND 127.0.0.
 
 ---
 
+## 4b. Known config drift — `/etc/xylod.conf` vs the repo
+
+The C6920 runs `/etc/xylod.conf`, which is a **separate file** from
+`beckhoff/xylod/config/xylod.conf` in this repo. Editing the repo copy does not
+change the running daemon. As of 2026-07-23 they differ:
+
+| setting | box (`/etc`) | repo |
+|---|---|---|
+| `line_blink_div` | **100** | 1000 |
+| `line_blink_ms` | **10** | 30 |
+
+Every other difference is inert — `jog_acc_degs2`, `do_line_blink`, `home_file`
+are absent from the box's file but the compiled defaults in `Config.h:25-59`
+already equal the repo values, so behaviour matches either way.
+
+The two blink values are **on-box bench tuning that was never committed**, so
+the box is the authority, not git. **Do not blind-copy the repo conf over
+`/etc/xylod.conf`** — it would silently revert that tuning. Unresolved; decide
+which direction to sync before touching either file. Installing to `/etc` needs
+the C6920's sudo password (Hoyte) plus a `xylod` restart.
+
 ## 5. Things that must not be disturbed
 
 - **The capture agent** (`capture/capture_agent.py`, SYSTEM scheduled task
