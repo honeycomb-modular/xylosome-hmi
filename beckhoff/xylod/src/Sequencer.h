@@ -34,6 +34,7 @@ struct ScanJob {
     double returnVelDegS = 40.0;
     bool   lineCurve    = true;    // true: rate ∝ velocity; false: fixed baseHz
     double lineBaseHz   = 5000.0;
+    double lineTarget   = 0.0;     // wanted lines over the arc; 0 = use lineBaseHz
     std::vector<double> profile;   // uniform samples, 0..1
 };
 
@@ -51,6 +52,7 @@ struct SeqStatus {
     int    pass = -1;
     double progress = 0.0;
     double posDeg = 0.0, velDegS = 0.0, lineHz = 0.0;
+    int    plannedLines = 0;       // lines this pass will deliver (0 = not a curve scan)
     int    filterSlot = -1;
     uint16_t driveSw = 0, driveFault = 0;
     int32_t  echo = 0;
@@ -109,6 +111,7 @@ private:
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;
     double m_lineCount  = 0.0;      // accumulated scanned lines this sequence
+    int    m_plannedLines = 0;      // lines each pass will deliver, after the rate clamp
     long   m_blinkTick  = 0;        // last line_blink_div boundary crossed
     double m_blinkLeft  = 0.0;      // remaining pulse time, s
     double m_pauseRamp = 1.0;       // 1 running → 0 paused (slewed)

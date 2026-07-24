@@ -177,8 +177,12 @@ Item {
         if (Beckhoff.connected) {
             // Constant crawl: pin min = max = target so the daemon floor can't
             // override, flat 1.0 profile. Single pass (bw).
+            // plannedLines is now sent, not just displayed: with max=min=velDegS
+            // the rate works out to plannedLines/durationSec, so the "N lines"
+            // readout above is what the trigger actually delivers.
             Beckhoff.executeScan(1, root.hand1Angle, root.hand2Angle,
-                                 root.velDegS, root.velDegS, root.buildFlatProfile())
+                                 root.velDegS, root.velDegS,
+                                 root.plannedLines, root.buildFlatProfile())
         } else {
             simTimer.start()
         }

@@ -160,16 +160,40 @@ void Sequencer::cycle(double dt) {
             m_bk.fwMoveToSlot(c.slot);
             if (m_st == St::Idle) m_st = St::FilterMove;
             break;
-        case SeqCommand::Execute:
+        case SeqCommand::Execute: {
             m_job = c.job;
+            // The HMI sets image aspect by line COUNT (the sensor fixes one axis at
+            // 8k; the sweep builds the other), so it asks for a total, not a rate.
+            // Over a pass, lines = lineBaseHz * arc / maxVelDegS: the sweep duration
+            // cancels, because the same velocity that paces the trigger is the one
+            // integrated into the arc. So a slower scan does NOT yield more lines —
+            // only this rate does. Invert for the rate the artist's aspect implies,
+            // then clamp; a clamped rate just means fewer lines, which plannedLines
+            // reports so the capture side can size its frame to what will arrive.
+            const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
+            if (m_job.lineCurve && m_job.lineTarget > 0.0) {
+                const double want = m_job.lineTarget * m_job.maxVelDegS / arcAbs;
+                m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
+                if (want > m_cfg.lineMaxHz)
+                    LOGW("seq: %.0f lines over %.1f deg needs %.0f Hz > line_max_hz %.0f "
+                         "— clamped, delivering %.0f lines",
+                         m_job.lineTarget, arcAbs, want, m_cfg.lineMaxHz,
+                         m_cfg.lineMaxHz * arcAbs / std::max(1e-6, m_job.maxVelDegS));
+            }
+            m_plannedLines = m_job.lineCurve
+                ? int(m_job.lineBaseHz * arcAbs / std::max(1e-6, m_job.maxVelDegS) + 0.5)
+                : 0;   // fixed-rate mode: lines depend on duration, not arc — unknown here
             m_passCount = (m_job.colorMode == 1) ? 1 : 4;
             m_bk.axisEnable(true);
             m_pauseRamp = 1.0; m_pausing = false;
             m_lineCount = 0.0; m_blinkTick = 0; m_blinkLeft = 0.0;
             enterPass(0);
-            LOGI("seq: execute — %d pass(es), arc %.1f→%.1f deg, %zu profile samples",
-                 m_passCount, m_job.arcStartDeg, m_job.arcEndDeg, m_job.profile.size());
+            LOGI("seq: execute — %d pass(es), arc %.1f→%.1f deg, %zu profile samples, "
+                 "line %.0f Hz -> %d lines",
+                 m_passCount, m_job.arcStartDeg, m_job.arcEndDeg, m_job.profile.size(),
+                 m_job.lineBaseHz, m_plannedLines);
             break;
+        }
         case SeqCommand::Pause:
             if (m_st == St::SeqRun) { m_pausing = true; m_st = St::SeqPaused; }
             break;
@@ -322,6 +346,7 @@ void Sequencer::publish() {
     s.posDeg     = m_bk.axisPosDeg();
     s.velDegS    = m_bk.axisVelDegS();
     s.lineHz     = m_bk.lineHz();
+    s.plannedLines = m_plannedLines;
     s.filterSlot = m_bk.fwSlot();
     s.driveSw    = d.statusword;
     s.driveFault = d.errorCode;

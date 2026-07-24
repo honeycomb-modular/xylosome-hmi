@@ -67,6 +67,7 @@ std::string TcpServer::statusJson() {
         {"homed", s.homed}, {"pass", s.pass}, {"progress", s.progress},
         {"posDeg", s.posDeg}, {"velDegS", s.velDegS},
         {"filterSlot", s.filterSlot}, {"lineHz", s.lineHz},
+        {"plannedLines", s.plannedLines},
         {"estopOk", s.estopOk},
         {"drive", {{"sw", s.driveSw}, {"fault", s.driveFault}}},
         {"echo", s.echo},
@@ -114,6 +115,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
         if (req.contains("line")) {
             j.lineCurve  = req["line"].value("mode", "curve") == std::string("curve");
             j.lineBaseHz = req["line"].value("baseHz", 5000.0);
+            j.lineTarget = req["line"].value("lines", 0.0);   // aspect-driven; wins over baseHz
         }
         if (req.contains("profile") && req["profile"].is_array())
             j.profile = req["profile"].get<std::vector<double>>();

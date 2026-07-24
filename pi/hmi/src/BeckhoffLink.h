@@ -63,9 +63,13 @@ public:
     // ── commands ──────────────────────────────────────────────────────────────
     // executeScan: profile = uniform speed-curve samples 0..1, sampled by
     // ScreenScan from the curve editor — what the artist draws is what executes.
+    // targetLines = the aspect bar's line count (ScreenScan.linesCount): the
+    // sensor fixes one axis at 8k, so the line total IS the image aspect. xylod
+    // turns it into the trigger rate, since only it knows the rate clamp.
     Q_INVOKABLE void executeScan(int colorMode,
                                  double arcStartDeg, double arcEndDeg,
                                  double maxVelDegS, double minVelDegS,
+                                 int targetLines,
                                  const QVariantList &profile);
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();

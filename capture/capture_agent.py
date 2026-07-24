@@ -373,14 +373,27 @@ def xylod_client():
     ext_lines = {} # pass -> rows the sweep actually delivered (ext sync only)
     in_seq = False # a sequence is in flight (board opened, or the open was refused)
     armed = None   # pass index whose EXSYNC snap is running, awaiting collect
+    planned = 0    # lines xylod last said a pass will deliver (status, 25 Hz)
 
     def open_board():
         nonlocal seq, grab, have
         seq += 1
+        # Frame height = the lines xylod says this pass will deliver (the HMI aspect
+        # bar, after xylod's rate clamp). Sizing to it is what makes the aspect real:
+        # a wide image needs more lines than the old fixed 8192 could hold, and the
+        # tail crop can only shorten a frame, never extend one. Fall back to
+        # CAP_LINES when xylod is too old to report it, or in fixed-rate mode.
+        lines = planned if LINE_MIN <= planned <= LINE_MAX else CAP_LINES
+        lines = min(LINE_MAX, (lines + 3) & ~3)   # keep the buffer 4-line aligned;
+                                                  # rounding UP is free, the tail crop
+                                                  # drops the spare rows anyway
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
         if board_lock.acquire(blocking=False):
             have = True
-            try: grab = Grabber(); print("CAPTURE seq %d board open (%s)" % (seq, CAP_SYNC))
+            try:
+                grab = Grabber(lines=lines)
+                print("CAPTURE seq %d board open (%s) %d lines%s"
+                      % (seq, CAP_SYNC, lines, "" if planned else " (no plannedLines)"))
             except Exception as e:
                 print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
                 if EXT_SYNC: set_cam_external(False)
@@ -421,6 +434,7 @@ def xylod_client():
                     # is what separates a scan's reposition from a jog or a home move.
                     if not EXT_SYNC: continue
                     st = m.get("state"); p = int(m.get("pass", -1))
+                    planned = int(m.get("plannedLines") or 0)
                     if p >= 0 and not in_seq:
                         in_seq = True; open_board()
                     if in_seq and grab and armed is None and st == "settle" and p >= 0:
@@ -513,10 +527,8 @@ def xylod_client():
 
 def main():
     print("capture agent starting | xylod=%s | capture_dir=%s" % (XYLOD_HOST, CAPTURE_DIR))
-    _ar = CAM_WIDTH / float(CAP_LINES)
-    print("frame: %d x %d  (aspect %.3f:1%s)  ~%.0f MB/scan"
-          % (CAM_WIDTH, CAP_LINES, _ar, " square" if CAP_LINES == CAM_WIDTH else "",
-             CAM_WIDTH * CAP_LINES * 2 / 1e6))
+    print("frame: %d wide; height per scan = xylod plannedLines (HMI aspect bar), "
+          "fallback %d" % (CAM_WIDTH, CAP_LINES))
     apply_startup_defaults()
     print("camera:", read_state())
     threading.Thread(target=cam_server, daemon=True).start()

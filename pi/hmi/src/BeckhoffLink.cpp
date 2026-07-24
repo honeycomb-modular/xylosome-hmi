@@ -144,6 +144,7 @@ void BeckhoffLink::handleMessage(const QJsonObject &m) {
 void BeckhoffLink::executeScan(int colorMode,
                                double arcStartDeg, double arcEndDeg,
                                double maxVelDegS, double minVelDegS,
+                               int targetLines,
                                const QVariantList &profile)
 {
     QJsonArray prof;
@@ -155,6 +156,11 @@ void BeckhoffLink::executeScan(int colorMode,
                                            QStringLiteral("curve")).toString()},
         {QStringLiteral("baseHz"), s.value(QStringLiteral("beckhoff/lineBaseHz"), 5000.0).toDouble()},
     };
+    // The aspect bar is the real source of line count; baseHz above is only the
+    // fallback for fixed-rate mode. Before 2026-07-24 the count was computed for
+    // the display and never sent, so every scan ran at the fixed 5000 Hz default
+    // and came out ~6x short of the drawn aspect.
+    if (targetLines > 0) line[QStringLiteral("lines")] = targetLines;
 
     sendJson({
         {QStringLiteral("cmd"),          QStringLiteral("execute")},

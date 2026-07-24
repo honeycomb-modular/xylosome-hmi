@@ -1243,6 +1243,7 @@ Item {
                     Beckhoff.executeScan(Motor.colorMode,
                                          root.hand1Angle, root.hand2Angle,
                                          root.maxSpeed, root.minVelDegS(),
+                                         root.linesCount,
                                          prof)
                 } else {
                     // no controller — local playhead simulation (unchanged)

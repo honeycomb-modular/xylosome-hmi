@@ -37,7 +37,8 @@ struct Config {
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     double el2521BaseHz = 50000.0;           // CoE 0x8000:02 base frequency
-    double lineMaxHz    = 20000.0;           // absolute clamp
+    double lineMaxHz    = 50000.0;           // absolute clamp; = el2521_base_hz, above
+                                             // which freqVal saturates at 32767
 
     // ── digital I/O bit map ──────────────────────────────────────────────────
     int diHome = 0, diEndMin = 1, diEndMax = 2, diEstop = 3, diFwIndex = 4;
