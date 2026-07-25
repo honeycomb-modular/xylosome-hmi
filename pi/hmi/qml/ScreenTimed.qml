@@ -1,5 +1,5 @@
 // ScreenTimed.qml — timed / long-duration field scan.
-// Reached from ScreenCapture → [timed] tab.
+// One of the four sibling capture pages (see ModeStrip.qml) — not a submenu.
 //
 // Unlike the program scan (velocity curve, seconds long), this mode scans a
 // fixed FOV arc at a CONSTANT crawl over a chosen span — a few seconds up to
@@ -81,7 +81,10 @@ Item {
 
     FocusController {
         id: timedFocus
-        targets: [fovCircle, timelineProxy, homeBtn, backBtn]
+        targets: [fovCircle, timelineProxy]
+                 .concat(modeStrip.focusTargets)
+                 .concat(faultChip.focusTargets)
+                 .concat([homeBtn, settingsBtn])
         index: 1   // start on the timeline
         onActivated: function(item) {
             if (item === fovCircle)          root.enterDialEditing()
@@ -538,17 +541,34 @@ Item {
         }
     }
 
-    // ── Bottom bar — [back] left · [home] [execute] right ───────────────────────
+    // ── Bottom bar — [settings] left · modes · [home] [execute] right ───────────
     Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
-        id: backBtn
+        id: settingsBtn
         controller: timedFocus
         x: Theme.marginX
         anchors { bottom: parent.bottom; bottomMargin: 18 }
         width: Theme.bottomBtnW; height: Theme.bottomBtnH
-        label: "[back]"; active: false
-        onClicked: root.StackView.view.pop()
+        label: "[settings]"; active: false
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
+    }
+
+    ModeStrip {
+        id: modeStrip
+        mode: "timed"; controller: timedFocus
+        x: Theme.marginX + 130 + 18
+        anchors { bottom: parent.bottom; bottomMargin: 27 }
+        onSwitchTo: function(page) {
+            root.abortRun()
+            root.StackView.view.replace(root.StackView.view.currentItem,
+                                        Qt.resolvedUrl(page))
+        }
+    }
+    FaultChip {
+        id: faultChip
+        controller: timedFocus
+        anchors { left: modeStrip.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // Red pointer line: execute → right screen edge (points at pendant BTN1).

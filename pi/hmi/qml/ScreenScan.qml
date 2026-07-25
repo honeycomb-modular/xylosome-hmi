@@ -131,15 +131,19 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn, btnSavePreset, btnPresets]
+        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn,
+                  btnSavePreset, btnPresets, btnColorMode]
+                 .concat(modeStrip.focusTargets)
+                 .concat(faultChip.focusTargets)
         index: 5   // default focus on [home/ready]
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
             else if (item === handle) root.enterAspectEditing()
             else if (item === motorCircle) root.enterDialEditing()
-            else if (item === resetCurveBtn || item === settingsBtn || item === resetBtn
-                     || item === btnSavePreset || item === btnPresets)
-                item.clicked()
+            // Anything else that is a button just gets clicked. This used to be an
+            // explicit list, which silently swallowed the push for every button
+            // added later (mode strip, fault reset, colour toggle).
+            else if (item && item.clicked) item.clicked()
         }
         onAdjust:    function(delta) { root.editAdjust(delta) }
         onConfirmed: root.editConfirm()
@@ -1142,13 +1146,17 @@ Item {
 
     // ── BW / Color mode indicator + preset buttons ────────────────────────────
     // Just under the rainbow canvas, flush right.
-    Text {
-        id: colorModeIndicator
+    // Was a read-only indicator; colorMode used to be set only on the old
+    // capture-modes page, which no longer exists — so it is set here now.
+    TerminalButton {
+        id: btnColorMode
+        controller: scanFocus
         anchors { right: parent.right; rightMargin: 18 }
-        y: 278
-        text:  Motor.colorMode === 0 ? "color" : "monochrome"
-        color: Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+        y: 272
+        width: 116; height: 26
+        fontSize: Theme.fontMonoS
+        label:  Motor.colorMode === 0 ? "[color]" : "[monochrome]"
+        onClicked: Motor.colorMode = (Motor.colorMode === 0 ? 1 : 0)
     }
 
     // [presets] and [save] — small, right-aligned, below the mode text
@@ -1193,6 +1201,24 @@ Item {
         label:  "[settings]"
         active: false
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
+    }
+
+    // Sibling capture modes — in the empty middle of the bottom bar, so the
+    // composed lower half above is untouched.
+    ModeStrip {
+        id: modeStrip
+        mode: "scan"; controller: scanFocus
+        x: Theme.marginX + 130 + 18
+        anchors { bottom: parent.bottom; bottomMargin: 27 }
+        onSwitchTo: function(page) {
+            root.StackView.view.replace(root.StackView.view.currentItem,
+                                        Qt.resolvedUrl(page))
+        }
+    }
+    FaultChip {
+        id: faultChip
+        controller: scanFocus
+        anchors { left: modeStrip.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // Red pointer line: right edge of execute → right screen edge, at button centre.

@@ -100,7 +100,12 @@ void Sequencer::cycle(double dt) {
         event("{\"ev\":\"fault\",\"text\":\"E-stop\"}");
         LOGW("seq: E-STOP");
     }
-    if (drv.fault && m_st != St::Fault && m_st != St::Estop) {
+    // A fault reset is an edge on the controlword; the drive takes a few cycles
+    // to drop bit 3. Without this hold the very next cycle re-reads the stale
+    // fault bit and re-latches, so every reset had to be sent twice. If the
+    // cause is still present the drive stays faulted and we latch again below.
+    if (m_faultResetHoldS > 0.0) m_faultResetHoldS -= dt;
+    if (drv.fault && m_faultResetHoldS <= 0.0 && m_st != St::Fault && m_st != St::Estop) {
         m_bk.setLineHz(0.0);
         m_bk.setPassActive(false);
         m_st = St::Fault;
@@ -118,6 +123,7 @@ void Sequencer::cycle(double dt) {
             m_bk.axisFaultReset();
             if (din.estopOk) m_estopLatched = false;
             if (m_st == St::Fault || (m_st == St::Estop && !m_estopLatched)) m_st = St::Idle;
+            m_faultResetHoldS = 0.5;
             break;
         case SeqCommand::Stop:
             m_bk.setLineHz(0.0);
@@ -171,7 +177,20 @@ void Sequencer::cycle(double dt) {
             // then clamp; a clamped rate just means fewer lines, which plannedLines
             // reports so the capture side can size its frame to what will arrive.
             const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
-            if (m_job.lineCurve && m_job.lineTarget > 0.0) {
+            if (m_job.staticHold) {
+                // No sweep to integrate: the artist picks a line count and a
+                // duration, so the rate is simply one divided by the other.
+                const double want = (m_job.lineTarget > 0.0)
+                                  ? m_job.lineTarget / std::max(1e-6, m_job.durationS)
+                                  : m_job.lineBaseHz;
+                m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
+                if (want > m_cfg.lineMaxHz)
+                    LOGW("seq: %.0f lines in %.1f s needs %.0f Hz > line_max_hz %.0f "
+                         "— clamped, delivering %.0f lines",
+                         m_job.lineTarget, m_job.durationS, want, m_cfg.lineMaxHz,
+                         m_cfg.lineMaxHz * m_job.durationS);
+            }
+            else if (m_job.lineCurve && m_job.lineTarget > 0.0) {
                 const double want = m_job.lineTarget * m_job.maxVelDegS / arcAbs;
                 m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
                 if (want > m_cfg.lineMaxHz)
@@ -180,7 +199,9 @@ void Sequencer::cycle(double dt) {
                          m_job.lineTarget, arcAbs, want, m_cfg.lineMaxHz,
                          m_cfg.lineMaxHz * arcAbs / std::max(1e-6, m_job.maxVelDegS));
             }
-            m_plannedLines = m_job.lineCurve
+            m_plannedLines = m_job.staticHold
+                ? int(m_job.lineBaseHz * m_job.durationS + 0.5)
+                : m_job.lineCurve
                 ? int(m_job.lineBaseHz * arcAbs / std::max(1e-6, m_job.maxVelDegS) + 0.5)
                 : 0;   // fixed-rate mode: lines depend on duration, not arc — unknown here
             m_passCount = (m_job.colorMode == 1) ? 1 : 4;
@@ -205,7 +226,22 @@ void Sequencer::cycle(double dt) {
     }
 
     // ── state machine ────────────────────────────────────────────────────────
-    switch (m_st) {
+    // axisEnable(true) is only a REQUEST: the CiA-402 walk to Operation Enabled
+    // takes several cycles. Anything the state machine ramps meanwhile is a CSP
+    // target the drive has to swallow whole the moment it enables. With no
+    // filter wheel fitted (pos_el7031 = 0) SeqFilter falls through on the next
+    // cycle, so [execute] from a cold restart begins the reposition to
+    // arcStartDeg — at return velocity, full accel — about 1 ms after the
+    // request. Hold the target on the actual pose until the drive really is
+    // enabled; the sequence simply waits those few cycles.
+    if (!drv.enabled) {
+        m_setpoint = m_bk.axisPosDeg();
+        m_moveVel  = 0.0;
+    }
+    // The filter wheel is a separate stepper, so its state still runs.
+    const St stRun = (drv.enabled || m_st == St::FilterMove) ? m_st : St::Idle;
+
+    switch (stRun) {
     case St::Idle:
     case St::Estop:
     case St::Fault:
@@ -253,6 +289,7 @@ void Sequencer::cycle(double dt) {
         m_settleLeft -= dt;
         if (m_settleLeft <= 0.0) {
             m_arcS = 0.0;
+            m_dwellS = 0.0;
             m_bk.setPassActive(true);
             m_bk.setPassIndex(true);
             m_indexPulseLeft = 0.050;
@@ -273,19 +310,33 @@ void Sequencer::cycle(double dt) {
         const double dr = dt / 0.25;
         m_pauseRamp += std::max(-dr, std::min(dr, rampTarget - m_pauseRamp));
 
-        const double arc = m_job.arcEndDeg - m_job.arcStartDeg;     // signed
-        const double arcAbs = std::max(1e-6, std::fabs(arc));
-        const double x = m_arcS / arcAbs;                            // 0..1
-        const double vProf = std::max(m_job.minVelDegS,
-                                      profileAt(x) * m_job.maxVelDegS);
-        const double v = vProf * m_pauseRamp;
-        m_arcS += v * dt;
-        m_setpoint = m_job.arcStartDeg + (arc > 0 ? m_arcS : -m_arcS);
+        double lineHzNow = 0.0;
+        bool   passDone  = false;
 
-        // line trigger follows the velocity (the third creative axis)
-        const double lineHzNow = m_job.lineCurve
-            ? m_job.lineBaseHz * (v / std::max(1e-6, m_job.maxVelDegS))
-            : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+        if (m_job.staticHold) {
+            // Hold the pose and run the trigger flat; the pass ends on the clock.
+            // Paused time does not count, so a pause lengthens the wall-clock
+            // capture without shortening the image.
+            m_setpoint = m_job.arcStartDeg;
+            lineHzNow  = m_job.lineBaseHz * m_pauseRamp;
+            m_dwellS  += dt * m_pauseRamp;
+            passDone   = m_dwellS >= m_job.durationS;
+        } else {
+            const double arc = m_job.arcEndDeg - m_job.arcStartDeg;     // signed
+            const double arcAbs = std::max(1e-6, std::fabs(arc));
+            const double x = m_arcS / arcAbs;                            // 0..1
+            const double vProf = std::max(m_job.minVelDegS,
+                                          profileAt(x) * m_job.maxVelDegS);
+            const double v = vProf * m_pauseRamp;
+            m_arcS += v * dt;
+            m_setpoint = m_job.arcStartDeg + (arc > 0 ? m_arcS : -m_arcS);
+
+            // line trigger follows the velocity (the third creative axis)
+            lineHzNow = m_job.lineCurve
+                ? m_job.lineBaseHz * (v / std::max(1e-6, m_job.maxVelDegS))
+                : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+            passDone = m_arcS >= arcAbs;
+        }
         m_bk.setLineHz(lineHzNow);
 
         // line-count blink: a snappy pulse every line_blink_div scanned lines
@@ -295,8 +346,8 @@ void Sequencer::cycle(double dt) {
             if (tick != m_blinkTick) { m_blinkTick = tick; m_blinkLeft = m_cfg.lineBlinkMs * 1e-3; }
         }
 
-        if (m_arcS >= arcAbs) {
-            m_setpoint = m_job.arcEndDeg;
+        if (passDone) {
+            if (!m_job.staticHold) m_setpoint = m_job.arcEndDeg;
             m_bk.setLineHz(0.0);
             m_bk.setPassActive(false);
             char b[96];
@@ -352,8 +403,12 @@ void Sequencer::publish() {
     s.driveFault = d.errorCode;
     s.echo       = m_bk.echoCounts();
     if (m_st == St::SeqRun || m_st == St::SeqPaused) {
-        const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
-        s.progress = std::min(1.0, m_arcS / arcAbs);
+        if (m_job.staticHold) {
+            s.progress = std::min(1.0, m_dwellS / std::max(1e-6, m_job.durationS));
+        } else {
+            const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
+            s.progress = std::min(1.0, m_arcS / arcAbs);
+        }
     }
     std::lock_guard<std::mutex> l(m_mx);
     m_status = std::move(s);

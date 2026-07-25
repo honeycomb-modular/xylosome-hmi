@@ -117,11 +117,21 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
             j.lineBaseHz = req["line"].value("baseHz", 5000.0);
             j.lineTarget = req["line"].value("lines", 0.0);   // aspect-driven; wins over baseHz
         }
+        j.staticHold = req.value("static", false);
+        j.durationS  = req.value("durationS", 0.0);
         if (req.contains("profile") && req["profile"].is_array())
             j.profile = req["profile"].get<std::vector<double>>();
-        if (j.profile.size() < 2) { ack["ok"] = false; ack["err"] = "profile missing"; post = false; }
-        if (std::fabs(j.arcEndDeg - j.arcStartDeg) < 0.5) {
-            ack["ok"] = false; ack["err"] = "arc too small"; post = false;
+        if (j.staticHold) {
+            // A static pass has no sweep, so neither a velocity profile nor an
+            // arc means anything — it is bounded by time alone.
+            if (j.durationS <= 0.0) {
+                ack["ok"] = false; ack["err"] = "duration missing"; post = false;
+            }
+        } else {
+            if (j.profile.size() < 2) { ack["ok"] = false; ack["err"] = "profile missing"; post = false; }
+            if (std::fabs(j.arcEndDeg - j.arcStartDeg) < 0.5) {
+                ack["ok"] = false; ack["err"] = "arc too small"; post = false;
+            }
         }
     }
     else { post = false; ack["ok"] = false; ack["err"] = "unknown cmd"; }

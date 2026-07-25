@@ -36,6 +36,15 @@ struct ScanJob {
     double lineBaseHz   = 5000.0;
     double lineTarget   = 0.0;     // wanted lines over the arc; 0 = use lineBaseHz
     std::vector<double> profile;   // uniform samples, 0..1
+
+    // ── static hold ──────────────────────────────────────────────────────────
+    // The flange stays put and the camera scans lines anyway, so the pass is
+    // measured in SECONDS, not degrees — the arc that paces a normal scan has
+    // nothing to pace here. arcStartDeg is the pose to hold (the HMI sends the
+    // current position, so nothing moves). Every event the capture side sees —
+    // pass_start / pass_end / pass_active / the index pulse — is unchanged.
+    bool   staticHold  = false;
+    double durationS   = 0.0;      // pass length; required when staticHold
 };
 
 struct SeqCommand {
@@ -104,6 +113,7 @@ private:
     ScanJob m_job;
     int    m_pass = -1, m_passCount = 4;
     double m_arcS = 0.0;            // distance along arc within pass, deg
+    double m_dwellS = 0.0;          // elapsed time within pass, s (static hold)
     double m_setpoint = 0.0;        // current CSP target, output deg
     bool   m_spInit = false;        // adopt actual pos as setpoint on 1st OP cycle (no boot snap)
     double m_moveTarget = 0.0, m_moveVel = 0.0, m_moveVelMax = 10.0;
@@ -118,4 +128,5 @@ private:
     bool   m_pausing = false;
     double m_indexPulseLeft = 0.0;  // pass_index pulse timer, s
     bool   m_estopLatched = false;
+    double m_faultResetHoldS = 0.0; // ignore the drive's fault bit while a reset lands
 };
