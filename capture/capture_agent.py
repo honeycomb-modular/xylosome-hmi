@@ -278,7 +278,57 @@ def apply_startup_defaults():
           % (CAP_SYNC, "3 per-scan" if EXT_SYNC else "7 fixed"))
 
 # ---------- board (Sapera) ----------
-board_lock = threading.Lock()   # single grabber owner
+LIVE_STALE_S = 10.0   # a live session that has not shipped a frame this long is dead
+
+class BoardLock:
+    # Single grabber owner. A bare Lock told us nothing when it leaked: the
+    # refusal could only guess ("scan running?") and there was no way to see who
+    # actually held the board, so a stranded LIVE session meant every later LIVE
+    # said "board busy" until the whole agent was restarted.
+    #
+    # Two changes: the holder is recorded, and a holder that has stopped making
+    # progress can be asked to let go. We never STEAL the lock — two owners on
+    # one grabber is the exact thing it exists to prevent. The stale holder's
+    # socket is shut down instead, which unblocks it and lets its own finally
+    # release the board through the normal path.
+    def __init__(self):
+        self._lk = threading.Lock()
+        self.owner = None
+        self.since = 0.0
+        self.alive = None     # callable -> False once the holder has stalled
+        self.evict = None     # callable that makes the holder let go by itself
+
+    def acquire(self, who, alive=None, evict=None):
+        if not self._lk.acquire(blocking=False): return False
+        self.owner, self.since = who, time.time()
+        self.alive, self.evict = alive, evict
+        return True
+
+    def release(self):
+        self.owner = self.alive = self.evict = None
+        self.since = 0.0
+        try: self._lk.release()
+        except RuntimeError: pass
+
+    def status(self):
+        if not self.owner: return "free"
+        return "%s, held %.0fs" % (self.owner, time.time() - self.since)
+
+    def reap(self):
+        # Called by whoever was just refused: if the holder has stalled, poke it
+        # so it releases. Returns True if a reap was attempted.
+        if not self.owner or self.alive is None: return False
+        try:
+            if self.alive(): return False
+        except Exception:
+            pass
+        print("board: reaping stalled holder (%s)" % self.status())
+        if self.evict:
+            try: self.evict()
+            except Exception: pass
+        return True
+
+board_lock = BoardLock()
 
 _ccf_cache = {}
 def _ccf_for(lines, ext=EXT_SYNC):
@@ -386,6 +436,7 @@ def live_client(conn, addr):
     conn.sendall((json.dumps({"ev": "welcome", "version": "1.0",
                               "camera": read_state().get("model"), "sim": False}) + "\n").encode())
     rx = b""; streaming = False; width = 1024; max_hz = 30.0; grab = None; peak = 1e-6; have = False
+    last_ok = time.time()          # last frame actually shipped — the liveness signal
     conn.settimeout(0.005)
     try:
         while True:
@@ -400,9 +451,19 @@ def live_client(conn, addr):
                     if cmd == "live_start":
                         width = int(m.get("width", 1024)); max_hz = float(m.get("maxHz", 30))
                         if not streaming:
-                            if not board_lock.acquire(blocking=False):
-                                conn.sendall(b'{"ev":"error","text":"board busy (scan running?)"}\n'); continue
+                            if not board_lock.acquire(
+                                    "live %s:%s" % addr,
+                                    alive=lambda: (time.time() - last_ok) < LIVE_STALE_S,
+                                    evict=lambda: conn.shutdown(socket.SHUT_RDWR)):
+                                # Say who has it — the old message could only guess.
+                                reaped = board_lock.reap()
+                                conn.sendall((json.dumps({"ev": "error", "text":
+                                    "board busy (%s)%s" % (board_lock.status(),
+                                    " - stalled holder reaped, press LIVE again" if reaped else "")
+                                }) + "\n").encode())
+                                continue
                             have = True
+                            last_ok = time.time()
                             try: grab = Grabber(lines=LIVE_LINES, ext=False)  # live focus is always free-run
                             except Exception as e:
                                 board_lock.release(); have = False
@@ -416,7 +477,12 @@ def live_client(conn, addr):
             except socket.timeout: pass
             except OSError: break
             if not streaming: time.sleep(0.03); continue
-            try: img = grab.frame()
+            # Bounded, and aborted on timeout: frame() leaves a timed-out transfer
+            # running, which poisons the next arm. 64 free-run lines take ~2 ms, so
+            # 2 s is already absurdly generous — it just has to end.
+            try:
+                grab.arm()
+                img = grab.collect(timeout_ms=2000, abort=True)
             except Exception as e:
                 conn.sendall((json.dumps({"ev": "error", "text": "grab: " + str(e)}) + "\n").encode()); break
             # send ALL the (consecutive) lines of the short live frame — a fast,
@@ -434,6 +500,7 @@ def live_client(conn, addr):
                               "bytes": len(block), "focus": round(fn, 4), "tMs": int(time.time() * 1000)}) + "\n"
             try: conn.sendall(hdr.encode() + bytes(block))
             except OSError: break
+            last_ok = time.time()          # progress: this session is not stalled
             time.sleep(1.0 / max_hz)
     finally:
         if grab: grab.close()
@@ -526,8 +593,15 @@ def xylod_client():
         print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines,
                                                           "" if planned else " (no plannedLines)"))
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
-        if board_lock.acquire(blocking=False):
-            have = True
+        # A scan outranks a focus session: if LIVE has stranded the board, ask the
+        # stalled holder to let go and try once more, rather than silently
+        # skipping the artist's scan.
+        who = "capture seq %d" % seq
+        have = board_lock.acquire(who)
+        if not have and board_lock.reap():
+            time.sleep(0.3)
+            have = board_lock.acquire(who)
+        if have:
             try:
                 grab = Grabber(lines=lines)
                 print("CAPTURE seq %d board open (%s) %d lines%s"
@@ -536,7 +610,7 @@ def xylod_client():
                 print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
                 if EXT_SYNC: set_cam_external(False)
         else:
-            print("capture: board busy (live?), skipping seq %d" % seq); grab = None
+            print("capture: board busy (%s), skipping seq %d" % (board_lock.status(), seq)); grab = None
             if EXT_SYNC: set_cam_external(False)
 
     def close_board():
