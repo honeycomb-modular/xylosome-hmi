@@ -121,6 +121,17 @@ ApplicationWindow {
 
     // ── deletion confirm (design-true: white card, hairline, no drama) ──
     property int confirmMode: 0      // 0 none · 1 delete current · 2 empty quarantine
+
+    // Library range selection (shift+click). Bulk erase is deliberately two
+    // steps: select a run and reject it, then the existing "N rejected — delete"
+    // does the erase. Permanent deletion with no undo should not be one click.
+    property int libSelA: -1
+    property int libSelB: -1
+    readonly property int libSelLo: Math.min(libSelA, libSelB)
+    readonly property int libSelHi: Math.max(libSelA, libSelB)
+    readonly property int libSelCount:
+        (libSelA < 0 || libSelB < 0) ? 0 : (libSelHi - libSelLo + 1)
+    function libSelClear() { root.libSelA = -1; root.libSelB = -1 }
     function fmtGB(gb) { return gb >= 1 ? gb.toFixed(1) + " GB" : Math.round(gb * 1000) + " MB" }
 
     // transient reclaim report
@@ -952,11 +963,14 @@ ApplicationWindow {
         z: 45
 
         Column {
-            anchors.centerIn: parent
+            // Was centred and capped at 1024 wide with a 380 px waterfall, so it
+            // stayed postage-stamp sized however big the window got. Fills now —
+            // focus is judged on this image and nothing else here matters.
+            anchors { fill: parent; margins: 24 }
             spacing: 16
-            width: Math.min(parent.width - 96, 1024)
 
             RowLayout {
+                id: liveHeader
                 width: parent.width
                 Label {
                     text: qsTr("live · focus")
@@ -986,10 +1000,13 @@ ApplicationWindow {
                 }
             }
 
-            // waterfall — newest lines at the bottom
+            // waterfall — newest lines at the bottom. Takes every pixel the
+            // header, meter and error line do not need.
             Rectangle {
                 width: parent.width
-                height: 380
+                height: parent.height - liveHeader.height - liveMeter.height
+                        - parent.spacing * 2
+                        - (liveErr.visible ? liveErr.height + parent.spacing : 0)
                 color: "#000000"
                 border.width: 1
                 border.color: "#333333"
@@ -1005,6 +1022,7 @@ ApplicationWindow {
 
             // focus metric — the number that climbs as the lens gets there
             RowLayout {
+                id: liveMeter
                 width: parent.width
                 spacing: 16
                 Label {
@@ -1038,6 +1056,7 @@ ApplicationWindow {
             }
 
             Label {
+                id: liveErr
                 visible: Live.error !== ""
                 width: parent.width
                 wrapMode: Text.Wrap
@@ -1071,6 +1090,56 @@ ApplicationWindow {
                 font.letterSpacing: 1
             }
             Item { Layout.fillWidth: true }
+
+            // Bulk judging — appears only once a range is selected.
+            Label {
+                visible: root.libSelCount > 0
+                text: qsTr("%1 selected").arg(root.libSelCount)
+                color: root.ink
+                font.pixelSize: 11
+                rightPadding: 12
+            }
+            Label {
+                visible: root.libSelCount > 0
+                text: qsTr("reject")
+                color: root.chR
+                font.pixelSize: 11
+                font.underline: rejSelMouse.containsMouse
+                rightPadding: 12
+                MouseArea {
+                    id: rejSelMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        Sessions.setRejectedRange(root.libSelLo, root.libSelHi, true)
+                        root.libSelClear()
+                    }
+                }
+            }
+            Label {
+                visible: root.libSelCount > 0
+                text: qsTr("clear")
+                color: root.inkMuted
+                font.pixelSize: 11
+                font.underline: clrSelMouse.containsMouse
+                rightPadding: 12
+                MouseArea {
+                    id: clrSelMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.libSelClear()
+                }
+            }
+            Label {
+                visible: root.libSelCount === 0
+                text: qsTr("shift+click to select a range")
+                color: root.inkFaint
+                font.pixelSize: 11
+                rightPadding: 12
+            }
+
             Label {
                 text: qsTr("grid")
                 color: root.libraryTimeline ? root.inkFaint : root.ink
@@ -1156,6 +1225,16 @@ ApplicationWindow {
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                         }
+                        // in the shift+click range
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: root.libSelCount > 0
+                                     && gcell.index >= root.libSelLo
+                                     && gcell.index <= root.libSelHi
+                            color: "transparent"
+                            border.width: 3
+                            border.color: root.chR
+                        }
                     }
                     Label {
                         text: root.scanLabel(gcell.fileSeq)
@@ -1168,7 +1247,18 @@ ApplicationWindow {
                 }
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: { strip.currentIndex = gcell.index; root.libraryOpen = false }
+                    onClicked: function(mouse) {
+                        if (mouse.modifiers & Qt.ShiftModifier) {
+                            // first shift+click anchors, the next extends the run
+                            if (root.libSelA < 0) root.libSelA = strip.currentIndex >= 0
+                                                                 ? strip.currentIndex : gcell.index
+                            root.libSelB = gcell.index
+                            return
+                        }
+                        root.libSelClear()
+                        strip.currentIndex = gcell.index
+                        root.libraryOpen = false
+                    }
                 }
             }
         }

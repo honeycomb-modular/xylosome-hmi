@@ -21,7 +21,12 @@ LiveLink::LiveLink(QObject *parent)
     connect(&m_sock, &QTcpSocket::connected, this, [this] {
         emit connectedChanged();
         sendJson(QByteArrayLiteral("{\"cmd\":\"hello\",\"client\":\"suite\"}"));
-        sendJson(QByteArrayLiteral("{\"cmd\":\"live_start\",\"width\":1024,\"maxHz\":30}"));
+        // 4096 of the sensor's 8192 columns, not 1024. The agent decimates with
+        // img[:, ::step] where step = 8192/width, so asking for 1024 threw away
+        // seven pixels in eight BEFORE anything was drawn — and the focus metric
+        // is computed on that same decimated block, so the number you focus by
+        // was aliased too. 64 lines x 4096 at 30 Hz is ~7.5 MB/s over loopback.
+        sendJson(QByteArrayLiteral("{\"cmd\":\"live_start\",\"width\":4096,\"maxHz\":30}"));
     });
     connect(&m_sock, &QTcpSocket::errorOccurred, this,
             [this](QAbstractSocket::SocketError) {

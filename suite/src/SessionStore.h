@@ -103,6 +103,11 @@ public:
 
     Q_INVOKABLE void setRating(int row, int rating);
     Q_INVOKABLE void setRejected(int row, bool rejected);
+    // Bulk judging: mark a contiguous run rejected in one go, so a bad batch can
+    // be quarantined with one gesture instead of X'd one scan at a time. The
+    // erase itself still goes through emptyQuarantine() — deletion is permanent
+    // and has no undo, so it stays a separate, deliberate second step.
+    Q_INVOKABLE int  setRejectedRange(int fromRow, int toRow, bool rejected);
     Q_INVOKABLE void setNote(int row, const QString &note);
     Q_INVOKABLE void setMetaPlacement(int row, double x, double y, double w);
     Q_INVOKABLE void setMetaWhite(int row, bool white);

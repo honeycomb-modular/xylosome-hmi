@@ -142,9 +142,14 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
     g_object_unref(rot);
     const int pxW = vips_image_get_width(v8);   // oriented (display) dims
     const int pxH = vips_image_get_height(v8);
+    // The pyramid already reaches 1:1 (depth ONEPIXEL), so the deepest level is
+    // full sensor resolution — what softened it was the codec. Q=90 with vips's
+    // default 4:2:0 subsampling smears exactly the high-frequency detail focus
+    // is judged by, which made 1:1 useless for checking a lens. Q=95 with
+    // subsampling off costs roughly a third more disk and nothing in speed.
     int r = vips_dzsave(v8, base.toUtf8().constData(),
                         "layout", VIPS_FOREIGN_DZ_LAYOUT_DZ,
-                        "suffix", ".jpg[Q=90]",
+                        "suffix", ".jpg[Q=95,subsample_mode=off]",
                         "tile_size", 256,
                         "overlap", 0,
                         "depth", VIPS_FOREIGN_DZ_DEPTH_ONEPIXEL,

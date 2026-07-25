@@ -947,6 +947,31 @@ void SessionStore::setRejected(int row, bool rejected)
     touchRow(row);
 }
 
+int SessionStore::setRejectedRange(int fromRow, int toRow, bool rejected)
+{
+    if (fromRow > toRow)
+        std::swap(fromRow, toRow);
+    fromRow = qMax(0, fromRow);
+    toRow   = qMin(toRow, int(m_sessions.size()) - 1);
+
+    int n = 0;
+    for (int row = fromRow; row <= toRow; ++row) {
+        // A scan still being written is not a judgement candidate — and
+        // emptyQuarantine() does not re-check, so keeping it out of quarantine
+        // here is what stops a live scan being deleted underneath itself.
+        if (m_sessions[row].state == QLatin1String("live"))
+            continue;
+        if (m_sessions[row].rejected == rejected)
+            continue;
+        m_sessions[row].rejected = rejected;
+        touchRow(row);
+        ++n;
+    }
+    qInfo() << "[sessions]" << (rejected ? "rejected" : "un-rejected") << n
+            << "session(s) in rows" << fromRow << "-" << toRow;
+    return n;
+}
+
 void SessionStore::setNote(int row, const QString &note)
 {
     if (row < 0 || row >= m_sessions.size())
