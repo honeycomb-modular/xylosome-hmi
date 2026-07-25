@@ -43,9 +43,8 @@ Item {
         id: jogFocus
         index: 0
         targets: [dialProxy, btnEnable, btnSetHome]
-                 .concat(modeStrip.focusTargets)
                  .concat(faultChip.focusTargets)
-                 .concat([goZeroBtn, settingsBtn])
+                 .concat([goZeroBtn, settingsBtn, modesBtn])
         onActivated: function(item) {
             if (item === dialProxy) root.takeDial()
             else if (item.clicked)  item.clicked()
@@ -90,11 +89,6 @@ Item {
     Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── Axis dial ───────────────────────────────────────────────────────────────
-    FocusIndicator {
-        inset: true
-        target: (jogFocus.current === dialProxy && !root.jogging) ? dialProxy : null
-    }
-
     Item {
         id: axisDial
         readonly property int cx: 110
@@ -105,6 +99,13 @@ Item {
         width: 220; height: 220
 
         Item { id: dialProxy; anchors.fill: parent }
+
+        // Must be declared alongside its target: FocusIndicator reads target.x/y
+        // raw, so it only lines up when the two share a parent.
+        FocusIndicator {
+            inset: true
+            target: (jogFocus.current === dialProxy && !root.jogging) ? dialProxy : null
+        }
 
         // Ring + ticks
         Canvas {
@@ -225,21 +226,24 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
     }
 
-    ModeStrip {
-        id: modeStrip
-        mode: "jog"; controller: jogFocus
+    TerminalButton {
+        id: modesBtn
+        controller: jogFocus
         x: Theme.marginX + 130 + 18
-        anchors { bottom: parent.bottom; bottomMargin: 27 }
-        onSwitchTo: function(page) {
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[modes]"; active: false
+        onClicked: {
             root.releaseDial()
             root.StackView.view.replace(root.StackView.view.currentItem,
-                                        Qt.resolvedUrl(page))
+                                        Qt.resolvedUrl("ScreenModes.qml"),
+                                        { fromPage: "ScreenJog.qml" })
         }
     }
     FaultChip {
         id: faultChip
         controller: jogFocus
-        anchors { left: modeStrip.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
+        anchors { left: modesBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // No [execute] on this page — jogging is not a capture, so that slot stays

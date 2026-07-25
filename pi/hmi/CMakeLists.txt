@@ -64,7 +64,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenTimed.qml
         qml/ScreenStatic.qml
         qml/ScreenJog.qml
-        qml/ModeStrip.qml
+        qml/ScreenModes.qml
         qml/FaultChip.qml
         qml/ScreenSettings.qml
         qml/ScreenMetadata.qml

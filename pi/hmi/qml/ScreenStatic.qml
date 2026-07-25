@@ -89,9 +89,8 @@ Item {
         id: staticFocus
         index: 0
         targets: [frameProxy, timelineProxy]
-                 .concat(modeStrip.focusTargets)
                  .concat(faultChip.focusTargets)
-                 .concat([homeBtn, settingsBtn])
+                 .concat([homeBtn, settingsBtn, modesBtn])
         onActivated: function(item) {
             if (item === frameProxy)          root.enterEditing("frame")
             else if (item === timelineProxy)  root.enterEditing("span")
@@ -194,11 +193,6 @@ Item {
     Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── The frame — drawn at its true proportions ───────────────────────────────
-    FocusIndicator {
-        inset: true
-        target: (staticFocus.current === frameProxy && !staticFocus.editing) ? frameProxy : null
-    }
-
     Item {
         id: frameBox
         x: Theme.marginX; y: 84
@@ -206,27 +200,79 @@ Item {
 
         Item { id: frameProxy; anchors.fill: parent }
 
-        // 8192 × lines, scaled to fit — so a tall image looks tall.
-        Rectangle {
-            id: framePreview
-            readonly property real fit: Math.min((frameBox.width  - 40) / root.sensorPx,
-                                                 (frameBox.height - 40) / root.lines)
-            width:  Math.max(4, root.sensorPx * fit)
-            height: Math.max(4, root.lines    * fit)
-            anchors.centerIn: parent
-            color: Theme.accent
-            opacity: root.editTarget === "frame" ? 0.22 : 0.12
-            border.width: root.editTarget === "frame" ? 2 : 1
-            border.color: root.editTarget === "frame" ? Theme.danger : Theme.accent
+        // Must be declared alongside its target: FocusIndicator reads target.x/y
+        // raw, so it only lines up when the two share a parent.
+        FocusIndicator {
+            inset: true
+            target: (staticFocus.current === frameProxy && !staticFocus.editing) ? frameProxy : null
         }
-        // Progress fill — the frame builds up line by line as it scans.
-        Rectangle {
-            visible: root.execState !== "idle"
-            width:  framePreview.width
-            height: Math.max(1, framePreview.height * root.progressFrac)
-            x: framePreview.x
-            y: framePreview.y
-            color: Theme.accent; opacity: 0.5
+
+        // The frame at its true proportions: the scan direction runs HORIZONTALLY
+        // (one scanned line per column) and the sensor's fixed 8192 px vertically,
+        // matching how the image actually comes off the rig.
+        Item {
+            id: framePreview
+            readonly property real fit: Math.min((frameBox.width  - 40) / root.lines,
+                                                 (frameBox.height - 40) / root.sensorPx)
+            width:  Math.max(4, root.lines    * fit)
+            height: Math.max(4, root.sensorPx * fit)
+            anchors.centerIn: parent
+
+            // Same line palette as the scan page's rainbow void (ScreenScan's
+            // drawCanvas) — kept local rather than shared, so nothing here can
+            // change how the reference page draws. Rotated to match the frame:
+            // vertical stripes, because each stripe IS one scanned line.
+            Canvas {
+                anchors.fill: parent
+                property real prog:  root.execState === "idle" ? 1.0 : root.progressFrac
+                property int  nline: root.lines
+                property int  cmode: Motor.colorMode
+                onProgChanged:   requestPaint()
+                onNlineChanged:  requestPaint()
+                onCmodeChanged:  requestPaint()
+                onWidthChanged:  requestPaint()
+                onHeightChanged: requestPaint()
+                Component.onCompleted: requestPaint()
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    var palette = [
+                        "#C0392B","#E67E22","#D4AC0D","#7D6608","#1E8449",
+                        "#117A65","#1A5276","#6C3483","#922B21","#784212",
+                        "#F1948A","#FAD7A0","#A9DFBF","#85C1E9","#D2B4DE",
+                        "#E74C3C","#E59866","#82E0AA","#5DADE2","#AF7AC5",
+                        "#CB4335","#CA6F1E","#1D8348","#1A5276","#7D3C98",
+                        "#F0B27A","#A3E4D7","#AED6F1","#F9E79F","#D5D8DC",
+                        "#884EA0","#2E86C1","#138D75","#B7950B","#A04000",
+                        "#C0392B","#566573","#1B4F72","#0E6655","#6E2F1A"
+                    ]
+                    var stride = 4          // 3 px line + 1 px gap
+                    var lim = width * prog  // builds up left→right while scanning
+                    ctx.save()
+                    ctx.globalAlpha = 0.9
+                    var bwMode = (cmode === 1)
+                    for (var rx = 0; rx < lim; rx += stride) {
+                        var li = Math.floor(rx / stride)
+                        var ci = ((li * 1664525 + 1013904223) ^ (li * 22695477)) % palette.length
+                        if (ci < 0) ci += palette.length
+                        if (bwMode) {
+                            var gray = 18 + (ci * 3) % 55
+                            ctx.fillStyle = "rgb(" + gray + "," + gray + "," + gray + ")"
+                        } else {
+                            ctx.fillStyle = palette[ci]
+                        }
+                        ctx.fillRect(rx, 0, 3, height)
+                    }
+                    ctx.restore()
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: "transparent"
+                border.width: 1
+                border.color: root.editTarget === "frame" ? Theme.accent : Theme.border
+            }
         }
     }
 
@@ -245,8 +291,8 @@ Item {
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {
-            text: root.sensorPx + " \xD7 " + root.fmtLines(root.lines) + " px   ·   1 : "
-                  + (root.lines / root.sensorPx).toFixed(2)
+            text: root.fmtLines(root.lines) + " \xD7 " + root.sensorPx + " px   ·   "
+                  + (root.lines / root.sensorPx).toFixed(2) + " : 1"
             color: Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }
@@ -398,21 +444,24 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
     }
 
-    ModeStrip {
-        id: modeStrip
-        mode: "static"; controller: staticFocus
+    TerminalButton {
+        id: modesBtn
+        controller: staticFocus
         x: Theme.marginX + 130 + 18
-        anchors { bottom: parent.bottom; bottomMargin: 27 }
-        onSwitchTo: function(page) {
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[modes]"; active: false
+        onClicked: {
             root.abortRun()
             root.StackView.view.replace(root.StackView.view.currentItem,
-                                        Qt.resolvedUrl(page))
+                                        Qt.resolvedUrl("ScreenModes.qml"),
+                                        { fromPage: "ScreenStatic.qml" })
         }
     }
     FaultChip {
         id: faultChip
         controller: staticFocus
-        anchors { left: modeStrip.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
+        anchors { left: modesBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     Rectangle {

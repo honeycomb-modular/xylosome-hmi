@@ -20,8 +20,12 @@ ChoiceList {
           min: 3500, max: 38314, step: 100, unit: "Hz" },
         { key: "tdi.stages", value: "" + Camera.tdiStages,
           options: ["16", "32", "48", "64", "80", "96"] },
+        // Full analog range the camera accepts (capture/PROTOCOL.md: -10..+10 dB,
+        // enforced in apply_set). A range row rather than a cycle list — 21 stops
+        // is far too many to click through, and the old ["0","3","6"] could not
+        // reach the negative half at all. Startup default is -6.
         { key: "gain",       value: Camera.gain,
-          options: ["0", "3", "6"] },
+          min: -10, max: 10, step: 1, unit: "dB" },
         { key: "scan.dir",   value: Camera.scanDir,
           options: ["forward", "reverse"] },
         { key: "link",       value: Camera.clm }          // read-only (bit depth/taps)

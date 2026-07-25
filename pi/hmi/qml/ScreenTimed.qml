@@ -1,5 +1,5 @@
 // ScreenTimed.qml — timed / long-duration field scan.
-// One of the four sibling capture pages (see ModeStrip.qml) — not a submenu.
+// One of the four sibling capture pages (see ScreenModes.qml) — not a submenu.
 //
 // Unlike the program scan (velocity curve, seconds long), this mode scans a
 // fixed FOV arc at a CONSTANT crawl over a chosen span — a few seconds up to
@@ -82,9 +82,8 @@ Item {
     FocusController {
         id: timedFocus
         targets: [fovCircle, timelineProxy]
-                 .concat(modeStrip.focusTargets)
                  .concat(faultChip.focusTargets)
-                 .concat([homeBtn, settingsBtn])
+                 .concat([homeBtn, settingsBtn, modesBtn])
         index: 1   // start on the timeline
         onActivated: function(item) {
             if (item === fovCircle)          root.enterDialEditing()
@@ -554,21 +553,24 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
     }
 
-    ModeStrip {
-        id: modeStrip
-        mode: "timed"; controller: timedFocus
+    TerminalButton {
+        id: modesBtn
+        controller: timedFocus
         x: Theme.marginX + 130 + 18
-        anchors { bottom: parent.bottom; bottomMargin: 27 }
-        onSwitchTo: function(page) {
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[modes]"; active: false
+        onClicked: {
             root.abortRun()
             root.StackView.view.replace(root.StackView.view.currentItem,
-                                        Qt.resolvedUrl(page))
+                                        Qt.resolvedUrl("ScreenModes.qml"),
+                                        { fromPage: "ScreenTimed.qml" })
         }
     }
     FaultChip {
         id: faultChip
         controller: timedFocus
-        anchors { left: modeStrip.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
+        anchors { left: modesBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // Red pointer line: execute → right screen edge (points at pendant BTN1).

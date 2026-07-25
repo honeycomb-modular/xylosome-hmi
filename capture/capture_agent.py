@@ -186,7 +186,11 @@ def apply_set(key, value):
 # is 37000, not 38000** — below the ACHIEVED rate, with margin. Nothing enforces
 # that across the two machines, and a trigger above what the camera can service
 # is dropped with no error anywhere.
-STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "38000"), ("tdi.stages", "48")]
+#
+# gain -6 dB: the camera powers up at 0 and that is hotter than wanted, so it is
+# asserted here rather than being re-dialled by hand every session.
+STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "38000"), ("tdi.stages", "48"),
+               ("gain", "-6")]
 
 def _startup_ok(key, want, got):
     if got is None: return False
@@ -197,6 +201,8 @@ def _startup_ok(key, want, got):
     # 5 Hz tolerance called that last one FAILED when it had taken fine, so scale
     # the tolerance with the requested rate.
     if key == "line.rate":  return abs(float(got) - float(want)) < max(5.0, float(want) * 0.001)
+    # gain reads back with a decimal ("-6.0"), so compare as a number
+    if key == "gain":       return abs(float(got) - float(want)) < 0.05
     return True
 
 def apply_startup_defaults():

@@ -132,8 +132,7 @@ Item {
     FocusController {
         id: scanFocus
         targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn,
-                  btnSavePreset, btnPresets, btnColorMode]
-                 .concat(modeStrip.focusTargets)
+                  btnSavePreset, btnPresets, btnColorMode, modesBtn]
                  .concat(faultChip.focusTargets)
         index: 5   // default focus on [home/ready]
         onActivated: function(item) {
@@ -1203,22 +1202,23 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
     }
 
-    // Sibling capture modes — in the empty middle of the bottom bar, so the
-    // composed lower half above is untouched.
-    ModeStrip {
-        id: modeStrip
-        mode: "scan"; controller: scanFocus
+    // One button, not four: the mode list is its own page, so this bar stays
+    // quiet and the encoder ring stays short.
+    TerminalButton {
+        id: modesBtn
+        controller: scanFocus
         x: Theme.marginX + 130 + 18
-        anchors { bottom: parent.bottom; bottomMargin: 27 }
-        onSwitchTo: function(page) {
-            root.StackView.view.replace(root.StackView.view.currentItem,
-                                        Qt.resolvedUrl(page))
-        }
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[modes]"; active: false
+        onClicked: root.StackView.view.replace(root.StackView.view.currentItem,
+                                               Qt.resolvedUrl("ScreenModes.qml"),
+                                               { fromPage: "ScreenScan.qml" })
     }
     FaultChip {
         id: faultChip
         controller: scanFocus
-        anchors { left: modeStrip.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
+        anchors { left: modesBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // Red pointer line: right edge of execute → right screen edge, at button centre.
