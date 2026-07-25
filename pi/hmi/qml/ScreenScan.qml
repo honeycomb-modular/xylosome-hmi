@@ -15,6 +15,7 @@
 //   Double-tap canvas   → insert node on curve at that x
 //   Double-tap node     → delete it  (endpoints immune, minimum 2 nodes)
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import XylosomeHMI 1.0
@@ -22,6 +23,15 @@ import XylosomeHMI 1.0
 Item {
     id: root
     width: 960; height: 540
+
+    // MotorModel persists the scan program (colorMode, boxW, nodes) but not the
+    // dial hands, so the arc START came back at 0 every boot and only its WIDTH
+    // survived, indirectly via boxW. Layout is untouched — this is state only.
+    Settings {
+        category: "scan"
+        property alias hand1Angle: root.hand1Angle
+        property alias hand2Angle: root.hand2Angle
+    }
 
     // ── Layout constants ──────────────────────────────────────────────────────
     readonly property int canvasX:    0

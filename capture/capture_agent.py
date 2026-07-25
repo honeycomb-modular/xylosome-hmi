@@ -192,6 +192,33 @@ def apply_set(key, value):
 STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "38000"), ("tdi.stages", "48"),
                ("gain", "-6")]
 
+# STARTUP_CAM above is only the FACTORY position. Anything the artist changes
+# from the pendant is remembered here and wins over it on the next start —
+# otherwise every agent restart silently undid their tuning, which made the
+# camera rows on the HMI feel like they had not taken.
+CAM_STATE_FILE = os.path.join(CAPTURE_DIR, "camera_settings.json")
+
+def load_saved_cam():
+    try:
+        with open(CAM_STATE_FILE) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def save_cam_setting(key, value):
+    d = load_saved_cam()
+    d[key] = value
+    try:
+        # write-then-rename: a half-written file would otherwise be read back as
+        # "no saved settings" and quietly drop everything
+        tmp = CAM_STATE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(d, f, indent=1, sort_keys=True)
+        os.replace(tmp, CAM_STATE_FILE)
+    except Exception as e:
+        print("  [warn] cannot persist camera settings: %s" % e)
+
 def _startup_ok(key, want, got):
     if got is None: return False
     if key == "scan.dir":   return str(want).lower() in str(got).lower()
@@ -234,15 +261,19 @@ def apply_startup_defaults():
     # (no pixel clock) rather than as any error here.
     print("    clm reply: %r" % (r_clm,))
     print("    sot reply: %r" % (r_sot,))
-    for key, val in STARTUP_CAM:
+    saved = load_saved_cam()
+    for key, factory in STARTUP_CAM:
+        val = str(saved[key]) if key in saved else factory
         got = None
         for _ in range(3):
             apply_set(key, val)
             got = read_state().get(key)
             if _startup_ok(key, val, got): break
             time.sleep(0.3)
-        print("  startup %-11s= %-8s -> %s%s"
-              % (key, val, got, "" if _startup_ok(key, val, got) else "  (FAILED)"))
+        print("  startup %-11s= %-8s -> %s%s%s"
+              % (key, val, got,
+                 "  (saved)" if key in saved else "",
+                 "" if _startup_ok(key, val, got) else "  (FAILED)"))
     print("  startup sync       = %-8s (camera sem %s)"
           % (CAP_SYNC, "3 per-scan" if EXT_SYNC else "7 fixed"))
 
@@ -443,6 +474,7 @@ def cam_client(conn, addr):
             elif cmd == "set":
                 key, val = m.get("key"), m.get("value")
                 ok, note = apply_set(key, val)
+                if ok: save_cam_setting(key, val)   # survives the next agent start
                 print("  set %s=%s -> ok=%s (%s)" % (key, val, ok, note))
                 conn.sendall((json.dumps({"ack": "set", "ok": ok, "key": key, "value": val, "note": note}) + "\n").encode())
                 if ok: _bcast(dict({"ev": "state"}, **read_state()))

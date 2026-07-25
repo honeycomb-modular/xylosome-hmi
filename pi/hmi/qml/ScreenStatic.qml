@@ -14,6 +14,7 @@
 // arc), so nothing repositions. It clamps the rate at line_max_hz and reports
 // the real total back as plannedLines — mirrored here as the "clamped" warning.
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import XylosomeHMI 1.0
@@ -21,6 +22,15 @@ import XylosomeHMI 1.0
 Item {
     id: root
     width: 960; height: 540
+
+    // Switching mode destroys this page (the pages replace each other), so
+    // without this the frame and span reset every time you looked at another
+    // mode — let alone across a reboot.
+    Settings {
+        category: "static"
+        property alias lines:       root.lines
+        property alias durationSec: root.durationSec
+    }
 
     // ── Frame definition ────────────────────────────────────────────────────────
     readonly property int sensorPx: 8192          // the fixed sensor axis

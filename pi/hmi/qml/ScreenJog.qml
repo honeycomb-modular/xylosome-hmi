@@ -12,6 +12,7 @@
 // right, primary bottom bar. The execute slot is deliberately EMPTY — jogging
 // is not a capture — so there is no red pointer line either.
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import XylosomeHMI 1.0
@@ -19,6 +20,11 @@ import XylosomeHMI 1.0
 Item {
     id: root
     width: 960; height: 540
+
+    Settings {
+        category: "jog"
+        property alias stepIdx: root.stepIdx
+    }
 
     // ── Jog state ───────────────────────────────────────────────────────────────
     property bool jogging:  false          // dial taken: turning moves the axis

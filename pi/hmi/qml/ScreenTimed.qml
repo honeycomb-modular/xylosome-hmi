@@ -13,6 +13,7 @@
 // model floors at ~1°/s, so a true multi-hour crawl needs xylod/servo work —
 // the page still drives correctly offline and sends the right target velocity.
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import XylosomeHMI 1.0
@@ -20,6 +21,15 @@ import XylosomeHMI 1.0
 Item {
     id: root
     width: 960; height: 540
+
+    // The FOV and the span are the whole scan definition here, and the page is
+    // destroyed on every mode switch, so they have to outlive it.
+    Settings {
+        category: "timed"
+        property alias hand1Angle:  root.hand1Angle
+        property alias hand2Angle:  root.hand2Angle
+        property alias durationSec: root.durationSec
+    }
 
     // ── Scan definition ─────────────────────────────────────────────────────────
     property real hand1Angle: -45     // FOV start (deg)
