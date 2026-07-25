@@ -90,9 +90,43 @@ frame grabber.
    enforces the relationship, so moving either one silently re-opens this.
 2. **TDI wants lockstep.** TDI integrates while the image moves across the
    sensor — subject motion and line rate must stay in step or the image smears
-   beyond the *intentional* fringing. This is the encoder-echo / locked-mode
-   open item on the architecture diagram (EL5152 is already in the segment for
-   it). Until that's built, treat high-TDI-stage configs as experiments.
+   beyond the *intentional* fringing, and the smear scales with the stage count:
+   a given velocity error costs ~6x more at 96 stages than at 16. Note the
+   trigger is locked to *commanded* motion (the EL2521 simulates an encoder from
+   the curve), not measured shaft position — so the servo's following error, not
+   the camera, sets the practical stage ceiling. That is what the encoder-echo /
+   locked-mode open item addresses (EL5152 is already in the segment for it).
+
+## TDI stages — what changes and what doesn't (manual, checked 2026-07-24)
+
+`stg` takes 16/32/48/64/80/96 (factory 96; the HS-82 model halves these).
+
+- **Sensitivity scales with stages** — manual §4.2 describes `stg` as adjusting
+  "the sensitivity level" and nothing else. Expect to rebalance gain after a
+  change: 48→96 is roughly +1 stop, 48→16 roughly −1.6.
+- **Max line rate does NOT change with stages.** The TDI-mode help screen prints
+  `ssf 3499.87-68610.6 Hz` alongside all six `stg` values, unqualified, and §4.2
+  mentions no rate penalty. So the 50000 ceiling holds at any stage count.
+  (Beware: **Area mode** reports `ssf 1-6169.03 Hz` — a different mode, not a
+  contradiction. `clm`/`sot` changes could move the range; stages don't.)
+- **The old "48 stages is best" result predates the trigger being fixed.** It was
+  measured in free-run, when the terminal's ramp meant the line rate never
+  tracked the curve — so high stage counts were being punished by sync error
+  that no longer exists. Worth re-testing 64/80/96.
+
+### Gain is stored PER CCD DIRECTION
+
+Manual §4.3.3: analog gain, analog offset, digital gain, digital offset,
+background subtract and pixel coefficients are **stored separately for forward
+and reverse**, and are swapped in automatically when `scd` changes. So any gain
+or flat-field calibration is only valid for the direction it was done in, and a
+direction change will appear to "reset" gain when it has really loaded the other
+set. `STARTUP_CAM` asserts `scan.dir` on every agent start — set direction
+first, calibrate second.
+
+(`scd 2` also exists: direction taken from Camera Link **CC3**, i.e. the grabber
+tells the camera which way it is going. Unused — direction is resolved at the
+grabber's shaft-encoder decode instead.)
 
 ## Capture agent — BUILT (`capture/capture_agent.py`), not future
 
