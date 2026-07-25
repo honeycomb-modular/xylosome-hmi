@@ -129,6 +129,28 @@ void Sequencer::cycle(double dt) {
             m_bk.setLineHz(0.0);
             m_bk.setPassActive(false);
             if (m_st != St::Estop && m_st != St::Fault) {
+                // Abort, not vanish. Stop used to go straight to Idle without
+                // ever closing the pass, so the capture side saw the sequence
+                // disappear and dropped the grab it was holding — every line
+                // already scanned was lost, even though its pass_end path
+                // crops and saves a partial frame perfectly well. Emitting the
+                // same events a natural end emits means the capture agent
+                // needs no special case for an abort.
+                const bool inSeq = (m_st == St::SeqFilter || m_st == St::SeqReposition
+                                 || m_st == St::SeqSettle || m_st == St::SeqRun
+                                 || m_st == St::SeqPaused);
+                if (inSeq) {
+                    char b[96];
+                    if (m_pass >= 0 && (m_st == St::SeqRun || m_st == St::SeqPaused)) {
+                        std::snprintf(b, sizeof b,
+                            "{\"ev\":\"pass_end\",\"pass\":%d,\"tMs\":%lld}", m_pass, nowMs());
+                        event(b);
+                    }
+                    std::snprintf(b, sizeof b, "{\"ev\":\"seq_done\",\"passes\":%d}",
+                                  m_pass >= 0 ? m_pass + 1 : 0);
+                    event(b);
+                    LOGI("seq: aborted during pass %d — partial pass closed", m_pass);
+                }
                 startMove(m_setpoint, m_moveVelMax);   // decel-in-place via trapezoid
                 m_st = St::Idle;
                 m_pass = -1;

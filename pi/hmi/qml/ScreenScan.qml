@@ -143,6 +143,7 @@ Item {
         id: scanFocus
         targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn,
                   btnSavePreset, btnPresets, btnColorMode, modesBtn]
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat(faultChip.focusTargets)
         index: 5   // default focus on [home/ready]
         onActivated: function(item) {
@@ -1300,6 +1301,29 @@ Item {
                 if (Beckhoff.connected) Beckhoff.resume()
                 else playheadTimer.start()
             }
+        }
+    }
+
+    // [abort] — only while a scan is live. Ends the pass instead of abandoning
+    // it, so the lines already taken are cropped and saved rather than dropped.
+    // Distinct from [home], which also drives the axis back to zero.
+    TerminalButton {
+        id: abortBtn
+        controller: scanFocus
+        visible: root.execState !== "idle"
+        anchors { right: parent.right; rightMargin: 18 + (130 + 18) * 2; bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[abort]"
+        textColor: Theme.danger
+        onClicked: {
+            if (Beckhoff.connected) Beckhoff.stop()
+            playheadTimer.stop()
+            root.isPlaying    = false
+            root.execState    = "idle"
+            root.blinkVisible = true
+            root.playheadX    = -1
+            root.inMultiPass  = false
+            root.currentPass  = 0
         }
     }
 

@@ -99,6 +99,7 @@ Item {
         id: staticFocus
         index: 0
         targets: [frameProxy, timelineProxy]
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat(faultChip.focusTargets)
                  .concat([homeBtn, settingsBtn, modesBtn])
         onActivated: function(item) {
@@ -500,6 +501,21 @@ Item {
                 else simTimer.start()
                 root.execState = "running"; root.blinkVisible = true
             }
+        }
+    }
+
+    // Only while running: closes the pass so the lines already scanned are kept.
+    TerminalButton {
+        id: abortBtn
+        controller: staticFocus
+        visible: root.execState !== "idle"
+        anchors { right: parent.right; rightMargin: 18 + (130 + 18) * 2; bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[abort]"
+        textColor: Theme.danger
+        onClicked: {
+            if (Beckhoff.connected) Beckhoff.stop()
+            root.abortRun()
         }
     }
 

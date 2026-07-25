@@ -92,6 +92,7 @@ Item {
     FocusController {
         id: timedFocus
         targets: [fovCircle, timelineProxy]
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat(faultChip.focusTargets)
                  .concat([homeBtn, settingsBtn, modesBtn])
         index: 1   // start on the timeline
@@ -612,6 +613,21 @@ Item {
                 root.execState = "running"
                 root.blinkVisible = true
             }
+        }
+    }
+
+    // Only while running: closes the pass so the lines already scanned are kept.
+    TerminalButton {
+        id: abortBtn
+        controller: timedFocus
+        visible: root.execState !== "idle"
+        anchors { right: parent.right; rightMargin: 18 + (130 + 18) * 2; bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[abort]"
+        textColor: Theme.danger
+        onClicked: {
+            if (Beckhoff.connected) Beckhoff.stop()
+            root.abortRun()
         }
     }
 
