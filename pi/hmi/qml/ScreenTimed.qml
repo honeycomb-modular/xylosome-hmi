@@ -261,7 +261,6 @@ Item {
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── FOV dial ────────────────────────────────────────────────────────────────
     FocusIndicator {
@@ -541,7 +540,6 @@ Item {
     }
 
     // ── Bottom bar — [settings] left · modes · [home] [execute] right ───────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: settingsBtn

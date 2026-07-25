@@ -45,7 +45,6 @@ Item {
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── The modes ─────────────────────────────────────────────────────────────
     NavRow {
@@ -87,7 +86,6 @@ Item {
     }
 
     // ── Bottom bar ────────────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: backBtn

@@ -190,7 +190,6 @@ Item {
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── The frame — drawn at its true proportions ───────────────────────────────
     Item {
@@ -432,7 +431,6 @@ Item {
     }
 
     // ── Bottom bar ──────────────────────────────────────────────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
 
     TerminalButton {
         id: settingsBtn
