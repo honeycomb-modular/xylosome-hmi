@@ -140,7 +140,16 @@ def apply_set(key, value):
 # Camera settings pushed on agent startup, overriding whatever the camera
 # powered up with. Forward scan direction is markedly sharper on the bench;
 # 48 TDI stages forward is the current best (supersedes the old 16-stage note).
-STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "8500"), ("tdi.stages", "48")]
+# line.rate is 50000, not the old free-run 8500: under ext sync the camera's own
+# rate no longer sets the scan geometry (the EL2521 emit does) — it is only the
+# readout CEILING, and a trigger arriving before the previous line is read out is
+# silently dropped. 50000 is xylod's `line_max_hz`, i.e. the fastest trigger it
+# will ever emit, so the camera can service anything the curve asks for and no
+# per-curve tuning is needed. Verified free: 20000 vs 50000 are indistinguishable
+# in brightness, because under `sem 3` the EXSYNC period sets exposure, not ssf.
+# Camera hard limit is 68610 Hz in this 8-bit 8-tap mode (~34 kHz at 12-bit), so
+# raising `line_max_hz` above 50000 means raising this too — keep them equal.
+STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "50000"), ("tdi.stages", "48")]
 
 def _startup_ok(key, want, got):
     if got is None: return False
