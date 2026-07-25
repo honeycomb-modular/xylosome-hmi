@@ -1,5 +1,5 @@
 // ScreenTimed.qml — timed / long-duration field scan.
-// Reached from ScreenCapture → [timed] tab.
+// One of the four sibling capture pages (see ScreenModes.qml) — not a submenu.
 //
 // Unlike the program scan (velocity curve, seconds long), this mode scans a
 // fixed FOV arc at a CONSTANT crawl over a chosen span — a few seconds up to
@@ -13,6 +13,7 @@
 // model floors at ~1°/s, so a true multi-hour crawl needs xylod/servo work —
 // the page still drives correctly offline and sends the right target velocity.
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import XylosomeHMI 1.0
@@ -20,6 +21,15 @@ import XylosomeHMI 1.0
 Item {
     id: root
     width: 960; height: 540
+
+    // The FOV and the span are the whole scan definition here, and the page is
+    // destroyed on every mode switch, so they have to outlive it.
+    Settings {
+        category: "timed"
+        property alias hand1Angle:  root.hand1Angle
+        property alias hand2Angle:  root.hand2Angle
+        property alias durationSec: root.durationSec
+    }
 
     // ── Scan definition ─────────────────────────────────────────────────────────
     property real hand1Angle: -45     // FOV start (deg)
@@ -81,7 +91,10 @@ Item {
 
     FocusController {
         id: timedFocus
-        targets: [fovCircle, timelineProxy, homeBtn, backBtn]
+        targets: [fovCircle, timelineProxy]
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+                 .concat(faultChip.focusTargets)
+                 .concat([homeBtn, settingsBtn, modesBtn])
         index: 1   // start on the timeline
         onActivated: function(item) {
             if (item === fovCircle)          root.enterDialEditing()
@@ -259,7 +272,6 @@ Item {
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
-    Hairline { x: 0; y: Theme.hairlineTopY; width: 960 }
 
     // ── FOV dial ────────────────────────────────────────────────────────────────
     FocusIndicator {
@@ -538,17 +550,36 @@ Item {
         }
     }
 
-    // ── Bottom bar — [back] left · [home] [execute] right ───────────────────────
-    Hairline { x: 0; y: Theme.bottomBarY; width: 960 }
+    // ── Bottom bar — [settings] left · modes · [home] [execute] right ───────────
 
     TerminalButton {
-        id: backBtn
+        id: settingsBtn
         controller: timedFocus
         x: Theme.marginX
         anchors { bottom: parent.bottom; bottomMargin: 18 }
         width: Theme.bottomBtnW; height: Theme.bottomBtnH
-        label: "[back]"; active: false
-        onClicked: root.StackView.view.pop()
+        label: "[settings]"; active: false
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
+    }
+
+    TerminalButton {
+        id: modesBtn
+        controller: timedFocus
+        x: Theme.marginX + 130 + 18
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[modes]"; active: false
+        onClicked: {
+            root.abortRun()
+            root.StackView.view.replace(root.StackView.view.currentItem,
+                                        Qt.resolvedUrl("ScreenModes.qml"),
+                                        { fromPage: "ScreenTimed.qml" })
+        }
+    }
+    FaultChip {
+        id: faultChip
+        controller: timedFocus
+        anchors { left: modesBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // Red pointer line: execute → right screen edge (points at pendant BTN1).
@@ -582,6 +613,21 @@ Item {
                 root.execState = "running"
                 root.blinkVisible = true
             }
+        }
+    }
+
+    // Only while running: closes the pass so the lines already scanned are kept.
+    TerminalButton {
+        id: abortBtn
+        controller: timedFocus
+        visible: root.execState !== "idle"
+        anchors { right: parent.right; rightMargin: 18 + (130 + 18) * 2; bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[abort]"
+        textColor: Theme.danger
+        onClicked: {
+            if (Beckhoff.connected) Beckhoff.stop()
+            root.abortRun()
         }
     }
 

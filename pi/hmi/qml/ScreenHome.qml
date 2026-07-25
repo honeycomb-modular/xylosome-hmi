@@ -24,8 +24,11 @@ Item {
         id: navCapture
         controller: homeFocus
         x: Theme.marginX; y: Theme.contentTop; width: Theme.contentW
-        rowName: "capture modes";     rowDesc: "jog · static · program scan"
-        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCapture.qml"))
+        // The modes are siblings of each other, reached from the mode strip in
+        // their own bottom bar — so this row just goes back to whichever one
+        // you came from rather than opening a selector.
+        rowName: "capture";           rowDesc: "scan · timed · static · jog"
+        onClicked: root.StackView.view.pop()
     }
     NavRow {
         id: navPresets

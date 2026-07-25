@@ -15,6 +15,7 @@
 //   Double-tap canvas   → insert node on curve at that x
 //   Double-tap node     → delete it  (endpoints immune, minimum 2 nodes)
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import XylosomeHMI 1.0
@@ -22,6 +23,15 @@ import XylosomeHMI 1.0
 Item {
     id: root
     width: 960; height: 540
+
+    // MotorModel persists the scan program (colorMode, boxW, nodes) but not the
+    // dial hands, so the arc START came back at 0 every boot and only its WIDTH
+    // survived, indirectly via boxW. Layout is untouched — this is state only.
+    Settings {
+        category: "scan"
+        property alias hand1Angle: root.hand1Angle
+        property alias hand2Angle: root.hand2Angle
+    }
 
     // ── Layout constants ──────────────────────────────────────────────────────
     readonly property int canvasX:    0
@@ -131,15 +141,19 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn, btnSavePreset, btnPresets]
+        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn,
+                  btnSavePreset, btnPresets, btnColorMode, modesBtn]
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+                 .concat(faultChip.focusTargets)
         index: 5   // default focus on [home/ready]
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
             else if (item === handle) root.enterAspectEditing()
             else if (item === motorCircle) root.enterDialEditing()
-            else if (item === resetCurveBtn || item === settingsBtn || item === resetBtn
-                     || item === btnSavePreset || item === btnPresets)
-                item.clicked()
+            // Anything else that is a button just gets clicked. This used to be an
+            // explicit list, which silently swallowed the push for every button
+            // added later (mode strip, fault reset, colour toggle).
+            else if (item && item.clicked) item.clicked()
         }
         onAdjust:    function(delta) { root.editAdjust(delta) }
         onConfirmed: root.editConfirm()
@@ -1142,13 +1156,17 @@ Item {
 
     // ── BW / Color mode indicator + preset buttons ────────────────────────────
     // Just under the rainbow canvas, flush right.
-    Text {
-        id: colorModeIndicator
+    // Was a read-only indicator; colorMode used to be set only on the old
+    // capture-modes page, which no longer exists — so it is set here now.
+    TerminalButton {
+        id: btnColorMode
+        controller: scanFocus
         anchors { right: parent.right; rightMargin: 18 }
-        y: 278
-        text:  Motor.colorMode === 0 ? "color" : "monochrome"
-        color: Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+        y: 272
+        width: 116; height: 26
+        fontSize: Theme.fontMonoS
+        label:  Motor.colorMode === 0 ? "[color]" : "[monochrome]"
+        onClicked: Motor.colorMode = (Motor.colorMode === 0 ? 1 : 0)
     }
 
     // [presets] and [save] — small, right-aligned, below the mode text
@@ -1193,6 +1211,25 @@ Item {
         label:  "[settings]"
         active: false
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenHome.qml"))
+    }
+
+    // One button, not four: the mode list is its own page, so this bar stays
+    // quiet and the encoder ring stays short.
+    TerminalButton {
+        id: modesBtn
+        controller: scanFocus
+        x: Theme.marginX + 130 + 18
+        anchors { bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[modes]"; active: false
+        onClicked: root.StackView.view.replace(root.StackView.view.currentItem,
+                                               Qt.resolvedUrl("ScreenModes.qml"),
+                                               { fromPage: "ScreenScan.qml" })
+    }
+    FaultChip {
+        id: faultChip
+        controller: scanFocus
+        anchors { left: modesBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
 
     // Red pointer line: right edge of execute → right screen edge, at button centre.
@@ -1264,6 +1301,29 @@ Item {
                 if (Beckhoff.connected) Beckhoff.resume()
                 else playheadTimer.start()
             }
+        }
+    }
+
+    // [abort] — only while a scan is live. Ends the pass instead of abandoning
+    // it, so the lines already taken are cropped and saved rather than dropped.
+    // Distinct from [home], which also drives the axis back to zero.
+    TerminalButton {
+        id: abortBtn
+        controller: scanFocus
+        visible: root.execState !== "idle"
+        anchors { right: parent.right; rightMargin: 18 + (130 + 18) * 2; bottom: parent.bottom; bottomMargin: 18 }
+        width: 130; height: 45
+        label: "[abort]"
+        textColor: Theme.danger
+        onClicked: {
+            if (Beckhoff.connected) Beckhoff.stop()
+            playheadTimer.stop()
+            root.isPlaying    = false
+            root.execState    = "idle"
+            root.blinkVisible = true
+            root.playheadX    = -1
+            root.inMultiPass  = false
+            root.currentPass  = 0
         }
     }
 

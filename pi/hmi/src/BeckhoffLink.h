@@ -71,6 +71,11 @@ public:
                                  double maxVelDegS, double minVelDegS,
                                  int targetLines,
                                  const QVariantList &profile);
+    // executeStatic: no sweep at all. The flange holds where it already is and
+    // the camera scans lines for a set time, so the image is bounded by the
+    // clock, not by an arc — there is no curve and no velocity to send.
+    Q_INVOKABLE void executeStatic(int colorMode, double holdDeg,
+                                   double durationSec, int targetLines);
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void stop();

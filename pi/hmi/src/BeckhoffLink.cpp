@@ -179,6 +179,31 @@ void BeckhoffLink::executeScan(int colorMode,
     });
 }
 
+void BeckhoffLink::executeStatic(int colorMode, double holdDeg,
+                                 double durationSec, int targetLines)
+{
+    QSettings s;
+    // Fixed rate: the daemon works it out as lines ÷ duration and clamps it to
+    // line_max_hz, reporting the real total back as plannedLines.
+    QJsonObject line{
+        {QStringLiteral("mode"),  QStringLiteral("fixed")},
+        {QStringLiteral("lines"), targetLines},
+    };
+    sendJson({
+        {QStringLiteral("cmd"),          QStringLiteral("execute")},
+        {QStringLiteral("static"),       true},
+        {QStringLiteral("colorMode"),    colorMode},
+        // Hold pose sent as a zero-length arc, so the pre-pass reposition is a
+        // no-op and nothing moves.
+        {QStringLiteral("arcStartDeg"),  holdDeg},
+        {QStringLiteral("arcEndDeg"),    holdDeg},
+        {QStringLiteral("durationS"),    durationSec},
+        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
+        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
+        {QStringLiteral("line"),         line},
+    });
+}
+
 void BeckhoffLink::pause()  { sendJson({{QStringLiteral("cmd"), QStringLiteral("pause")}}); }
 void BeckhoffLink::resume() { sendJson({{QStringLiteral("cmd"), QStringLiteral("resume")}}); }
 void BeckhoffLink::stop()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("stop")}}); }
