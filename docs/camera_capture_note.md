@@ -131,10 +131,19 @@ else about the camera changes: TDI stages, exposure and the `ssf`-is-only-a-
 ceiling behaviour are all as before.
 
 **What it does and doesn't buy.** It does not make scans brighter — that is
-exposure/gain. It buys shadow resolution: at the measured working exposure
-(scan_0255 mean 10.7 of 255) an 8-bit frame is quantised into ~11 usable levels,
-a 12-bit one into ~170. Worth having only *after* the exposure is right; filling
-the 8-bit range is the bigger and cheaper win.
+exposure/gain. It buys shadow resolution: at the old 8-bit working exposure
+(scan_0255 mean 10.7 of 255) a frame was quantised into ~11 usable levels, a
+12-bit one into ~170.
+
+**But the exposure problem has since flipped, and it needs attention.** Under
+`sem 3` the EXSYNC period *is* the exposure, so the artist's slow sweeps (~960 Hz
+on a 25 s pass, vs ~8500 free-run) put roughly 9× more light on each line. The
+first 12-bit scans at gain 0.0 dB clip hard: scan_0286 **24.4% of pixels at full
+scale**, 0287 16.4%, 0289 8.6%, means 27–40% of 65535. Clipped is unrecoverable —
+depth does not help. Pull it back with aperture/illumination first, then negative
+analog gain (`sag`, −10…+10 dB, ≈ −6 dB halves it), remembering gain is stored
+**per CCD direction** (§4.3.3) so direction must be asserted before calibrating.
+The agent logs `peak N/65535` per scan; 65520 means clipping.
 
 **Both ends must agree, and the agent owns both.** `CAM_BITS` in
 `capture/capture_agent.py` drives, from one constant:
