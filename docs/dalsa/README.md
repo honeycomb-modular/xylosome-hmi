@@ -11,8 +11,20 @@ with the code (GitHub is source of truth — see `WORKFLOW.md`).
   line-rate / EXSYNC, direction, gain, and the serial (CameraLink) command set.
 - **`Xtium-CL_MX4_Users_Manual.pdf`** — Xtium-CL MX4 frame-grabber manual (the
   Sapera/Xtium board the capture PC uses).
-- **`HS-80-08K80_Full_8tap_8bit_WORKING.ccf`** — the **known-good camera config**
-  (Full CameraLink, 8 taps, 8-bit). Reference/restore point.
+- **`T_HS-80-08K80-00-R_Linescan_HS-80-08K80_4tap_12bit_WORKING.ccf`** — the
+  **camera config in use since 2026-07-24**: 4 taps, **12-bit**, on the board's
+  *Full Mono* data path. Built in CamExpert and verified grabbing. This is the
+  file `capture_agent.py` loads (`CAM_MODE[12]["ccf"]`); the copy it actually
+  reads lives in `Sapera\CamFiles\User\`, so **restore this file there** if that
+  machine is ever rebuilt.
+- **`HS-80-08K80_Full_8tap_8bit_WORKING.ccf`** — the previous known-good config
+  (Full CameraLink, 8 taps, 8-bit). Still the fallback: set `CAM_BITS = 8` and
+  the agent switches back to it. Reference/restore point.
+
+**Do not hand-edit either file to change bit depth** — build a new one in
+CamExpert. Patching the depth/tap keys hung the board on 2026-07-24; the
+non-obvious key is `Horizontal Active` (per-tap width: 1024 at 8 taps, **2048**
+at 4). See `docs/camera_capture_note.md`.
 
 ## Live control (how the code drives the camera)
 
@@ -23,12 +35,15 @@ not GenICam. Command set + ranges live in `capture/capture_agent.py`
 | setting     | serial cmd  | range / values                    |
 |-------------|-------------|-----------------------------------|
 | TDI stages  | `stg <N>`   | **{16, 32, 48, 64, 80, 96}** (min 16) |
-| line rate   | `ssf <Hz>`  | 3500 – 68610 Hz                   |
+| line rate   | `ssf <Hz>`  | 3500 – 38314 Hz (12-bit; 68610 at 8-bit) |
 | gain        | `sag 0 <dB>`| −10 … 10 dB                       |
 | direction   | `scd 0\|1`  | forward / reverse                 |
 
 Current working point (baked into each TIFF `ImageDescription`):
-`tdi.stages 32`, `line.rate 57636.9`, `scan.dir internal/reverse`, `8 taps / 8-bit`.
+`tdi.stages 48`, `scan.dir internal/forward`, `4 taps / 12-bit` (`clm 16`),
+camera `ssf` 38000 → achieved 37986.7. Under `sem 3` the `line.rate` recorded in
+a scan's metadata is the *measured* EXSYNC rate, i.e. what the EL2521 actually
+drove (5389 Hz on scan_0285), not the ceiling.
 
 ## Note — smear vs. EXSYNC
 
