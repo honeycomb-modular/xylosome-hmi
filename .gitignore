@@ -2,6 +2,10 @@
 build/
 *.qmlc
 *.jsc
+__pycache__/
+
+# Suite launch log (start-suite.ps1 writes it into the repo root)
+scratchpad_suite.log
 
 # Stray metadata exports (live in ~/xylosome_exports, not the repo)
 xylosome_*.svg
