@@ -8,7 +8,8 @@ TDI / exposure can be reached from the HMI. Short answer: not yet, by design.
 The imaging chain, confirmed from the actual units (not the old diagram labels):
 
 - **Camera — Teledyne DALSA Piranha `HS-80-08K80-00-R`.** 8192 x 96 TDI line
-  scan, 7 um pixels, 8/12-bit, line rate **34 / 68 kHz** (two modes).
+  scan, 7 um pixels, 8/12-bit, line rate **38.3 kHz at 12-bit / 68.6 kHz at
+  8-bit** (manual Table 14 — the old "34 / 68 kHz" here was approximate).
   Interface is **Camera Link** (MDR26, control+data shared) — *not* CoaXPress
   or CLHS. ("HS" = High Sensitivity / TDI, not Camera Link HS — that naming
   trap is what put "CLHS" on the architecture diagram.) Line trigger is
@@ -54,9 +55,21 @@ line has been read out is dropped **silently**. Real numbers:
 
 | | value |
 |---|---|
-| camera hard limit, 8-bit 8-tap Full | **68610 Hz** (~34 kHz at 12-bit) |
-| `line_max_hz` in the box's `/etc/xylod.conf` | **50000** |
-| camera `ssf`, set by the agent at startup | **50000** — deliberately equal |
+| camera hard limit, 12-bit 4-tap Medium (`clm 16`) | **38314 Hz** |
+| camera `ssf` requested by the agent at startup | **38000** |
+| camera `ssf` *achieved* (quantised, from the log) | **37986.7** |
+| `line_max_hz` in the box's `/etc/xylod.conf` | **37000** |
+
+(Was 68610 / 50000 / 50000 in the old 8-bit 8-tap Full mode — see the bit-depth
+section below for why the ceiling halved.)
+
+**The rule is `line_max_hz` ≤ *achieved* `ssf`, not "keep them equal."** The
+camera quantises `ssf` to its own clock and the step is not constant: 8500 lands
+on 8499.79, 50000 landed exactly (which is why "equal" worked and hid this), and
+38000 lands on **37986.7** — 13 Hz *below* the request. Setting the clamp equal to
+the requested value would put the trigger above what the camera can service, and
+the overrun is dropped silently. Read the achieved rate off the agent's
+`startup line.rate` log line and leave margin below it.
 
 Keeping the last two equal is the point: the trigger can then never outrun what
 the camera can service, so no per-curve tuning is needed. Raising one means
@@ -70,9 +83,10 @@ exposure, not `ssf`.
 |---|---|---|
 | Exposure, gain | Camera (Dalsa Piranha) | Frame grabber on capture PC — CamExpert / Sapera |
 | TDI stages | Camera | Same — capture PC |
-| Max line rate | Camera readout ceiling (`ssf`) | capture agent `STARTUP_CAM`, reapplied every start — **50000** |
+| Bit depth + tap layout | Camera (`clm`/`sot`) **and** the grabber `.ccf` | capture agent — `CAM_BITS` drives both, reapplied every start |
+| Max line rate | Camera readout ceiling (`ssf`) | capture agent `STARTUP_CAM`, reapplied every start — **38000** |
 | Line trigger frequency | Beckhoff EL2521 | xylod — follows the speed curve (`line.baseHz`, mode curve/fixed) |
-| Trigger ceiling `line_max_hz` | `xylod.conf` | **50000 — keep equal to the camera `ssf` above** |
+| Trigger ceiling `line_max_hz` | `xylod.conf` | **37000 — keep ≤ the camera's *achieved* `ssf` above** |
 | EL2521 output mode + ramp | Terminal CoE, RAM only | xylod rewrites at every start (`EcBackend.cpp`) |
 | Pass bracketing | EL2xxx DO: `pass_active` + `pass_index` pulse | wired to capture breakout; also TCP events `pass_start`/`pass_end` |
 
@@ -85,9 +99,11 @@ frame grabber.
 
 1. **Trigger ≤ max line rate.** xylod clamps at `line_max_hz`; if that clamp sits
    above the camera's `ssf`, lines drop **with no error anywhere** and the
-   geometry lies. Closed 2026-07-24 by setting both to 50000 — but the two are
-   still configured in different places on different machines and nothing
-   enforces the relationship, so moving either one silently re-opens this.
+   geometry lies. Closed 2026-07-24 by setting both to 50000, then re-set the
+   same day for the 12-bit move to `ssf` 38000 (achieved 37986.7) and
+   `line_max_hz` **37000** — but the two are still configured in different places
+   on different machines and nothing enforces the relationship, so moving either
+   one silently re-opens this.
 2. **TDI wants lockstep.** TDI integrates while the image moves across the
    sensor — subject motion and line rate must stay in step or the image smears
    beyond the *intentional* fringing, and the smear scales with the stage count:
@@ -96,6 +112,79 @@ frame grabber.
    the curve), not measured shaft position — so the servo's following error, not
    the camera, sets the practical stage ceiling. That is what the encoder-echo /
    locked-mode open item addresses (EL5152 is already in the segment for it).
+
+## Bit depth — 8-bit → 12-bit (moved 2026-07-24)
+
+`clm` sets the Camera Link configuration, the tap count **and** the bit depth in
+one command; `sot` sets the pixel strobe. Manual Table 14 gives this model only
+three rows, and no 12-bit row keeps 8 taps:
+
+| `clm` | CL config | taps | bits | `sot` | max line rate |
+|---|---|---|---|---|---|
+| 21 | Full | 8 | 8 | 640 (80 MHz) | 68610 Hz ← was the default |
+| **16** | **Medium** | **4** | **12** | **320 (80 MHz)** | **38314 Hz** ← now |
+| 15 | Medium | 4 | 8 | 320 (80 MHz) | 38314 Hz |
+
+So 12-bit costs **half the line-rate ceiling** — Camera Link Full carries 64 data
+bits per clock, which 8 taps × 8 bits fills exactly and 12-bit cannot. Nothing
+else about the camera changes: TDI stages, exposure and the `ssf`-is-only-a-
+ceiling behaviour are all as before.
+
+**What it does and doesn't buy.** It does not make scans brighter — that is
+exposure/gain. It buys shadow resolution: at the measured working exposure
+(scan_0255 mean 10.7 of 255) an 8-bit frame is quantised into ~11 usable levels,
+a 12-bit one into ~170. Worth having only *after* the exposure is right; filling
+the 8-bit range is the bigger and cheaper win.
+
+**Both ends must agree, and the agent owns both.** `CAM_BITS` in
+`capture/capture_agent.py` drives, from one constant:
+
+- the camera — `clm`/`sot` asserted at every agent start;
+- the grabber — the matching **base `.ccf`**, one per bit depth;
+- the `ssf` clamp on the `:5521` settings bus.
+
+### Do NOT hand-patch a .ccf to change bit depth (learned the hard way)
+
+The first attempt patched `Pixel Depth`/`Taps`/`Camera Link Configuration`/
+`Pixel Mask` onto the 8-bit file at runtime. It **hung the board**:
+`SapAcquisition` never returned, so `board_lock` was held forever (LIVE reported
+"board busy"), nothing was logged, and the camera sat stranded in `sem 3` —
+silent, hence **no pixel clock and a red CL2 LED** on the grabber.
+
+The missing key was **`Horizontal Active`**, the *per-tap* line width:
+8192/8 = 1024 at 8 taps, but **2048** at 4 taps. Left at 1024 the grabber waits
+for 4096 pixels a line while the camera sends 8192. Sapera's stock reference
+`.cca` files carry 1024 in *both* their 8-tap and 4-tap variants, which is
+exactly what made it look like it did not matter. Also: `Pixel Mask` stays
+**255** (widening it was wrong) and `Tap Output` stays **2**.
+
+So each depth gets its own CamExpert-built, verified-grabbing file, selected by
+`CAM_MODE[...]["ccf"]`. The runtime patch still applies the frame height and the
+six `EXTSYNC_EDITS` keys, and now **warns** if a base file lacks any key it means
+to patch (`re.sub` is a silent no-op otherwise — the trap that would put the
+mirrored scans back).
+
+Where the settings live in CamExpert, which is not where the file implies:
+- **Camera Link configuration** = the Device-row dropdown, and there is **no
+  "Medium Mono"** — mono offers only `CameraLink Full Mono`, within which tap
+  count and depth express Medium. (`CameraLink Medium Color RGB` is a colour
+  path and wrong for this camera.)
+- **Taps** = Basic Timing → **Camera Sensor Geometry** (`8X-1Y` → `4X-1Y`)
+- **Depth** = Basic Timing → **Pixel Depth**
+
+CamExpert needs the agent **stopped and disabled** — COM3 and the board are
+single-occupant, and the scheduled task will otherwise re-take them.
+
+It does **not** drive `line_max_hz` — that lives in `/etc/xylod.conf` on the
+C6920 and is coupling rule 1's unenforced half.
+
+**Storage convention changed with it.** The board returns uint16 with the data
+right-justified (0..4095 at 12-bit, 0..255 at 8-bit), which any normal TIFF
+viewer renders as near-black — this is why scans looked black outside the suite.
+The agent now shifts once at the source (`RAW_SHIFT = 16 - CAM_BITS`), so what
+lands on disk is an honest left-justified 16-bit image. File size is unchanged
+(the TIFFs were always uint16). Scans captured before this are still readable —
+`VipsEngine::to8()` probes the max and takes the legacy low-byte path for them.
 
 ## TDI stages — what changes and what doesn't (manual, checked 2026-07-24)
 
@@ -106,9 +195,10 @@ frame grabber.
   change: 48→96 is roughly +1 stop, 48→16 roughly −1.6.
 - **Max line rate does NOT change with stages.** The TDI-mode help screen prints
   `ssf 3499.87-68610.6 Hz` alongside all six `stg` values, unqualified, and §4.2
-  mentions no rate penalty. So the 50000 ceiling holds at any stage count.
+  mentions no rate penalty. So the ceiling holds at any stage count.
   (Beware: **Area mode** reports `ssf 1-6169.03 Hz` — a different mode, not a
-  contradiction. `clm`/`sot` changes could move the range; stages don't.)
+  contradiction. `clm`/`sot` changes DO move the range — that help screen was
+  read in `clm 21`; at 12-bit the ceiling is 38314 — but stages don't.)
 - **The old "48 stages is best" result predates the trigger being fixed.** It was
   measured in free-run, when the terminal's ramp meant the line rate never
   tracked the curve — so high stage counts were being punished by sync error

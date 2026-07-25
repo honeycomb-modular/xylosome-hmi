@@ -10,7 +10,7 @@
 # which owns COM3 and serves :5521.
 
 param(
-    [int]$LineRate = 7000,   # Hz, 3500..68610 (lower = slower/brighter)
+    [int]$LineRate = 7000,   # Hz, 3500..38314 at 12-bit (lower = slower/brighter)
     [int]$Stages   = 96      # 16/32/48/64/80/96 (higher = more sensitive)
 )
 

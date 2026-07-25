@@ -39,7 +39,7 @@ A `state` event is broadcast to **every** connected client after any successful
 
 | key          | type   | range / values              | TLC command  | gcp readback field |
 |--------------|--------|-----------------------------|--------------|--------------------|
-| `line.rate`  | number | 3500 – 68610 Hz             | `ssf <Hz>`   | SYNC Frequency     |
+| `line.rate`  | number | 3500 – 38314 Hz (12-bit)    | `ssf <Hz>`   | SYNC Frequency     |
 | `tdi.stages` | int    | 16, 32, 48, 64, 80, 96      | `stg <n>`    | Stage Selection    |
 | `gain`       | number | −10 … +10 dB (all taps)     | `sag 0 <dB>` | Analog Gain (dB)   |
 | `scan.dir`   | string | `forward` \| `reverse`      | `scd 0\|1`   | CCD Direction      |

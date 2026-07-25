@@ -38,8 +38,13 @@ struct Config {
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     double el2521BaseHz = 50000.0;           // CoE 0x8001:02 base frequency 1
                                              // (written at startup by EcBackend)
-    double lineMaxHz    = 50000.0;           // absolute clamp; = el2521_base_hz, above
-                                             // which freqVal saturates at 32767
+    double lineMaxHz    = 37000.0;           // absolute clamp. Was 50000 (= el2521BaseHz,
+                                             // above which freqVal saturates at 32767);
+                                             // lowered for the 12-bit camera, whose
+                                             // readout ceiling is 38314 Hz and whose
+                                             // achieved ssf is 37986.7. Overruns are
+                                             // dropped silently — keep <= that, with
+                                             // margin for the camera's ssf quantisation.
 
     // ── digital I/O bit map ──────────────────────────────────────────────────
     int diHome = 0, diEndMin = 1, diEndMax = 2, diEstop = 3, diFwIndex = 4;

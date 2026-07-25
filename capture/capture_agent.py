@@ -31,7 +31,6 @@ from System.Runtime.InteropServices import Marshal
 
 COM, BAUD   = "COM3", 9600
 SERVER      = "Xtium-CL_MX4_1"
-BASE_CCF    = SAP + r"\CamFiles\User\HS-80-08K80_Full_8tap_8bit_WORKING.ccf"
 PORT_CAM, PORT_LIVE = 5521, 5520
 XYLOD_HOST  = os.environ.get("XYLOD_HOST", "192.168.2.2")
 XYLOD_PORT  = 5510
@@ -49,6 +48,37 @@ CAP_LINES   = max(LINE_MIN, min(LINE_MAX, int(os.environ.get("CAP_LINES", "8192"
 LIVE_LINES = 64     # short live-focus frame: fast (~ms) grabs of consecutive
                     # lines so the waterfall flows smoothly (vs a full 8192 grab)
 os.makedirs(CAPTURE_DIR, exist_ok=True)
+
+# --- camera output format: bit depth, taps, and the rate ceiling that follows ---
+# `clm` picks the Camera Link configuration, tap count AND bit depth together;
+# `sot` picks the pixel strobe. Only these two rows of manual Table 14 (the
+# HS-80-08k80 one) matter here — the model has no 12-bit mode that keeps 8 taps,
+# so 12-bit costs half the line-rate ceiling. CAM_BITS switches the camera
+# commands, the matching .ccf, the ssf clamp and RAW_SHIFT together; it does NOT
+# retune xylod's `line_max_hz`, which lives on the C6920 (see max_hz below).
+#
+# Each mode needs its OWN .ccf: the grabber has to be told the same tap layout
+# the camera is emitting. Both files are CamExpert-built and verified grabbing —
+# do not hand-edit the depth/tap keys into one of them. That was tried on
+# 2026-07-24 and hung the board: the miss was `Horizontal Active`, the PER-TAP
+# line width (8192/8 = 1024 at 8 taps, 8192/4 = 2048 at 4), so the grabber waited
+# for 4096 pixels a line while the camera sent 8192 and SapAcquisition never
+# returned. Sapera's own stock reference files leave it at 1024 in both their
+# 8-tap and 4-tap variants, which is what made it look like it did not matter.
+CAM_BITS = 12
+CAM_MODE = {                                          # clm  sot   max line rate
+    8:  {"clm": 21, "sot": 640, "max_hz": 68610,      # Full mono, 8 taps
+         "ccf": "HS-80-08K80_Full_8tap_8bit_WORKING.ccf"},
+    12: {"clm": 16, "sot": 320, "max_hz": 38314,      # Full mono path, 4 taps
+         "ccf": "T_HS-80-08K80-00-R_Linescan_HS-80-08K80_4tap_12bit_WORKING.ccf"},
+}[CAM_BITS]
+BASE_CCF = SAP + r"\CamFiles\User" + "\\" + CAM_MODE["ccf"]
+# The board hands back uint16 with the data right-justified (an 8-bit camera gave
+# values 0..255, a 12-bit one gives 0..4095), so a plain 16-bit reader renders the
+# frame near-black. Shift once at the source instead: everything downstream — the
+# saved TIFF, the live view, the suite — then sees an honest left-justified 16-bit
+# image, which is what every TIFF viewer and `VipsEngine::to8()` already assume.
+RAW_SHIFT = 16 - CAM_BITS
 
 # --- line-trigger sync mode -------------------------------------------------
 # 'exsync' (default, verified 2026-07-24): the EL2521 line trigger paces the
@@ -124,7 +154,8 @@ def apply_set(key, value):
         cam_cmd("stg %d" % v); return True, "ok"
     if key == "line.rate":
         v = float(value)
-        if not (3500 <= v <= 68610): return False, "3500..68610 Hz"
+        if not (3500 <= v <= CAM_MODE["max_hz"]):
+            return False, "3500..%d Hz" % CAM_MODE["max_hz"]
         cam_cmd("ssf %d" % int(v)); return True, "ok"
     if key == "gain":
         v = float(value)
@@ -140,22 +171,32 @@ def apply_set(key, value):
 # Camera settings pushed on agent startup, overriding whatever the camera
 # powered up with. Forward scan direction is markedly sharper on the bench;
 # 48 TDI stages forward is the current best (supersedes the old 16-stage note).
-# line.rate is 50000, not the old free-run 8500: under ext sync the camera's own
-# rate no longer sets the scan geometry (the EL2521 emit does) — it is only the
-# readout CEILING, and a trigger arriving before the previous line is read out is
-# silently dropped. 50000 is xylod's `line_max_hz`, i.e. the fastest trigger it
-# will ever emit, so the camera can service anything the curve asks for and no
-# per-curve tuning is needed. Verified free: 20000 vs 50000 are indistinguishable
-# in brightness, because under `sem 3` the EXSYNC period sets exposure, not ssf.
-# Camera hard limit is 68610 Hz in this 8-bit 8-tap mode (~34 kHz at 12-bit), so
-# raising `line_max_hz` above 50000 means raising this too — keep them equal.
-STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "50000"), ("tdi.stages", "48")]
+# line.rate is not the old free-run 8500: under ext sync the camera's own rate no
+# longer sets the scan geometry (the EL2521 emit does) — it is only the readout
+# CEILING, and a trigger arriving before the previous line is read out is
+# silently dropped. So it is set to xylod's `line_max_hz`, i.e. the fastest
+# trigger it will ever emit: the camera can then service anything the curve asks
+# for and no per-curve tuning is needed. Verified free: 20000 vs 50000 are
+# indistinguishable in brightness, because under `sem 3` the EXSYNC period sets
+# exposure, not ssf.
+#
+# 38000 (was 50000) since the move to 12-bit: the hard ceiling in clm 16 is
+# 38314 Hz, half the 68610 of 8-bit 8-tap. The camera quantises this request down
+# to 37986.7 (see _startup_ok), so **`line_max_hz` in the C6920's /etc/xylod.conf
+# is 37000, not 38000** — below the ACHIEVED rate, with margin. Nothing enforces
+# that across the two machines, and a trigger above what the camera can service
+# is dropped with no error anywhere.
+STARTUP_CAM = [("scan.dir", "forward"), ("line.rate", "38000"), ("tdi.stages", "48")]
 
 def _startup_ok(key, want, got):
     if got is None: return False
     if key == "scan.dir":   return str(want).lower() in str(got).lower()
     if key == "tdi.stages": return str(got) == str(int(want))
-    if key == "line.rate":  return abs(float(got) - float(want)) < 5
+    # ssf is quantised by the camera's own clock, and the step is not constant:
+    # 8500 lands on 8499.79, 50000 lands exactly, 38000 lands on 37986.7. A flat
+    # 5 Hz tolerance called that last one FAILED when it had taken fine, so scale
+    # the tolerance with the requested rate.
+    if key == "line.rate":  return abs(float(got) - float(want)) < max(5.0, float(want) * 0.001)
     return True
 
 def apply_startup_defaults():
@@ -167,6 +208,26 @@ def apply_startup_defaults():
     for _ in range(20):
         if cam_cmd("gcp").rstrip().endswith("OK>"): break
         time.sleep(0.5)
+    # Free-run BEFORE anything is written. If the previous run died mid-scan the
+    # camera is still in sem 3, and there `ssf` writes are ignored while the
+    # readback reports the *measured* external frequency — 0.0 with no EXSYNC. So
+    # every startup default silently failed to take and the camera ended up
+    # free-running with no line rate: no pixel clock, red CL2 on the grabber.
+    # (This used to sit at the END of this function.)
+    set_cam_external(False)
+    # Output format next: clm/sot decide the tap layout and bit depth on the
+    # wire, and CAM_MODE's .ccf has already told the grabber to expect that
+    # layout. Asserting it here keeps the two ends in step no matter what the
+    # camera powered up with (or what a CamExpert session last left saved).
+    r_clm = cam_cmd("clm %d" % CAM_MODE["clm"])
+    r_sot = cam_cmd("sot %d" % CAM_MODE["sot"])
+    print("  startup output     = %d-bit (clm %d, sot %d) -> camera reports clm %s"
+          % (CAM_BITS, CAM_MODE["clm"], CAM_MODE["sot"], read_state().get("clm")))
+    # Print the camera's literal replies: a rejected clm/sot leaves the camera and
+    # the grabber framing each other differently, which shows up as a red CL2 LED
+    # (no pixel clock) rather than as any error here.
+    print("    clm reply: %r" % (r_clm,))
+    print("    sot reply: %r" % (r_sot,))
     for key, val in STARTUP_CAM:
         got = None
         for _ in range(3):
@@ -176,7 +237,6 @@ def apply_startup_defaults():
             time.sleep(0.3)
         print("  startup %-11s= %-8s -> %s%s"
               % (key, val, got, "" if _startup_ok(key, val, got) else "  (FAILED)"))
-    set_cam_external(False)   # free-run baseline (LIVE focus + idle); scans flip to sem 3
     print("  startup sync       = %-8s (camera sem %s)"
           % (CAP_SYNC, "3 per-scan" if EXT_SYNC else "7 fixed"))
 
@@ -187,8 +247,10 @@ _ccf_cache = {}
 def _ccf_for(lines, ext=EXT_SYNC):
     # Derive a .ccf whose grabber frame height (Crop Height / Scale Vertical) is
     # `lines`. When `ext`, also apply EXTSYNC_EDITS so the grabber is paced by the
-    # EL2521 line trigger (EXSYNC). The base .ccf is read-only under Program
-    # Files, so write the derived copy to temp. Cached per (lines, ext).
+    # EL2521 line trigger (EXSYNC). Bit depth and tap layout are NOT patched here
+    # — they come from the mode's own CamExpert-built base file (see CAM_MODE).
+    # The base .ccf is read-only under Program Files, so write the derived copy to
+    # temp. Cached per (lines, ext).
     lines = max(LINE_MIN, min(LINE_MAX, int(lines)))
     key = (lines, ext)
     cached = _ccf_cache.get(key)
@@ -196,11 +258,24 @@ def _ccf_for(lines, ext=EXT_SYNC):
         return cached
     with open(BASE_CCF, "r", encoding="latin-1") as fh:
         txt = fh.read()
-    txt = re.sub(r"(?m)^Crop Height=.*$",    "Crop Height=%d" % lines, txt)
-    txt = re.sub(r"(?m)^Scale Vertical=.*$", "Scale Vertical=%d" % lines, txt)
+    # re.sub is a silent no-op when the key is absent, so a base .ccf that does
+    # not carry one of these would drop that setting with no error — the EXSYNC
+    # keys failing that way is exactly what puts the mirrored scans back. Count
+    # the substitutions and shout if any key missed.
+    missing = []
+    def put(text, k, v):
+        text, n = re.subn(r"(?m)^" + re.escape(k) + r"=.*$", "%s=%s" % (k, v), text)
+        if n == 0: missing.append(k)
+        return text
+
+    txt = put(txt, "Crop Height",    lines)
+    txt = put(txt, "Scale Vertical", lines)
     if ext:
         for k, v in EXTSYNC_EDITS.items():
-            txt = re.sub(r"(?m)^" + re.escape(k) + r"=.*$", "%s=%s" % (k, v), txt)
+            txt = put(txt, k, v)
+    if missing:
+        print("capture: WARNING - %s lacks these keys, settings NOT applied: %s"
+              % (os.path.basename(BASE_CCF), ", ".join(missing)))
     out = os.path.join(tempfile.gettempdir(),
                        "xylosome_%s_%d.ccf" % ("ext" if ext else "free", lines))
     with open(out, "w", encoding="latin-1") as fh:
@@ -239,7 +314,8 @@ class Grabber:
             except Exception: pass
         self.buf.Read(0, 0, self.n, self.ptr)
         raw = ctypes.string_at(int(self.ptr.ToInt64()), self.n * 2)
-        return np.frombuffer(raw, dtype="<u2").reshape(self.h, self.w)
+        img = np.frombuffer(raw, dtype="<u2").reshape(self.h, self.w)
+        return img << RAW_SHIFT      # right-justified board data -> true 16-bit
     def frame(self):
         self.arm(); return self.collect()
     def close(self):
@@ -310,7 +386,7 @@ def live_client(conn, addr):
             # smooth waterfall. Downsample the sensor width + cast in one shot.
             h, w = img.shape
             step = max(1, w // width)
-            ds = np.clip(img[:, ::step][:, :width], 0, 255).astype(np.uint8)
+            ds = (img[:, ::step][:, :width] >> 8).astype(np.uint8)
             if ds.shape[1] < width:
                 ds = np.pad(ds, ((0, 0), (0, width - ds.shape[1])))
             g = np.diff(ds.astype(np.float32), axis=1)
@@ -404,6 +480,13 @@ def xylod_client():
         lines = min(LINE_MAX, (lines + 3) & ~3)   # keep the buffer 4-line aligned;
                                                   # rounding UP is free, the tail crop
                                                   # drops the spare rows anyway
+        # Log BEFORE the serial + Sapera calls below. Both can block (the camera
+        # goes silent in sem 3 until EXSYNC arrives; creating the acquisition can
+        # stall if the board cannot lock to the camera's Camera Link framing), and
+        # with the only print at the far end a stall looked exactly like "the agent
+        # never received the event" — which cost a whole diagnosis on 2026-07-24.
+        print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines,
+                                                          "" if planned else " (no plannedLines)"))
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
         if board_lock.acquire(blocking=False):
             have = True
@@ -529,10 +612,15 @@ def xylod_client():
                         name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                         tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
                         try:
-                            tifffile.imwrite(tmp, img[:lines], metadata={"camera": scan_settings})
+                            tifffile.imwrite(tmp, img[:lines],
+                                             metadata={"camera": scan_settings, "bits": CAM_BITS})
                             os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            print("saved %s | motion %dms -> %d/%d lines%s"
-                                  % (name, motion_ms, lines, img.shape[0], over))
+                            # peak is in left-justified 16-bit: full scale is 65535
+                            # whatever CAM_BITS is. A peak stuck at/below 255 means the
+                            # data never left the low byte — .ccf Pixel Mask or clm.
+                            print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
+                                  % (name, motion_ms, lines, img.shape[0],
+                                     int(img[:lines].max()), over))
                         except Exception as e:
                             print("capture save failed:", e)
                 elif ev == "seq_done":

@@ -47,12 +47,20 @@ bool VipsEngine::available()
 }
 
 #ifdef HAVE_VIPS
-// 16-bit → 8-bit. Genuine 16-bit data is left-justified, so the meaningful
-// bits are the top 8 (>> 8). But this camera is 8-bit *right*-justified in a
-// 16-bit container (values 0..255, high byte empty); there, >> 8 would zero
+// 16-bit → 8-bit. Genuine 16-bit data is left-justified, so the meaningful bits
+// are the top 8 (>> 8) — which is what the capture agent now emits: it shifts
+// the board's right-justified data up at the source (`RAW_SHIFT`), so a 12-bit
+// scan is stored as an honest 0..65535 image that any TIFF viewer renders too.
+// Scans captured BEFORE that change are 8-bit right-justified in a 16-bit
+// container (values 0..255, high byte empty), and there >> 8 would zero
 // everything (black scans, grey in the live view). So probe the actual max:
-// ≤255 means the data lives in the low byte — cast straight down like the live
-// view does; otherwise shift. Returns a new ref or null.
+// ≤255 means the data lives in the low byte — cast straight down; otherwise
+// shift. Returns a new ref or null.
+//
+// Edge case, left as-is: a left-justified scan so dark that nothing exceeds 255
+// takes the legacy branch and comes out wrong. That needs a peak below 0.4% of
+// full scale — a black frame either way. The TIFF's "bits" metadata would settle
+// it if this ever stops being theoretical.
 static VipsImage *to8(VipsImage *in)
 {
     double maxval = 0;
