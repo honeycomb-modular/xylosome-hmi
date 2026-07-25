@@ -3,6 +3,7 @@
 // channel solo), metadata strip, filmstrip, keyboard judging.
 // Design decisions: docs/concept/review_suite_plan.md → "Design language".
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -16,6 +17,21 @@ ApplicationWindow {
     height: 800
     title: "Xylosome Suite"
     color: "#FFFFFF"
+
+    // Full screen: remembered between runs, F11 toggles, and --fullscreen forces
+    // it on regardless (what the desktop/startup launcher passes). Judging is
+    // done on the image, so the review station wants the whole panel.
+    property bool fullScreen: false
+    visibility: root.fullScreen ? Window.FullScreen : Window.Windowed
+    Settings {
+        category: "window"
+        property alias fullScreen: root.fullScreen
+    }
+    Component.onCompleted: {
+        if (Qt.application.arguments.indexOf("--fullscreen") >= 0)
+            root.fullScreen = true
+    }
+    Shortcut { sequences: ["F11"]; onActivated: root.fullScreen = !root.fullScreen }
 
     // ── Design tokens ────────────────────────────────────────────────
     readonly property color ink: "#1A1A1A"

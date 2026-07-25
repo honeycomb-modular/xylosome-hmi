@@ -10,6 +10,8 @@
 #
 # Re-run it after any rebuild; it refreshes the exe and re-deploys.
 
+param([switch]$NoAutostart)
+
 $ErrorActionPreference = "Stop"
 
 $ucrt = "C:\msys64\ucrt64\bin"
@@ -110,7 +112,7 @@ REM Xylosome Suite — self-contained launcher. No msys2 on PATH required.
 set CAPTURE_DIR=D:/capture
 set XYLOD_HOST=192.168.2.2
 cd /d "%~dp0"
-start "" "%~dp0xylosome-suite.exe"
+start "" "%~dp0xylosome-suite.exe" --fullscreen
 REM Pi clock + metadata SVG sync (best effort; the Suite runs fine without it)
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0pi-metadata.ps1"
 "@ | Set-Content -Path "$dist\XylosomeSuite.cmd" -Encoding ASCII
@@ -128,4 +130,23 @@ $s.WindowStyle      = 7          # minimised — the .cmd is just a launcher
 $s.Description      = "Xylosome review suite"
 $s.Save()
 Write-Host "shortcut -> $lnk"
+
+# ── start at logon ────────────────────────────────────────────────────────────
+# Startup folder, not a scheduled task: the Suite is a GUI app and has to run
+# inside the interactive session. (The capture agent is the opposite case — it
+# owns hardware and runs as a SYSTEM task with no desktop.)
+# Pass -NoAutostart to skip, e.g. when packaging for a machine that should not
+# launch it on login.
+if (-not $NoAutostart) {
+    $startup = [Environment]::GetFolderPath("Startup")
+    $auto    = Join-Path $startup "Xylosome Suite.lnk"
+    $a = $sh.CreateShortcut($auto)
+    $a.TargetPath       = "$dist\XylosomeSuite.cmd"
+    $a.WorkingDirectory = $dist
+    $a.IconLocation     = "$dist\xylosome-suite.exe,0"
+    $a.WindowStyle      = 7
+    $a.Description      = "Xylosome review suite (starts at logon)"
+    $a.Save()
+    Write-Host "autostart -> $auto"
+}
 Write-Host "done."
