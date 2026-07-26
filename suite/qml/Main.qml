@@ -551,6 +551,14 @@ ApplicationWindow {
                             !(strip.currentItem && strip.currentItem.sMetaWhite))
                     }
                 }
+                // Pixel dimensions were captured at ingest but never shown, so
+                // nothing on screen contradicted a wrongly-sized frame.
+                Label {
+                    visible: zoomView.visible && zoomView.imgW > 0
+                    text: zoomView.imgW + " × " + zoomView.imgH
+                    color: "#AAAAAA"
+                    font.pixelSize: 11
+                }
                 Label {
                     visible: zoomView.visible && zoomView.imgW > 0
                     text: (zoomView.atFit ? qsTr("fit")
@@ -884,7 +892,12 @@ ApplicationWindow {
                                     return ""
                                 }
                                 sourceSize.height: 60
-                                fillMode: Image.PreserveAspectCrop
+                                // Fit, not Crop: cropping forced every scan into
+                                // the same 2:1 tile, so an 8:1 sweep and an
+                                // 8192-square looked identical in the strip and
+                                // a malformed frame raised no flag. Letterboxing
+                                // costs a few pixels and makes shape readable.
+                                fillMode: Image.PreserveAspectFit
                                 asynchronous: true
                                 opacity: cell.rejected ? 0.4 : 1
                             }

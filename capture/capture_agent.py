@@ -581,17 +581,28 @@ def xylod_client():
         # a wide image needs more lines than the old fixed 8192 could hold, and the
         # tail crop can only shorten a frame, never extend one. Fall back to
         # CAP_LINES when xylod is too old to report it, or in fixed-rate mode.
-        lines = planned if LINE_MIN <= planned <= LINE_MAX else CAP_LINES
+        # CLAMP an over-tall request, never collapse it: asking for more lines
+        # than the board can hold should still deliver the TALLEST frame we can.
+        # This used to fall back to CAP_LINES, so a 65536-line static scan (536
+        # over LINE_MAX) came back as 8192 lines — and since CAP_LINES equals the
+        # sensor width that reads as a deliberate square rather than an error.
+        # Cost a whole 78 s scan on 2026-07-25. CAP_LINES is now only for the
+        # genuine "xylod never told us" case.
+        want  = planned if planned else CAP_LINES
+        lines = min(LINE_MAX, max(LINE_MIN, want))
         lines = min(LINE_MAX, (lines + 3) & ~3)   # keep the buffer 4-line aligned;
                                                   # rounding UP is free, the tail crop
                                                   # drops the spare rows anyway
+        # Say which of the three cases this is — a silent clamp is what hid the
+        # bug above.
+        note = ("" if planned else " (no plannedLines)") if planned <= LINE_MAX \
+               else " (clamped from %d)" % planned
         # Log BEFORE the serial + Sapera calls below. Both can block (the camera
         # goes silent in sem 3 until EXSYNC arrives; creating the acquisition can
         # stall if the board cannot lock to the camera's Camera Link framing), and
         # with the only print at the far end a stall looked exactly like "the agent
         # never received the event" — which cost a whole diagnosis on 2026-07-24.
-        print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines,
-                                                          "" if planned else " (no plannedLines)"))
+        print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines, note))
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
         # A scan outranks a focus session: if LIVE has stranded the board, ask the
         # stalled holder to let go and try once more, rather than silently
@@ -605,7 +616,7 @@ def xylod_client():
             try:
                 grab = Grabber(lines=lines)
                 print("CAPTURE seq %d board open (%s) %d lines%s"
-                      % (seq, CAP_SYNC, lines, "" if planned else " (no plannedLines)"))
+                      % (seq, CAP_SYNC, lines, note))
             except Exception as e:
                 print("capture: board open failed:", e); board_lock.release(); have = False; grab = None
                 if EXT_SYNC: set_cam_external(False)

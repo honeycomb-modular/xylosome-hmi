@@ -32,10 +32,14 @@ Item {
         property alias durationSec: root.durationSec
     }
 
+
     // ── Frame definition ────────────────────────────────────────────────────────
     readonly property int sensorPx: 8192          // the fixed sensor axis
     readonly property int linesMin: 256
-    readonly property int linesMax: 65536
+    // The grabber frame tops out at 65000 lines (capture_agent LINE_MAX). Asking
+    // for more than the capture side can hold does not give a taller image, so
+    // don't let the frame promise one.
+    readonly property int linesMax: 65000
     property int lines: 22200
 
     // Span: 1 s … 24 h on a log scale, same as ScreenTimed.
@@ -535,5 +539,12 @@ Item {
         }
     }
 
-    Component.onCompleted: staticFocus.editing = false
+    Component.onCompleted: {
+        staticFocus.editing = false
+        // A count saved under the old, higher ceiling is restored verbatim and
+        // sent to xylod verbatim — the edit clamps only bite once you touch the
+        // frame. Pull it into range on load so a stale setting can't outlive
+        // the fix.
+        root.lines = Math.max(root.linesMin, Math.min(root.linesMax, root.lines))
+    }
 }
