@@ -974,3 +974,100 @@ architecture diagram (it wrongly labelled the link "CoaXPress / CLHS").
 ### Exposure note
 - Line rate 57.6 kHz -> 7000 Hz (each halving ~= +1 stop, no noise); stages up to 96.
   Scans still dark — tune line rate/stages for real exposure.
+
+---
+
+## 2026-07-26 — aspect is now honest; a ~10% line shortfall remains (START HERE)
+
+### FIXED — xylod no longer sacrifices line count to the rate ceiling
+
+`beckhoff/xylod/src/Sequencer.cpp`, `SeqCommand::Execute`. Line count IS the
+aspect (width is fixed 8192), so it must never be the thing that gives. Old
+behaviour clamped `lineBaseHz` to `line_max_hz` and delivered fewer lines than
+the artist drew. New behaviour clamps **peak velocity** instead:
+
+```cpp
+const double velCap = m_cfg.lineMaxHz * arcAbs / m_job.lineTarget;
+m_job.maxVelDegS = velCap;                                   // slow the sweep...
+m_job.lineBaseHz = m_job.lineTarget * m_job.maxVelDegS / arcAbs;  // ...count exact
+```
+
+Safe because `maxVelDegS` is a pure scale on the profile — the curve's SHAPE and
+the image survive, the pass just takes longer. Holds even where `minVelDegS`
+floors the profile, since `lineHzNow` derives from the same `v` integrated into
+the arc. Static-hold got the same treatment: it extends the hold rather than
+truncating.
+
+Verified in `--sim` on port 5511, then on hardware. Same job, before vs after:
+
+| | asked | planned | delivered |
+|---|---|---|---|
+| before (`scan_0464`) | 26400 | 21618 | 14249 (54%) |
+| after (`scan_0469`) | 26400 | **26400** | 23570 (89%) |
+
+⚠️ **NOT COMMITTED.** The C6920 runs this binary (`md5 22c4180e…`, installed
+2026-07-26 17:26) but the source change exists only in the PC working tree.
+**Rebuilding xylod from git will silently revert it.** Commit before anything else.
+
+### OPEN — a ~10% shortfall that is NOT the clamp and predates today
+
+Delivered still falls short of planned. Every scan logs `(frame not filled)`.
+
+| scan | page | density cmd | pulse rate | delivered |
+|---|---|---|---|---|
+| 0453-57 | timed | 150.0/deg | **constant** 2450 Hz | 96.3% |
+| 0459 | curve (old code) | **123.3/deg** | varying, ~8100 avg | **99.9%** |
+| 0465 | curve | 150.6/deg | varying, peak 37k | 82.3% |
+| 0466-70 | curve | 150.6/deg | varying, ~12300 avg | 88.4% |
+| 0471 (48 stages) | curve | 150.6/deg | varying, ~12300 | 87.9% |
+| 0472 | curve | 150.6/deg | varying, ~5000 avg | 90.5% |
+
+**Ruled out, with evidence — do not re-test these:**
+- **TDI stages** — 48 vs 96 identical (10834 vs 10907 Hz delivered). Keep 96.
+- **Rate ceiling** — 2.5x rate cut bought only 2 points; 0459 ran FASTER and lost nothing.
+- **Curve shape / EL2521 saturation** (freqVal 24247 of 32767) / **terminal ramp**
+  (confirmed `encoder-sim, ramp off, base 50000 Hz` each boot) / **agent truncation**
+  (takes what filled after a 400 ms grace).
+
+Two things correlate, neither explains all of it: **spatial density** (the only
+100% scan is the only one at 123.3/deg) and **rate variation** (the only
+near-perfect fixed-rate scan is the timed one).
+
+### NEXT SESSION — two leads, software first
+
+1. **Verify the EL2521 base frequency object.** `EcBackend.cpp:176-179` writes
+   mode to `0x8000:0E` and ramp to `0x8000:06`, but base frequency to
+   **`0x8001:02`** — a different index. If Ch.1 base frequency is really
+   `0x8000:02`, the terminal keeps its default while
+   `freqVal = (hz/50000)*32767` assumes 50000, giving a systematic scaling
+   error — exactly the shape of a consistent shortfall. The SDO write succeeds,
+   so `0x8001:02` exists; the question is what it controls. Read both back with
+   the already-built `ec_coe` (needs xylod stopped — it owns the master).
+2. **Wire the encoder echo.** `pos_el5152 = 0` in `/etc/xylod.conf` means
+   `m_echoIn` is null and `echo` is hardcoded 0 — it is not "unwired", it is
+   unmapped. **There is no EL5152 on the rail**: slave 7 is an **EL5101**
+   (5 V RS-422/TTL, differential — electrically compatible with the
+   EL2521-0000's 5 V RS-422 A/B; an EL5152 would NOT have been, being 24 V HTL).
+   Y-tap A+/A-/B+/B- off the pair already feeding the grabber, **no second
+   120R termination**. Then `pos_el5152 = 7` plus a PDO struct fix — `m_echoIn`
+   is a bare `uint32_t*` but the EL5101 leads with a status byte (cf.
+   `El7031Tx { uint16_t status; uint32_t counter; }`). Gives emitted-vs-delivered
+   per pass, permanently, and splits the fault domain in one scan.
+
+### HMI limits found while testing (all `pi/hmi`, need a Pi deploy)
+
+- `ScreenScan.qml:73` — `maxSpeed` is a hardcoded 300 deg/s, not settable.
+- **`lines / arc` is structurally fixed at ~150.6/deg.** The green aspect bar and
+  the dial hands are coupled both ways, so no pendant control can change spatial
+  sampling density. Confirmed: 26400/175.3 and 21067/139.9 both = 150.6.
+  Note 0459 delivered 100% at 123.3/deg — if the chain simply cannot do 150.6,
+  this coupling constant is the thing to change.
+- Curve endpoints are `locked: true` at the centreline and no straight segment
+  can be drawn; the centreline height is `Motor.stdSpeedDegS` (Axis settings,
+  40/60/100/140/180/220). Wanted: a "flat at height N" reset.
+
+### Stale, flagged not fixed
+
+`/etc/xylod.conf` `pos_*` comments are wrong — `pos_el2521 = 5 # not fitted`
+sits on a terminal that IS fitted and working; the `pos_el7031` comment puts the
+EL7047 at 4 when the scan shows 6. Nearly misled this session.

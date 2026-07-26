@@ -195,31 +195,48 @@ void Sequencer::cycle(double dt) {
             // Over a pass, lines = lineBaseHz * arc / maxVelDegS: the sweep duration
             // cancels, because the same velocity that paces the trigger is the one
             // integrated into the arc. So a slower scan does NOT yield more lines —
-            // only this rate does. Invert for the rate the artist's aspect implies,
-            // then clamp; a clamped rate just means fewer lines, which plannedLines
-            // reports so the capture side can size its frame to what will arrive.
+            // only this rate does.
+            //
+            // The line count IS the aspect, so it is never the thing that gives:
+            // when the artist's curve implies a rate above line_max_hz, the SWEEP
+            // is slowed until the rate fits instead of the count being clamped.
+            // maxVelDegS is a pure scale on the profile (see the run loop), so this
+            // stretches the pass in time and leaves the curve's SHAPE, and the
+            // image, intact. The identity holds even where minVelDegS floors the
+            // profile, because lineHzNow is derived from the same v that is
+            // integrated into the arc.
             const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
             if (m_job.staticHold) {
                 // No sweep to integrate: the artist picks a line count and a
-                // duration, so the rate is simply one divided by the other.
+                // duration, so the rate is simply one divided by the other. Asking
+                // too fast lengthens the hold rather than truncating the image.
                 const double want = (m_job.lineTarget > 0.0)
                                   ? m_job.lineTarget / std::max(1e-6, m_job.durationS)
                                   : m_job.lineBaseHz;
-                m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
-                if (want > m_cfg.lineMaxHz)
+                if (m_job.lineTarget > 0.0 && want > m_cfg.lineMaxHz) {
+                    const double heldS = m_job.lineTarget / m_cfg.lineMaxHz;
                     LOGW("seq: %.0f lines in %.1f s needs %.0f Hz > line_max_hz %.0f "
-                         "— clamped, delivering %.0f lines",
-                         m_job.lineTarget, m_job.durationS, want, m_cfg.lineMaxHz,
-                         m_cfg.lineMaxHz * m_job.durationS);
+                         "— holding %.1f s instead to keep the count",
+                         m_job.lineTarget, m_job.durationS, want, m_cfg.lineMaxHz, heldS);
+                    m_job.durationS  = heldS;
+                    m_job.lineBaseHz = m_cfg.lineMaxHz;
+                } else {
+                    // No line target: nothing to preserve, so the ceiling still
+                    // just caps the rate (a trigger above it is dropped silently).
+                    m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
+                }
             }
             else if (m_job.lineCurve && m_job.lineTarget > 0.0) {
                 const double want = m_job.lineTarget * m_job.maxVelDegS / arcAbs;
-                m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
-                if (want > m_cfg.lineMaxHz)
+                if (want > m_cfg.lineMaxHz) {
+                    const double velCap = m_cfg.lineMaxHz * arcAbs / m_job.lineTarget;
                     LOGW("seq: %.0f lines over %.1f deg needs %.0f Hz > line_max_hz %.0f "
-                         "— clamped, delivering %.0f lines",
+                         "— peak vel %.1f -> %.1f deg/s to keep the count",
                          m_job.lineTarget, arcAbs, want, m_cfg.lineMaxHz,
-                         m_cfg.lineMaxHz * arcAbs / std::max(1e-6, m_job.maxVelDegS));
+                         m_job.maxVelDegS, velCap);
+                    m_job.maxVelDegS = velCap;
+                }
+                m_job.lineBaseHz = m_job.lineTarget * m_job.maxVelDegS / arcAbs;
             }
             m_plannedLines = m_job.staticHold
                 ? int(m_job.lineBaseHz * m_job.durationS + 0.5)
@@ -232,9 +249,9 @@ void Sequencer::cycle(double dt) {
             m_lineCount = 0.0; m_blinkTick = 0; m_blinkLeft = 0.0;
             enterPass(0);
             LOGI("seq: execute — %d pass(es), arc %.1f→%.1f deg, %zu profile samples, "
-                 "line %.0f Hz -> %d lines",
+                 "peak %.1f deg/s, line %.0f Hz -> %d lines",
                  m_passCount, m_job.arcStartDeg, m_job.arcEndDeg, m_job.profile.size(),
-                 m_job.lineBaseHz, m_plannedLines);
+                 m_job.maxVelDegS, m_job.lineBaseHz, m_plannedLines);
             break;
         }
         case SeqCommand::Pause:
