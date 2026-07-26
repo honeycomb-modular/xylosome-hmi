@@ -111,8 +111,8 @@ Item {
     onIsPlayingChanged: Motor.sequencePlaying = isPlaying
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
-    // Top-level sections (cursor cycles): spline box · aspect bar · reset · dial ·
-    // settings · execute · home. The aspect bar (green resize bar) is its own
+    // Top-level sections (cursor cycles): see the ring below — it follows the
+    // screen layout, left to right and top to bottom. The aspect bar (green resize bar) is its own
     // section now — a sibling of the spline box, not a sub-level. Editing:
     //   spline → "scrub" (red cursor) → "node" (move grabbed node)
     //   aspect → rotate slides the bar (box width / aspect)
@@ -141,11 +141,19 @@ Item {
 
     FocusController {
         id: scanFocus
-        targets: [splineBox, handle, resetCurveBtn, motorCircle, settingsBtn, resetBtn,
-                  btnSavePreset, btnPresets, btnColorMode, modesBtn]
-                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+        // Reading order — left to right, then down a line:
+        //   curve window: spline box · aspect bar · [reset curve]
+        //   lower half:   [color] · dial · [save] · [presets]
+        //   bottom bar:   [settings] · [modes] · fault chip · [abort] · [home]
+        targets: [splineBox, handle, resetCurveBtn,
+                  btnColorMode, motorCircle, btnSavePreset, btnPresets,
+                  settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
-        index: 5   // default focus on [home/ready]
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+                 .concat([resetBtn])
+        // Default focus on [home/ready] — by identity, since the chip and
+        // [abort] ahead of it come and go.
+        Component.onCompleted: index = targets.indexOf(resetBtn)
         onActivated: function(item) {
             if (item === splineBox) root.enterSplineEditing()
             else if (item === handle) root.enterAspectEditing()

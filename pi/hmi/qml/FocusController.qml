@@ -39,6 +39,22 @@ Item {
         (targets.length > 0 && index >= 0 && index < targets.length)
             ? targets[index] : null
 
+    // The focused Item remembered by identity. `targets` changes shape while a
+    // screen is live — [abort] appears for the duration of a run, the fault chip
+    // when the drive faults — and those sit MID-list now that the ring follows
+    // the screen layout. Re-find the same Item so the cursor stays where the
+    // operator put it instead of sliding onto a neighbour (or off the end).
+    property Item pinned: null
+
+    onIndexChanged: pinned = (index >= 0 && index < targets.length) ? targets[index] : null
+
+    onTargetsChanged: {
+        if (targets.length === 0) { pinned = null; return }
+        var i = pinned ? targets.indexOf(pinned) : -1
+        index = (i >= 0) ? i : Math.min(index, targets.length - 1)
+        pinned = targets[index]
+    }
+
     // Navigating-mode: enter on the focused item.
     signal activated(Item item)
     // Editing-mode signals.

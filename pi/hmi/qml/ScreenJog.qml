@@ -48,9 +48,11 @@ Item {
     FocusController {
         id: jogFocus
         index: 0
-        targets: [dialProxy, btnEnable, btnSetHome]
+        // Reading order — left to right, then down a line:
+        //   dial · [enable] · [set home] · [settings] · [modes] · fault chip · [go to 0°]
+        targets: [dialProxy, btnEnable, btnSetHome, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
-                 .concat([goZeroBtn, settingsBtn, modesBtn])
+                 .concat([goZeroBtn])
         onActivated: function(item) {
             if (item === dialProxy) root.takeDial()
             else if (item.clicked)  item.clicked()

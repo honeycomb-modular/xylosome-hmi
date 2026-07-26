@@ -98,10 +98,12 @@ Item {
     FocusController {
         id: staticFocus
         index: 0
-        targets: [frameProxy, timelineProxy]
-                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+        // Reading order — left to right, then down a line:
+        //   frame · timeline · [settings] · [modes] · fault chip · [abort] · [home]
+        targets: [frameProxy, timelineProxy, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
-                 .concat([homeBtn, settingsBtn, modesBtn])
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+                 .concat([homeBtn])
         onActivated: function(item) {
             if (item === frameProxy)          root.enterEditing("frame")
             else if (item === timelineProxy)  root.enterEditing("span")

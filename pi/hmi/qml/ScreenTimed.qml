@@ -91,10 +91,12 @@ Item {
 
     FocusController {
         id: timedFocus
-        targets: [fovCircle, timelineProxy]
-                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+        // Reading order — left to right, then down a line:
+        //   fov dial · timeline · [settings] · [modes] · fault chip · [abort] · [home]
+        targets: [fovCircle, timelineProxy, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
-                 .concat([homeBtn, settingsBtn, modesBtn])
+                 .concat(root.execState !== "idle" ? [abortBtn] : [])
+                 .concat([homeBtn])
         index: 1   // start on the timeline
         onActivated: function(item) {
             if (item === fovCircle)          root.enterDialEditing()
