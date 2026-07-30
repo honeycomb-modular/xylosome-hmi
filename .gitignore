@@ -34,3 +34,7 @@ build-suite/
 # Per-machine Claude Code settings (personal, not shared)
 .claude/settings.local.json
 dist/
+
+# macOS suite build (build-suite-mac.sh)
+build-suite-mac/
+build-suite-mac.log
