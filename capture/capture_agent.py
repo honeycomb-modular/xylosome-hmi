@@ -136,7 +136,18 @@ EXTSYNC_EDITS = {
     # retraces the identical arc. 1 = DIRECTION_FORWARD, 2 = DIRECTION_REVERSE;
     # which one is "forward" depends on the phase order, so if this yields an
     # empty frame, it's the other one.
-    "Shaft Encoder Direction": "1",
+    # EXPERIMENT 2026-08-09: 0 = DIRECTION_IGNORE, was 1 = FORWARD.
+    # Passes after the first came back empty or partial at random. Theory: the
+    # EL2521 stops mid-quadrature at pass end and restarts with the A/B phase
+    # order sometimes inverted, so the grabber reads the sweep as REVERSE and
+    # clocks nothing. Pass 0 always worked because the terminal starts from a
+    # known state after xylod's CoE config.
+    # IGNORE counts transitions both ways, so phase order stops mattering. That
+    # is what originally caused mirrored scans — but only because pulses were
+    # reaching the grabber during the return stroke. xylod now holds lineHz at 0
+    # for the whole reposition, so there should be nothing to miscount.
+    # If scans come back mirrored, this is why: put it back to "1".
+    "Shaft Encoder Direction": "0",
     "Line Trigger Enable":   "1",
     "Line Trigger Method":   "1",
     "Line Trigger Duration": "340",
