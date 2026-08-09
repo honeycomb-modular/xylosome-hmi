@@ -1,30 +1,30 @@
 // ScreenHdr.qml — capture ▸ hdr. The same sweep at several exposures.
 //
-// The line scanner's real problem is dynamic range: a clean B&W scan without
-// clipped highlights. Bracketing captures the same subject light and dark and
-// leaves the merge to a machine with more bits than the sensor has.
+// The line scanner's real problem is dynamic range: clean shadows without
+// clipped highlights. Bracketing captures the subject light and dark and leaves
+// the merge to something with more bits than the sensor has.
 //
-// WHY CHAINED, NOT MULTI-PASS. xylod can now run N passes in one job, but the
-// exposure has to change BETWEEN them, and the daemon marches straight from
-// pass_end into the next reposition. Changing a camera parameter into that
-// window is a race, and losing it means a bracket shot at the wrong exposure —
-// which looks like a successful HDR set and is not. So each bracket is its own
-// single-pass execute, fired only once the camera has acknowledged the change.
-// Same chaining chrono already proved. Slower by a reposition per bracket.
+// EXPOSURE IS TIME HERE, NOT GAIN. The camera has no exposure-time control, and
+// gain is the wrong lever anyway: it sits before the ADC so it does rescue
+// clipped highlights, but it amplifies signal and noise together, so it adds no
+// information in the shadows — a darker picture of the same noisy data.
 //
-// WHICH LEVER. The camera exposes no exposure-time control. What is writable is
-// gain, tdi.stages and line.rate (capture/PROTOCOL.md), and they are not
-// equivalent:
-//   gain   — continuous, ±10 dB, ~6 dB per stop. Amplifies noise with signal,
-//            so it buys less REAL dynamic range than it appears to.
-//   stages — 16/32/48/64/80/96. Closer to true exposure and quieter, but coarse,
-//            and 48 is the recorded sharpness default so moving costs something.
-// Both are offered because which one wins on this sensor is a measurement, not
-// a fact anyone here knows yet. Shoot a set each way and look.
+// What actually collects more photons is integration time, which IS 1/lineHz.
+// And xylod derives the rate from the wanted line count:
+//     baseHz = lines * maxVel / arc
+// so running a pass at half speed halves its rate too — same arc, same line
+// count, pixel-identical geometry, twice as long collecting each line. One
+// stop, honestly earned. That is xylod's passVelScale, and it means the whole
+// bracket set is ONE job: no camera parameter changes, no race against a pass
+// boundary, and one session in the Review Suite instead of N unrelated scans.
 //
-// The original setting is captured on execute and restored when the set ends,
-// aborts, faults or the link drops — leaving the camera on the last bracket
-// would silently poison every scan taken afterwards.
+// Bracket 0 runs at the speed you set and is the DARKEST; each one after is
+// slower and brighter. Scales above 1.0 would mean going faster than the speed
+// you chose, so the ladder only ever descends.
+//
+// The floor is the camera: it will not sync below 3500 Hz (capture/PROTOCOL.md),
+// so the slowest bracket's rate is checked against that rather than discovered
+// as a dead scan.
 //
 // See docs/superpowers/specs/2026-08-09-capture-art-modes.md §5.
 
@@ -40,8 +40,7 @@ Item {
     Settings {
         category: "hdr"
         property alias brackets: root.brackets
-        property alias stepDb:   root.stepDb
-        property alias lever:    root.lever
+        property alias stopsPer: root.stopsPer
         property alias speed:    root.speed
         property alias lines:    root.lines
         property alias hand1Angle: root.hand1Angle
@@ -61,11 +60,10 @@ Item {
     readonly property int bracketMax: 9
     property int brackets: 5
 
-    readonly property real stepMin: 1.0
-    readonly property real stepMax: 6.0
-    property real stepDb: 3.0            // dB between brackets (gain lever)
-
-    property string lever: "gain"        // gain | stages
+    // Stops between brackets. Each stop is a halving of speed.
+    readonly property real stopMin: 0.5
+    readonly property real stopMax: 2.0
+    property real stopsPer: 1.0
 
     readonly property real speedMin:   1.0
     readonly property real speedMax: 300.0
@@ -75,64 +73,52 @@ Item {
     readonly property int linesMax: 65000
     property int lines: 22200
 
-    readonly property var stageLadder: [16, 32, 48, 64, 80, 96]
-    readonly property real gainMin: -10.0
-    readonly property real gainMax:  10.0
+    // The camera will not sync below this; the slowest bracket must clear it.
+    readonly property real rateFloorHz: 3500.0
+    readonly property real rateCeilHz: 37000.0
 
     readonly property real arcDeg: Math.abs(root.hand2Angle - root.hand1Angle)
     readonly property real sweepSec: root.arcDeg / Math.max(0.001, root.speed)
-    readonly property real totalSec: root.brackets * (root.sweepSec + 1.0)
 
-    // 6 dB is a stop. For stages, each ladder step is its own ratio, so the span
-    // is stated in stops between the extremes rather than per step.
-    readonly property real spanStops: {
-        var v = root.bracketValues()
-        if (v.length < 2) return 0
-        if (root.lever === "gain") return (v[v.length - 1] - v[0]) / 6.0
-        return Math.log(v[v.length - 1] / Math.max(1, v[0])) / Math.log(2)
+    // Bracket 0 is the speed you set; each next one is `stopsPer` stops slower.
+    function scales() {
+        var out = []
+        for (var i = 0; i < root.brackets; i++)
+            out.push(Math.pow(2, -i * root.stopsPer))
+        return out
+    }
+    readonly property real spanStops: (root.brackets - 1) * root.stopsPer
+    readonly property real baseHz: root.arcDeg > 0
+                                 ? root.lines * root.speed / root.arcDeg : 0
+    readonly property real slowestHz: root.baseHz * Math.pow(2, -root.spanStops)
+    readonly property bool rateTooLow:  root.slowestHz < root.rateFloorHz
+    readonly property bool rateTooHigh: root.baseHz    > root.rateCeilHz
+    // Each bracket takes longer than the last, so the set is not brackets*sweep.
+    readonly property real totalSetSec: {
+        var t = 0, sc = root.scales()
+        for (var i = 0; i < sc.length; i++) t += root.sweepSec / sc[i] + 1.0
+        return t
     }
 
     // ── Run state ───────────────────────────────────────────────────────────────
     property string execState:   "idle"
     property bool   blinkVisible: true
-    property int    shotIdx:     -1       // bracket currently being captured
     property real   passFrac:     0.0
     property bool   homed:        false
-    // Captured at execute so the camera can be put back exactly as it was.
-    property real   savedGain:    0.0
-    property int    savedStages: 48
+    // Which bracket is in flight, straight from the daemon's pass index.
+    readonly property int shotIdx: root.execState === "idle" ? -1
+                                 : Math.max(0, Beckhoff.passIndex)
 
     readonly property real overallFrac: {
-        if (root.brackets <= 0 || root.shotIdx < 0) return 0
-        return Math.min(1, (root.shotIdx + root.passFrac) / root.brackets)
+        if (root.brackets <= 0 || root.execState === "idle") return 0
+        return Math.min(1, (Math.max(0, Beckhoff.passIndex) + root.passFrac) / root.brackets)
     }
 
-    // ── Bracket values, centred on what the camera is set to now ────────────────
+    // Exposure multiple of each bracket relative to the first.
     function bracketValues() {
-        var out = [], mid = Math.floor(root.brackets / 2), i
-        if (root.lever === "gain") {
-            var base = parseFloat(Camera.gain)
-            if (isNaN(base)) base = 0
-            for (i = 0; i < root.brackets; i++) {
-                var g = base + (i - mid) * root.stepDb
-                out.push(Math.max(root.gainMin, Math.min(root.gainMax, g)))
-            }
-        } else {
-            var bi = root.stageLadder.indexOf(Camera.tdiStages)
-            if (bi < 0) bi = 2                       // 48, the recorded default
-            for (i = 0; i < root.brackets; i++) {
-                var k = Math.max(0, Math.min(root.stageLadder.length - 1, bi + (i - mid)))
-                out.push(root.stageLadder[k])
-            }
-        }
+        var out = [], sc = root.scales()
+        for (var i = 0; i < sc.length; i++) out.push(1 / sc[i])
         return out
-    }
-    // Clamping at the ends can repeat a value — those brackets are duplicates,
-    // not extra range, so say so rather than pretending the span is wider.
-    readonly property bool clipped: {
-        var v = root.bracketValues()
-        for (var i = 1; i < v.length; i++) if (v[i] === v[i - 1]) return true
-        return false
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -153,8 +139,10 @@ Item {
              + p2(Math.floor((sec % 3600) / 60)) + ":" + p2(sec % 60)
     }
     function fmtValue(v) {
-        return root.lever === "gain" ? (v >= 0 ? "+" : "") + v.toFixed(1) + " dB"
-                                     : v + " stg"
+        return (v < 10 ? v.toFixed(1) : v.toFixed(0)) + "×"
+    }
+    function fmtHz(hz) {
+        return hz >= 1000 ? (hz / 1000).toFixed(1) + "k" : hz.toFixed(0)
     }
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
@@ -167,9 +155,9 @@ Item {
         id: hdrFocus
         index: 0
         // Reading order — left to right, then down a line:
-        //   brackets · step · speed · lines · [lever] · [settings] · [modes] · chip · [abort] · [home]
+        //   brackets · stops · speed · lines · field · [settings] · [modes] · chip · [abort] · [home]
         targets: [brProxy, stepProxy, speedProxy, linesProxy,
-                  fov1Proxy, fov2Proxy, leverBtn, settingsBtn, modesBtn]
+                  fov1Proxy, fov2Proxy, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -187,9 +175,9 @@ Item {
                 root.brackets = Math.max(root.bracketMin,
                                 Math.min(root.bracketMax, root.brackets + delta))
             else if (root.editTarget === "step")
-                root.stepDb = Math.max(root.stepMin,
-                              Math.min(root.stepMax,
-                                       Math.round((root.stepDb + delta * 0.5) * 2) / 2))
+                root.stopsPer = Math.max(root.stopMin,
+                                Math.min(root.stopMax,
+                                         Math.round((root.stopsPer + delta * 0.5) * 2) / 2))
             else if (root.editTarget === "speed")
                 root.speed = Math.max(root.speedMin,
                              Math.min(root.speedMax, root.speed + delta * 2))
@@ -218,84 +206,60 @@ Item {
         for (var i = 0; i < 32; i++) p.push(1.0)
         return p
     }
-    function applyExposure(v) {
-        if (!Camera.connected) return
-        if (root.lever === "gain") Camera.setParam("gain", v)
-        else                       Camera.setParam("tdi.stages", v)
-    }
-    function restoreExposure() {
-        if (!Camera.connected) return
-        if (root.lever === "gain") Camera.setParam("gain", root.savedGain)
-        else                       Camera.setParam("tdi.stages", root.savedStages)
-    }
-    function fireBracket(i) {
-        root.shotIdx  = i
-        root.passFrac = 0
-        root.applyExposure(root.bracketValues()[i])
-        camSettle.restart()          // let the camera take the change first
-    }
     function startRun() {
-        var g = parseFloat(Camera.gain)
-        root.savedGain   = isNaN(g) ? 0 : g
-        root.savedStages = Camera.tdiStages > 0 ? Camera.tdiStages : 48
+        // Without a session the scan lands as a bare TIF: commitSession() is
+        // what writes the sidecar the Suite pairs against.
+        Recorder.startSession()
+        Recorder.setScanContext(root.hand1Angle, root.hand2Angle,
+                                root.speed, root.speed, root.flatProfile())
+        Recorder.startPass(0)
+        root.passFrac     = 0
         root.execState    = "running"
         root.blinkVisible = true
         root.homed        = false
-        root.fireBracket(0)
+        if (Beckhoff.connected) {
+            // ONE job, N passes, one scale per bracket. Filter pinned to Clear
+            // and no arc offset — the brackets differ only in exposure.
+            Beckhoff.executeStack(root.brackets, 3, 0.0,
+                                  root.hand1Angle, root.hand2Angle,
+                                  root.speed, root.speed,
+                                  root.lines, root.flatProfile(), root.scales())
+        } else {
+            simTimer.start()
+        }
     }
     function finishRun() {
-        camSettle.stop(); simTimer.stop()
-        root.restoreExposure()
+        simTimer.stop()
+        Recorder.endPass(0)
+        Recorder.commitSession()   // writes the Suite's sidecar
         root.passFrac  = 1
         root.execState = "idle"
         root.blinkVisible = true
         finishClear.start()
     }
     function abortRun() {
-        // Only if a bracket was open — nextBracket() commits the completed ones.
-        if (root.shotIdx >= 0) { Recorder.endPass(0); Recorder.commitSession() }
-        camSettle.stop(); simTimer.stop()
-        root.restoreExposure()       // never leave the camera on a bracket
+        simTimer.stop()
+        // A part-finished set still deserves a sidecar: xylod closes the pass on
+        // stop and the agent saves the lines it collected.
+        Recorder.endPass(0)
+        Recorder.commitSession()
         root.execState = "idle"
         root.blinkVisible = true
-        root.shotIdx   = -1
         root.passFrac  = 0
     }
 
-    // The camera change goes Pi -> agent -> serial. 400 ms is comfortably longer
-    // than that round trip; firing sooner risks a bracket at the previous value.
-    Timer {
-        id: camSettle
-        interval: 400; repeat: false
-        onTriggered: {
-            if (root.execState !== "running") return
-            // One session per BRACKET: each is its own execute and its own TIF.
-            Recorder.startSession()
-            Recorder.setScanContext(root.hand1Angle, root.hand2Angle,
-                                    root.speed, root.speed, root.flatProfile())
-            Recorder.startPass(0)
-            if (Beckhoff.connected) {
-                Beckhoff.executeScan(1,                       // BW: one pass each
-                                     root.hand1Angle, root.hand2Angle,
-                                     root.speed, root.speed,
-                                     root.lines, root.flatProfile())
-            } else {
-                simTimer.start()
-            }
-        }
-    }
     Timer {
         id: finishClear
         interval: 900; repeat: false
-        onTriggered: { root.shotIdx = -1; root.passFrac = 0 }
+        onTriggered: root.passFrac = 0
     }
     Timer {
         id: simTimer
         interval: 250; repeat: true; running: false
         onTriggered: {
             if (Beckhoff.connected) { simTimer.stop(); return }
-            root.passFrac += 0.25 / Math.max(1, root.sweepSec)
-            if (root.passFrac >= 1) { simTimer.stop(); root.nextBracket() }
+            root.passFrac += 0.25 / Math.max(1, root.totalSetSec)
+            if (root.passFrac >= 1) root.finishRun()
         }
     }
     Timer {
@@ -303,13 +267,6 @@ Item {
         onTriggered: root.blinkVisible = !root.blinkVisible
     }
 
-    function nextBracket() {
-        if (root.execState !== "running") return
-        Recorder.endPass(0)
-        Recorder.commitSession()   // sidecar for the bracket just captured
-        if (root.shotIdx + 1 < root.brackets) root.fireBracket(root.shotIdx + 1)
-        else                                  root.finishRun()
-    }
 
     Connections {
         target: Beckhoff
@@ -317,7 +274,7 @@ Item {
             if (root.execState === "running" && Beckhoff.connected)
                 root.passFrac = Beckhoff.progress
         }
-        function onSequenceDone(passes) { root.nextBracket() }
+        function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
         function onFaulted(text)        { root.abortRun() }
         function onConnectedChanged()   { if (!Beckhoff.connected && root.execState !== "idle") root.abortRun() }
     }
@@ -377,13 +334,12 @@ Item {
     // ── Step ────────────────────────────────────────────────────────────────────
     Text {
         x: 502; y: 84
-        text: root.lever === "gain" ? "step" : "step (fixed by the ladder)"
+        text: "stops between"
         color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
         x: 502; y: 100; width: 440; height: 46
-        opacity: root.lever === "gain" ? 1.0 : 0.45
 
         Item { id: stepProxy; anchors.fill: parent }
 
@@ -399,16 +355,14 @@ Item {
             border.color: root.editTarget === "step" ? Theme.accent : Theme.border
             Rectangle {
                 x: 1; y: 1; height: parent.height - 2
-                width: (parent.width - 2) * (root.stepDb - root.stepMin)
-                       / (root.stepMax - root.stepMin)
+                width: (parent.width - 2) * (root.stopsPer - root.stopMin)
+                       / (root.stopMax - root.stopMin)
                 color: Theme.accent; opacity: 0.16
             }
             Text {
                 anchors.centerIn: parent
-                text:  root.lever === "gain"
-                       ? root.stepDb.toFixed(1) + " dB  ("
-                         + (root.stepDb / 6).toFixed(2) + " stop)"
-                       : "one ladder step"
+                text:  root.stopsPer.toFixed(1) + " stop"
+                       + (root.stopsPer === 1.0 ? "" : "s")
                 color: Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
@@ -560,32 +514,25 @@ Item {
     // ── Lever + the ladder it produces ──────────────────────────────────────────
     Hairline { x: Theme.marginX; y: 294; width: Theme.contentW }
 
-    TerminalButton {
-        id: leverBtn
-        controller: hdrFocus
-        x: Theme.marginX; y: 300
-        width: 232; height: 36
-        label:  root.lever === "gain" ? "[bracket: gain]" : "[bracket: stages]"
-        active: root.lever === "stages"
-        fontSize: Theme.fontMonoS
-        onClicked: root.lever = (root.lever === "gain" ? "stages" : "gain")
-    }
-
     Text {
-        x: Theme.marginX + 250; y: 302
-        text:  root.lever === "gain"
-               ? "gain is continuous but amplifies noise with signal"
-               : "stages is closer to true exposure but coarse — 48 is the sharp default"
+        x: Theme.marginX; y: 302
+        text:  "exposure is TIME, not gain — a slower pass integrates each line longer"
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Text {
-        x: Theme.marginX + 250; y: 318
-        text:  Camera.connected
-               ? ("now " + (root.lever === "gain" ? Camera.gain + " dB"
-                                                  : Camera.tdiStages + " stages"))
-               : "camera link down — brackets cannot be set"
-        color: Camera.connected ? Theme.colorTextFaint : Theme.danger
+        x: Theme.marginX; y: 320
+        text:  "rate " + root.fmtHz(root.baseHz) + " Hz down to "
+               + root.fmtHz(root.slowestHz) + " Hz"
+               + (root.rateTooLow
+                  ? "  ·  below the camera's " + root.fmtHz(root.rateFloorHz)
+                    + " Hz floor — fewer brackets, smaller step, or a faster sweep"
+                  : root.rateTooHigh
+                  ? "  ·  first bracket is over the " + root.fmtHz(root.rateCeilHz)
+                    + " Hz ceiling — xylod will slow the sweep to keep the count"
+                  : "  ·  inside the camera's sync range")
+        color: root.rateTooLow ? Theme.danger
+             : root.rateTooHigh ? Theme.accent : Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
 
@@ -598,13 +545,14 @@ Item {
             delegate: Rectangle {
                 required property var  modelData
                 required property int  index
-                width: 104; height: 30; radius: 2
+                width: 100; height: 30; radius: 2
                 color: (root.shotIdx === index) ? Theme.accentDim : Theme.panel
                 border.width: 1
                 border.color: (root.shotIdx === index) ? Theme.accent : Theme.border
                 Text {
                     anchors.centerIn: parent
-                    text:  root.fmtValue(modelData)
+                    text:  root.fmtValue(modelData) + "  "
+                           + root.fmtHz(root.baseHz / modelData)
                     color: (root.shotIdx === index) ? Theme.colorText : Theme.colorTextDim
                     font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
                 }
@@ -616,17 +564,8 @@ Item {
         x: Theme.marginX; y: 376
         text:  "span " + root.spanStops.toFixed(1) + " stops"
                + "  \xB7  " + root.arcDeg.toFixed(0) + "\xB0 field"
-               + "  \xB7  about " + root.fmtDuration(root.totalSec)
-        color: root.clipped ? Theme.danger : Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-    }
-    Text {
-        x: Theme.marginX; y: 394
-        visible: root.clipped
-        text:  root.lever === "gain"
-               ? "brackets repeat at the \xB110 dB rail — fewer brackets or a smaller step"
-               : "brackets repeat at the end of the stage ladder — use fewer"
-        color: Theme.danger
+               + "  \xB7  about " + root.fmtDuration(root.totalSetSec)
+        color: root.rateTooLow ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
 
@@ -657,7 +596,8 @@ Item {
     Text {
         x: Theme.marginX; y: 438
         text:  root.execState === "idle"
-               ? "the camera is put back to where it was when the set ends"
+               ? "one job, " + root.brackets + " passes · "
+                 + root.spanStops.toFixed(1) + " stops of real exposure"
                : "bracket " + (root.shotIdx + 1) + " / " + root.brackets
                  + "  \xB7  " + root.fmtValue(root.bracketValues()[Math.max(0, root.shotIdx)])
                  + "  \xB7  " + Math.round(root.overallFrac * 100) + "%"
@@ -743,7 +683,7 @@ Item {
         onClicked: {
             if (root.execState === "idle") {
                 if (root.arcDeg < 0.5) return       // field start and end are the same
-                if (!Camera.connected) return       // every bracket would be identical
+                if (root.rateTooLow) return         // the camera cannot sync that slow
                 root.startRun()
             } else if (root.execState === "running") {
                 if (Beckhoff.connected) Beckhoff.pause()

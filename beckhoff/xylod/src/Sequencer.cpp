@@ -84,6 +84,15 @@ double Sequencer::passArcStart() const {
     return m_job.arcStartDeg + double(std::max(0, m_pass)) * m_job.passOffsetDeg;
 }
 
+// Exposure bracketing: a slower pass integrates each line for longer. Out of
+// range or unset means full speed, so an ordinary scan is unaffected.
+double Sequencer::passVelScale() const {
+    const int i = m_pass;
+    if (i < 0 || i >= int(m_job.passVelScale.size())) return 1.0;
+    const double s = m_job.passVelScale[size_t(i)];
+    return (s > 1e-3 && s <= 1.0) ? s : 1.0;
+}
+
 void Sequencer::cycle(double dt) {
     // On the first operational cycle, adopt the backend's actual position as the
     // setpoint so we HOLD instead of snapping. Critical with absolute home, where
@@ -438,16 +447,24 @@ void Sequencer::cycle(double dt) {
             const double arc = m_job.arcEndDeg - m_job.arcStartDeg;     // signed
             const double arcAbs = std::max(1e-6, std::fabs(arc));
             const double x = m_arcS / arcAbs;                            // 0..1
-            const double vProf = std::max(m_job.minVelDegS,
-                                          profileAt(x) * m_job.maxVelDegS);
+            // Velocity and trigger rate scale TOGETHER, which is the whole
+            // trick: the ratio that fixes the geometry is untouched, so a
+            // slower pass delivers the same lines over the same arc, each one
+            // integrated for longer. Scaling only one of the two would change
+            // the image instead of its exposure.
+            const double sc      = passVelScale();
+            const double effMax  = m_job.maxVelDegS * sc;
+            const double effBase = m_job.lineBaseHz * sc;
+            const double vProf = std::max(m_job.minVelDegS * sc,
+                                          profileAt(x) * effMax);
             const double v = vProf * m_pauseRamp;
             m_arcS += v * dt;
             m_setpoint = passArcStart() + (arc > 0 ? m_arcS : -m_arcS);
 
             // line trigger follows the velocity (the third creative axis)
             lineHzNow = m_job.lineCurve
-                ? m_job.lineBaseHz * (v / std::max(1e-6, m_job.maxVelDegS))
-                : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+                ? effBase * (v / std::max(1e-6, effMax))
+                : (m_st == St::SeqRun ? effBase : 0.0);
             passDone = m_arcS >= arcAbs;
         }
         m_bk.setLineHz(lineHzNow);

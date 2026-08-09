@@ -89,10 +89,15 @@ public:
     // executeStack: N passes of the same sweep. filterSlot pins one filter for
     // all of them (so the wheel does not walk R/G/B/C), and passOffsetDeg shifts
     // the arc a little further each pass — sub-pixel dither for super-res.
+    // passVelScale: optional per-pass multiplier on maxVelDegS. Because xylod
+    // derives the trigger rate from the wanted line count, a slower pass gets a
+    // proportionally slower rate — same arc, same lines, longer integration.
+    // That is exposure bracketing with no camera parameter touched.
     Q_INVOKABLE void executeStack(int passes, int filterSlot, double passOffsetDeg,
                                   double arcStartDeg, double arcEndDeg,
                                   double maxVelDegS, double minVelDegS,
-                                  int targetLines, const QVariantList &profile);
+                                  int targetLines, const QVariantList &profile,
+                                  const QVariantList &passVelScale = {});
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void stop();

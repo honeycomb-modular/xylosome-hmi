@@ -103,7 +103,10 @@ ApplicationWindow {
     Shortcut { enabled: root.keysLive; sequences: ["G"]; onActivated: root.soloChannel = "G" }
     Shortcut { enabled: root.keysLive; sequences: ["B"]; onActivated: root.soloChannel = "B" }
     Shortcut { enabled: root.keysLive; sequences: ["C"]; onActivated: root.soloChannel = "C" }
-    Shortcut { enabled: root.keysLive; sequences: ["A"]; onActivated: root.soloChannel = "auto" }
+    // A clears both kinds of pick — on an indexed session the letters do nothing,
+    // so "back to auto" has to reset the pass index too or A looks broken.
+    Shortcut { enabled: root.keysLive; sequences: ["A"]
+               onActivated: { root.soloChannel = "auto"; root.soloPass = -1 } }
     Shortcut { enabled: root.keysLive; sequences: ["Z"]; onActivated: zoomView.toggleFit() }
 
     // Notes, library, deletion
@@ -162,11 +165,32 @@ ApplicationWindow {
     }
     Timer { id: reclaimTimer; interval: 5000; onTriggered: root.reclaimText = "" }
 
+    // A session whose passes do not each carry a distinct filter — a stack, a
+    // dither set, an exposure bracket. Selecting those by filter letter cannot
+    // work: they are all "C", so every letter resolves to pass 0 and the rest of
+    // the set is unreachable. Such sessions are picked by INDEX instead.
+    readonly property bool indexedPasses: {
+        const it = strip.currentItem
+        if (!it || it.sPassFilters.length < 2) return false
+        const seen = {}
+        for (let i = 0; i < it.sPassFilters.length; i++) {
+            if (seen[it.sPassFilters[i]]) return true
+            seen[it.sPassFilters[i]] = true
+        }
+        return false
+    }
+    // Explicit pass pick for indexed sessions; -1 = auto (newest with a preview).
+    property int soloPass: -1
+
     // Index of the pass shown in the image field for the current session
     readonly property int shownPass: {
         const it = strip.currentItem
         if (!it) return -1
-        if (soloChannel !== "auto") {
+        if (root.indexedPasses) {
+            if (soloPass >= 0 && soloPass < it.sPassPreviews.length
+                && it.sPassPreviews[soloPass] !== "")
+                return soloPass
+        } else if (soloChannel !== "auto") {
             for (let i = 0; i < it.sPassFilters.length; i++)
                 if (it.sPassFilters[i] === soloChannel && it.sPassPreviews[i] !== "")
                     return i
@@ -586,28 +610,43 @@ ApplicationWindow {
                 anchors.margins: 12
                 spacing: 2
                 visible: strip.currentItem !== null
+                // Filter letters for a colour session; pass numbers for a stack,
+                // dither or bracket set, where every pass is the same filter and
+                // a letter cannot tell them apart.
                 Repeater {
-                    model: ["R", "G", "B", "C"]
+                    model: root.indexedPasses
+                           ? (strip.currentItem ? strip.currentItem.sPassFilters.length : 0)
+                           : 4
                     ToggleChip {
-                        required property string modelData
-                        text: modelData
+                        required property int index
+                        readonly property string letter: ["R", "G", "B", "C"][index]
+                        text: root.indexedPasses ? String(index + 1) : letter
                         minWidth: 26
                         fontPx: 12
-                        active: root.soloChannel === modelData
-                        activeColor: root.filterColor(modelData)
-                        idleText: root.filterColor(modelData)
+                        active: root.indexedPasses ? root.soloPass === index
+                                                   : root.soloChannel === letter
+                        activeColor: root.indexedPasses ? root.ink
+                                                        : root.filterColor(letter)
+                        idleText: root.indexedPasses ? "#CCCCCC"
+                                                     : root.filterColor(letter)
                         hoverColor: "#9A9A9A"
-                        onClicked: root.soloChannel =
-                            root.soloChannel === modelData ? "auto" : modelData
+                        onClicked: {
+                            if (root.indexedPasses)
+                                root.soloPass = (root.soloPass === index ? -1 : index)
+                            else
+                                root.soloChannel =
+                                    root.soloChannel === letter ? "auto" : letter
+                        }
                     }
                 }
                 ToggleChip {
                     text: qsTr("auto")
-                    active: root.soloChannel === "auto"
+                    active: root.indexedPasses ? root.soloPass < 0
+                                               : root.soloChannel === "auto"
                     activeColor: root.ink
                     idleText: "#CCCCCC"
                     hoverColor: "#9A9A9A"
-                    onClicked: root.soloChannel = "auto"
+                    onClicked: { root.soloChannel = "auto"; root.soloPass = -1 }
                 }
             }
 

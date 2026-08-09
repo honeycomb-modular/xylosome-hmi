@@ -241,10 +241,13 @@ void BeckhoffLink::executeReversing(int colorMode, double arcStartDeg,
 void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg,
                                 double arcStartDeg, double arcEndDeg,
                                 double maxVelDegS, double minVelDegS,
-                                int targetLines, const QVariantList &profile)
+                                int targetLines, const QVariantList &profile,
+                                const QVariantList &passVelScale)
 {
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
+    QJsonArray scales;
+    for (const QVariant &v : passVelScale) scales.append(v.toDouble());
 
     QSettings s;
     QJsonObject line{
@@ -256,6 +259,7 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
 
     sendJson({
         {QStringLiteral("cmd"),           QStringLiteral("execute")},
+        {QStringLiteral("passVelScale"),  scales},
         // colorMode is ignored once `passes` is explicit, but send it anyway so
         // a daemon predating the pass-structure change still runs something sane.
         {QStringLiteral("colorMode"),     1},

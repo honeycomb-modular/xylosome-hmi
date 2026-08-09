@@ -57,6 +57,15 @@ struct ScanJob {
     // -1 keeps the per-pass filter walk (R/G/B/C). >= 0 pins one slot for every
     // pass, so an N-pass stack does not drag the wheel round between passes.
     int    filterSlot    = -1;
+    // Per-pass multiplier on maxVelDegS. Empty = every pass at full speed.
+    //
+    // This is exposure bracketing without touching the camera. Exposure per line
+    // IS the integration time, 1/lineHz, and lineHz is derived here from the
+    // wanted line count: baseHz = lines * maxVel / arc. Scale a pass to half
+    // speed and its rate halves with it — same arc, same line count, same
+    // geometry, but twice as long collecting each line. One stop, no gain, no
+    // extra noise, and no camera parameter changing mid-sequence.
+    std::vector<double> passVelScale;
 
     // ── time-indexed profile (reversible motion) ─────────────────────────────
     // Normally the profile is indexed by POSITION along the arc, which makes the
@@ -132,6 +141,7 @@ private:
     bool stepMove(double dt);                 // trapezoid toward m_moveTarget
     void enterPass(int pass);
     double passArcStart() const;              // arcStartDeg shifted by the pass offset
+    double passVelScale() const;              // this pass's speed multiplier
     double profileAt(double x) const;         // linear interp; samples may be signed
     long long nowMs() const;
 
