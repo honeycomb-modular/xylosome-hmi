@@ -76,9 +76,11 @@ Item {
     readonly property real rateCeilHz: 37000.0
 
     readonly property real arcDeg: Math.abs(root.hand2Angle - root.hand1Angle)
-    readonly property real sweepSec: root.arcDeg / Math.max(0.001, root.speed)
+    readonly property real sweepSec: root.arcDeg / Math.max(0.001, root.fastestVel)
 
     // Bracket 0 is the speed you set; each next one is `stopsPer` stops slower.
+    // Descending from the fastest bracket, so index mid lands exactly on the
+    // speed the operator set.
     function scales() {
         var out = []
         for (var i = 0; i < root.brackets; i++)
@@ -86,8 +88,17 @@ Item {
         return out
     }
     readonly property real spanStops: (root.brackets - 1) * root.stopsPer
+    // The ladder is CENTRED on the speed you set: that bracket is the exposure
+    // you judged correct, with darker ones above and brighter below. Since
+    // xylod only accepts scales <= 1 (a scale above 1 would mean outrunning the
+    // speed the job was given), the job is handed the FASTEST bracket as its
+    // maxVel and every scale descends from there. Set speed for a good
+    // exposure, not for the darkest frame.
+    readonly property real midIdx: (root.brackets - 1) / 2
+    readonly property real fastestVel: root.speed * Math.pow(2, root.midIdx * root.stopsPer)
+    readonly property bool tooFastVel: root.fastestVel > root.speedMax
     // arc cancels out of lines*speed/arc — see Calib.qml.
-    readonly property real baseHz: Calib.rateForSpeed(root.speed)
+    readonly property real baseHz: Calib.rateForSpeed(root.fastestVel)
     readonly property real slowestHz: root.baseHz * Math.pow(2, -root.spanStops)
     readonly property bool rateTooLow:  root.slowestHz < root.rateFloorHz
     // How many stops of bracketing this speed actually affords.
@@ -213,7 +224,7 @@ Item {
             // and no arc offset — the brackets differ only in exposure.
             Beckhoff.executeStack(root.brackets, 3, 0.0,
                                   root.hand1Angle, root.hand2Angle,
-                                  root.speed, root.speed,
+                                  root.fastestVel, root.fastestVel,
                                   root.lines, root.flatProfile(), root.scales())
         } else {
             simTimer.start()
@@ -363,8 +374,10 @@ Item {
     // ── Speed / lines ───────────────────────────────────────────────────────────
     Text {
         x: Theme.marginX; y: 154
-        text: "speed  ·  " + root.headroomStops.toFixed(1) + " stops of headroom"
-        color: root.spanStops > root.headroomStops ? Theme.danger : Theme.colorTextDim
+        text: "speed (centre bracket)  ·  fastest "
+              + root.fastestVel.toFixed(0) + " °/s"
+        color: (root.tooFastVel || root.spanStops > root.headroomStops)
+               ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
@@ -669,6 +682,7 @@ Item {
             if (root.execState === "idle") {
                 if (root.arcDeg < 0.5) return       // field start and end are the same
                 if (root.rateTooLow) return         // the camera cannot sync that slow
+                if (root.tooFastVel) return         // darkest bracket outruns the axis
                 root.startRun()
             } else if (root.execState === "running") {
                 if (Beckhoff.connected) Beckhoff.pause()

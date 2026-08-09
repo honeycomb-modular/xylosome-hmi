@@ -270,7 +270,15 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
         {QStringLiteral("arcEndDeg"),     arcEndDeg},
         {QStringLiteral("maxVelDegS"),    maxVelDegS},
         {QStringLiteral("minVelDegS"),    minVelDegS},
-        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
+        // Multi-pass needs a MUCH longer settle than a single scan. Measured
+        // 2026-08-09: every pass after the first loses a fixed ~1 s at its
+        // start before the grabber collects anything — sweeps shorter than that
+        // returned literally zero lines. Ordinary 4-pass colour scans never hit
+        // it because the filter wheel's rotation buys seconds of gap; pinning
+        // the filter (which stack and hdr do) collapsed the gap to reposition
+        // plus settle, about 0.9 s, and the dead time no longer fitted.
+        // The dead time is inside the capture agent. The gap is ours.
+        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 1800.0).toDouble()},
         {QStringLiteral("returnVelDegS"), s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),          line},
         {QStringLiteral("profile"),       prof},
