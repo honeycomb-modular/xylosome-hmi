@@ -70,6 +70,16 @@ struct ScanJob {
     // pass begins. Travel is bounded only by the soft limits, so they are
     // enforced every cycle in this mode.
     bool   timeProfile = false;
+
+    // Only trigger lines while the axis is moving POSITIVE. The camera is a TDI
+    // sensor: its stages shift charge in one fixed direction (scan.dir, asserted
+    // once at capture-agent start), so a sweep running the other way integrates
+    // a different subject line into every stage and the image comes out softened
+    // by roughly the stage count. Flipping the camera mid-swing is not an option
+    // — the command path is slow and changing CCD direction auto-loads a
+    // different gain set. So the return stroke is simply not captured.
+    // Costs half the lines per cycle; the image is sharp throughout.
+    bool   lineForwardOnly = false;
 };
 
 struct SeqCommand {

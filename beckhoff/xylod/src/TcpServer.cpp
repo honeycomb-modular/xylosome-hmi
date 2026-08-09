@@ -123,6 +123,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
         j.passOffsetDeg = req.value("passOffsetDeg", 0.0);
         j.filterSlot    = req.value("filterSlot", -1);
         j.timeProfile   = req.value("timeProfile", false);
+        j.lineForwardOnly = req.value("lineForwardOnly", false);
         if (req.contains("profile") && req["profile"].is_array())
             j.profile = req["profile"].get<std::vector<double>>();
         if (j.passCount < 0 || j.passCount > 64) {

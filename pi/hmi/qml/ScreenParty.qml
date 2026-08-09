@@ -34,6 +34,7 @@ Item {
         property alias durationSec: root.durationSec
         property alias seed:        root.seed
         property alias lines:       root.lines
+        property alias fwdOnly:     root.fwdOnly
     }
 
     // ── Dance definition ────────────────────────────────────────────────────────
@@ -118,6 +119,10 @@ Item {
     onPeakAccChanged:     dance.requestPaint()
 
     // ── Run state ───────────────────────────────────────────────────────────────
+    // TDI shifts one way, so the return stroke smears. Default ON: sharp is
+    // the sane default and the smear is the deliberate choice.
+    property bool fwdOnly: true
+
     property string execState:   "idle"
     property bool   blinkVisible: true
     property real   progressFrac: 0.0
@@ -165,7 +170,7 @@ Item {
         index: 0
         // Reading order — left to right, then down a line:
         //   energy · duration · lines · [reroll] · [settings] · [modes] · chip · [abort] · [home]
-        targets: [energyProxy, durProxy, linesProxy, rerollBtn, settingsBtn, modesBtn]
+        targets: [energyProxy, durProxy, linesProxy, rerollBtn, fwdBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -207,7 +212,7 @@ Item {
             // comes back — no need to offset the start the way pendulum does.
             Beckhoff.executeReversing(Motor.colorMode, root.centreDeg,
                                       root.energyDegS, root.durationSec,
-                                      root.lines, root.profile)
+                                      root.lines, root.profile, root.fwdOnly)
         } else {
             simTimer.start()
         }
@@ -440,8 +445,21 @@ Item {
         onClicked: root.seed = Math.floor(Math.random() * 100000)
     }
 
+    // TDI shifts charge one way only, so the return stroke smears by about the
+    // stage count. Default is to skip it: sharp everywhere, half the lines.
+    TerminalButton {
+        id: fwdBtn
+        controller: partyFocus
+        x: Theme.marginX + 218; y: 350
+        width: 232; height: 36
+        label:  root.fwdOnly ? "[lines: forward]" : "[lines: both]"
+        active: root.fwdOnly
+        fontSize: Theme.fontMonoS
+        onClicked: root.fwdOnly = !root.fwdOnly
+    }
+
     Text {
-        x: 240; y: 352
+        x: 470; y: 352
         text:  "seed " + root.seed
                + "  \xB7  strays \xB1" + root.excursionDeg().toFixed(1) + "\xB0"
                + "  \xB7  peak " + root.peakAcc.toFixed(0) + " \xB0/s\xB2"
@@ -449,7 +467,7 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Text {
-        x: 240; y: 372
+        x: 470; y: 372
         visible: root.tooFast || root.tooHard
         text:  root.tooFast
                ? "too fast — drop the energy (ceiling "

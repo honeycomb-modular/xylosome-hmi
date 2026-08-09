@@ -223,7 +223,11 @@ void Sequencer::cycle(double dt) {
             m_meanAbsProfile = 1.0;
             if (m_job.timeProfile && m_job.profile.size() >= 2) {
                 double s = 0.0;
-                for (double p : m_job.profile) s += std::fabs(p);
+                // Gating to the forward stroke halves what is actually scanned,
+                // so the line-count target must be solved against the captured
+                // half only — otherwise a gated pass delivers half the aspect.
+                for (double p : m_job.profile)
+                    s += m_job.lineForwardOnly ? std::max(0.0, p) : std::fabs(p);
                 m_meanAbsProfile = std::max(1e-6, s / double(m_job.profile.size()));
             }
             if (m_job.staticHold) {
@@ -426,6 +430,9 @@ void Sequencer::cycle(double dt) {
             lineHzNow = m_job.lineCurve
                 ? m_job.lineBaseHz * (std::fabs(v) / std::max(1e-6, m_job.maxVelDegS))
                 : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+            // TDI runs one way only — see ScanJob::lineForwardOnly. The axis
+            // still travels the return stroke; it just is not scanned.
+            if (m_job.lineForwardOnly && v <= 0.0) lineHzNow = 0.0;
             passDone = m_dwellS >= m_job.durationS;
         } else {
             const double arc = m_job.arcEndDeg - m_job.arcStartDeg;     // signed

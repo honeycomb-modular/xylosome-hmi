@@ -38,6 +38,7 @@ Item {
         property alias periodSec:    root.periodSec
         property alias swings:       root.swings
         property alias lines:        root.lines
+        property alias fwdOnly:      root.fwdOnly
     }
 
     // ── Swing definition ────────────────────────────────────────────────────────
@@ -82,6 +83,10 @@ Item {
     readonly property real previewWindowSec: 20.0
 
     // ── Run state ───────────────────────────────────────────────────────────────
+    // TDI shifts one way, so the return stroke smears. Default ON: sharp is
+    // the sane default and the smear is the deliberate choice.
+    property bool fwdOnly: true
+
     property string execState:   "idle"
     property bool   blinkVisible: true
     property real   progressFrac: 0.0
@@ -116,7 +121,7 @@ Item {
         index: 0
         // Reading order — left to right, then down a line:
         //   amplitude · period · swings · lines · [settings] · [modes] · chip · [abort] · [home]
-        targets: [ampProxy, periodProxy, swingsProxy, linesProxy, settingsBtn, modesBtn]
+        targets: [ampProxy, periodProxy, swingsProxy, linesProxy, fwdBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -187,7 +192,8 @@ Item {
             Beckhoff.executeReversing(Motor.colorMode,
                                       root.centreDeg - root.amplitudeDeg,
                                       root.peakVel, root.durationSec,
-                                      root.lines, root.buildSineProfile())
+                                      root.lines, root.buildSineProfile(),
+                                      root.fwdOnly)
         } else {
             simTimer.start()
         }
@@ -502,15 +508,33 @@ Item {
                : "swinging  ·  " + Math.round(root.progressFrac * 100) + "%"
                  + "  ·  " + Beckhoff.velocityDegS.toFixed(0) + " \xB0/s"
                  + "  ·  " + Beckhoff.positionDeg.toFixed(1) + "\xB0"
-        color: root.tooFast ? Theme.danger : Theme.colorTextDim
+        color: (root.tooFast || root.tooHard) ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
 
+    // TDI shifts charge one way only, so the return stroke smears by about the
+    // stage count. Default is to skip it: sharp everywhere, half the lines.
+    TerminalButton {
+        id: fwdBtn
+        controller: pendFocus
+        x: Theme.marginX; y: 428
+        width: 232; height: 36
+        label:  root.fwdOnly ? "[lines: forward]" : "[lines: both]"
+        active: root.fwdOnly
+        fontSize: Theme.fontMonoS
+        onClicked: root.fwdOnly = !root.fwdOnly
+    }
+
     Text {
-        x: Theme.marginX; y: 430
-        visible: root.tooFast
-        text:  "too fast for the axis — widen the period or narrow the amplitude "
-               + "(ceiling " + root.velCeiling.toFixed(0) + " \xB0/s)"
+        x: Theme.marginX + 250; y: 437
+        visible: root.tooFast || root.tooHard
+        text:  root.tooFast
+               ? "too fast — widen the period or narrow the amplitude (ceiling "
+                 + root.velCeiling.toFixed(0) + " \xB0/s, this asks "
+                 + root.peakVel.toFixed(0) + ")"
+               : "turnaround too sharp for the drive — widen the period (limit "
+                 + root.accCeiling.toFixed(0) + " \xB0/s\xB2, this asks "
+                 + root.peakAcc.toFixed(0) + ")"
         color: Theme.danger
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }

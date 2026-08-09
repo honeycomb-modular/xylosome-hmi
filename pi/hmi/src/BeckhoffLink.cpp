@@ -206,7 +206,8 @@ void BeckhoffLink::executeStatic(int colorMode, double holdDeg,
 
 void BeckhoffLink::executeReversing(int colorMode, double arcStartDeg,
                                     double maxVelDegS, double durationSec,
-                                    int targetLines, const QVariantList &profile)
+                                    int targetLines, const QVariantList &profile,
+                                    bool lineForwardOnly)
 {
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
@@ -222,6 +223,7 @@ void BeckhoffLink::executeReversing(int colorMode, double arcStartDeg,
     sendJson({
         {QStringLiteral("cmd"),          QStringLiteral("execute")},
         {QStringLiteral("timeProfile"),  true},
+        {QStringLiteral("lineForwardOnly"), lineForwardOnly},
         {QStringLiteral("colorMode"),    colorMode},
         // arcEndDeg is ignored for a time-indexed pass; arcStartDeg is where the
         // axis repositions to before it starts swinging.

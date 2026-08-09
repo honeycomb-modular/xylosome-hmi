@@ -79,9 +79,13 @@ public:
     // executeReversing: the profile is SIGNED and indexed by time, so the axis
     // can turn around mid-pass — pendulum and party motion. Bounded by
     // durationSec, not by an arc end; travel is limited by xylod's soft limits.
+    // lineForwardOnly: do not trigger lines on the return stroke. The camera is
+    // TDI and its stages shift one way only, so a reverse sweep smears by about
+    // the stage count. Half the lines, but all of them sharp.
     Q_INVOKABLE void executeReversing(int colorMode, double arcStartDeg,
                                       double maxVelDegS, double durationSec,
-                                      int targetLines, const QVariantList &profile);
+                                      int targetLines, const QVariantList &profile,
+                                      bool lineForwardOnly = false);
     // executeStack: N passes of the same sweep. filterSlot pins one filter for
     // all of them (so the wheel does not walk R/G/B/C), and passOffsetDeg shifts
     // the arc a little further each pass — sub-pixel dither for super-res.
