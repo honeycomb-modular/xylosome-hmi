@@ -389,6 +389,14 @@ class Grabber:
         # from showing the previous pass's tail. Only under ext sync: this runs in
         # the settle window there, whereas free-run arms at pass_start where
         # nothing slow may precede the Snap.
+        # Reset the transfer FIRST, every time. Abort was only ever called on an
+        # incomplete frame, so after a full pass the next Snap was issued on a
+        # transfer that had completed and never been reset — and pass 0 is the
+        # only pass that never inherits one. Passes after it receive nothing at
+        # all, even given seconds to arrive, which is what a Snap that never
+        # took looks like. Aborting an idle transfer is harmless.
+        try: self.xfer.Abort()
+        except Exception: pass
         if self.ext: self.buf.Clear()
         self.xfer.Snap(1)
     def collect(self, timeout_ms=None, abort=False):
@@ -709,19 +717,11 @@ def xylod_client():
                         # the sweep is over, so no further EXSYNC pulse can arrive:
                         # a short grace, then take whatever filled
                         try:
-                            # 400 ms was a "short grace, then take whatever filled" —
-                            # fine when the host is idle. But the transfer of a
-                            # 250 MB frame is still draining into host memory at
-                            # pass_end, and the thread that services it is the one
-                            # that just wrote the PREVIOUS pass's TIFF. When that
-                            # write overruns the grace, the frame is aborted
-                            # mid-flight and comes back truncated — which is why
-                            # pass 0 (never preceded by a write) is the only pass
-                            # that reliably fills, and why the shortfall is erratic
-                            # rather than fixed. Raised to 4 s: the sweep is over,
-                            # so no further EXSYNC can arrive and a complete frame
-                            # still returns immediately.
-                            img = grab.collect(4000, abort=True)
+                            # A short grace, then take whatever filled. Tried 4 s
+                            # on 2026-08-09 in case lines were still in flight —
+                            # recovered nothing, passes 1+ were still zero. They
+                            # never arrive; waiting longer only slows the failure.
+                            img = grab.collect(400, abort=True)
                             pending[p] = (img, pass_filter.get(p, p))
                             ext_lines[p] = filled_lines(img)
                             print("collected pass %d: %d lines%s"
