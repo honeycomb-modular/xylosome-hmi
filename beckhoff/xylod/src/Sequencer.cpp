@@ -79,13 +79,6 @@ void Sequencer::enterPass(int pass) {
     m_bk.fwMoveToSlot(slot);
 }
 
-// Lines per output degree for the current job — the ratio that fixes the image
-// geometry. baseHz = lines*maxVel/arc, so baseHz/maxVel is lines/deg.
-double Sequencer::linesPerDeg() const {
-    if (m_job.maxVelDegS < 1e-6) return 0.0;
-    return m_job.lineBaseHz / m_job.maxVelDegS;
-}
-
 // Sub-pixel dither shifts the whole sweep a little further each pass.
 double Sequencer::passArcStart() const {
     return m_job.arcStartDeg + double(std::max(0, m_pass)) * m_job.passOffsetDeg;
@@ -379,16 +372,7 @@ void Sequencer::cycle(double dt) {
         break;
 
     case St::SeqReposition:
-        // Keep the encoder simulation HONEST. The axis really is moving here —
-        // backwards, to the arc start — and a real encoder would say so. Going
-        // silent instead makes the pulse train stop dead and restart cold every
-        // pass, and the grabber's decoder pays a fixed cost to re-lock, which is
-        // the dead second that cost passes 1+ their lines. Emitting reverse
-        // quadrature keeps the train continuous and coherent; the grabber is set
-        // to DIRECTION_FORWARD, so it counts none of it.
-        m_bk.setLineHz(m_moveVel * linesPerDeg());
         if (stepMove(dt)) {
-            m_bk.setLineHz(0.0);       // arrived: genuinely stationary
             m_settleLeft = m_job.settleMs * 1e-3;
             m_st = St::SeqSettle;
         }
