@@ -229,7 +229,12 @@ Item {
                                 root.velFor(i), 1.0, root.flatProfile())
         Recorder.startPass(0)
         if (Beckhoff.connected) {
-            Beckhoff.executeScan(1, root.hand1Angle, root.hand2Angle,
+            // Offset the whole arc by lead*velocity so every bracket starts at the
+            // same SUBJECT angle. Without it the brackets sit hundreds of lines
+            // apart — measured 447 and 675 lines on a 3-bracket set. Both ends
+            // move together, so the arc length and line count are unchanged.
+            var lead = Calib.leadDeg(root.velFor(i))
+            Beckhoff.executeScan(1, root.hand1Angle + lead, root.hand2Angle + lead,
                                  root.velFor(i), 1.0,
                                  root.lines, root.flatProfile())
         } else {

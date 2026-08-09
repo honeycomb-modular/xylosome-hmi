@@ -48,6 +48,24 @@ QtObject {
     function rateForSpeed(degPerSec) {
         return calib.linesPerDeg * degPerSec
     }
+    // Fixed time the sweep loses at the start of every pass. The trigger is paced
+    // off COMMANDED motion, so it begins clocking while the axis is still
+    // accelerating, and the catch-up costs a constant interval — which becomes a
+    // different ANGLE at each speed. Measured 2026-08-09 from a 3-bracket hdr set,
+    // locating a doorframe edge in each frame:
+    //
+    //   220 -> 110 deg/s : 447.1 lines shift  ->  t = 26.98 ms
+    //   220 ->  55 deg/s : 675.4 lines shift  ->  t = 27.17 ms
+    //
+    // Two brackets agreeing to 0.7%, so it is a constant rather than a fit. Modes
+    // that run passes at DIFFERENT speeds must offset each pass by lead*velocity
+    // or the frames do not register; same-speed modes share the error and never
+    // show it. Re-measure the same way if the drive's acceleration changes.
+    readonly property real triggerLeadSec: 0.0271
+
+    // Angular head-start a sweep at this speed needs to line up with the others.
+    function leadDeg(degPerSec) { return calib.triggerLeadSec * degPerSec }
+
     // Field width that yields a square image against the 8192 px sensor axis.
     readonly property real squareArcDeg: 8192 / calib.linesPerDeg
 }
