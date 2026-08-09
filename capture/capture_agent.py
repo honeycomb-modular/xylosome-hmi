@@ -109,11 +109,26 @@ def _tiff_writer():
         try:
             if job is None:
                 return
-            tmp, dst, img, meta, msg = job
+            tmp, dst, img, meta, name, motion_ms, full, ext, rate = job
             try:
-                tifffile.imwrite(tmp, img, metadata=meta)
+                # filled_lines() and .max() each scan the whole frame, and the
+                # crop decision needs the first. Done here, not on the status
+                # thread: they are proportional to frame size, which is exactly
+                # what was still starving the next pass after a big one.
+                if ext:
+                    n = filled_lines(img)
+                    lines = n or img.shape[0]
+                    over = "" if n else "  (NO LINES - check the EL2521 emit)"
+                else:
+                    want = int(motion_ms / 1000.0 * rate) if (motion_ms > 0 and rate > 0) else img.shape[0]
+                    lines = max(1, min(img.shape[0], want))
+                    over = " (sweep exceeded frame - lower line rate)" if want > img.shape[0] else ""
+                cropped = img[:lines]
+                tifffile.imwrite(tmp, cropped, metadata=meta)
                 os.replace(tmp, dst)
-                print(msg)
+                print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s%s"
+                      % (name, motion_ms, lines, img.shape[0], int(cropped.max()),
+                         "" if full else " (frame not filled)", over))
             except Exception as e:
                 print("capture save failed:", e)
         finally:
@@ -611,7 +626,6 @@ def xylod_client():
     seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
     ps_time = {}   # pass -> (recv_monotonic, pass_start tMs)
     pending = {}   # pass -> (full frame, filter) held between pass_start and pass_end
-    ext_lines = {} # pass -> rows the sweep actually delivered (ext sync only)
     in_seq = False # a sequence is in flight (board opened, or the open was refused)
     armed = None   # pass index whose EXSYNC snap is running, awaiting collect
     planned = 0    # lines xylod last said a pass will deliver (status, 25 Hz)
@@ -757,40 +771,30 @@ def xylod_client():
                             # recovered nothing, passes 1+ were still zero. They
                             # never arrive; waiting longer only slows the failure.
                             img = grab.collect(400, abort=True)
-                            pending[p] = (img, pass_filter.get(p, p))
-                            ext_lines[p] = filled_lines(img)
-                            print("collected pass %d: %d lines%s"
-                                  % (p, ext_lines[p], "" if grab.full else " (frame not filled)"))
+                            pending[p] = (img, pass_filter.get(p, p), grab.full)
+                            print("collected pass %d%s" % (p, "" if grab.full else " (short)"))
                         except Exception as e:
                             print("capture collect failed:", e)
                         armed = None
                     if p in pending:
-                        img, filt = pending.pop(p)
+                        img, filt, full = pending.pop(p)
                         motion_ms = (pe_tMs - ps_tMs) if (ps_tMs is not None and pe_tMs is not None) else -1
-                        if EXT_SYNC:
-                            # EXSYNC: every delivered row is a motion-locked line, so keep
-                            # exactly those and drop the unfilled tail. No lines at all is a
-                            # trigger fault — save the whole frame so it stays diagnosable.
-                            n = ext_lines.pop(p, 0)
-                            lines = n or img.shape[0]
-                            over = "" if n else "  (NO LINES — check the EL2521 emit)"
-                        else:
-                            rate = float(scan_settings.get("line.rate") or 0)
-                            want = int(motion_ms / 1000.0 * rate) if (motion_ms > 0 and rate > 0) else img.shape[0]
-                            lines = max(1, min(img.shape[0], want))
-                            over = " (sweep exceeded frame — lower line rate)" if want > img.shape[0] else ""
+                        # EXSYNC: every delivered row is a motion-locked line, so the
+                        # writer keeps exactly those and drops the unfilled tail. No
+                        # lines at all is a trigger fault — it saves the whole frame
+                        # so it stays diagnosable.
+                        rate = float(scan_settings.get("line.rate") or 0)
                         name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                         tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
                         try:
+                            # Hand the WHOLE frame over and return to the status
+                            # loop. The writer crops, scans and reports — a peak
+                            # at/below 255 still means the data never left the low
+                            # byte (.ccf Pixel Mask or clm).
                             _write_q.put((tmp, os.path.join(CAPTURE_DIR, name),
-                                          img[:lines],
+                                          img,
                                           {"camera": scan_settings, "bits": CAM_BITS},
-                                          # peak is left-justified 16-bit: full scale is
-                                          # 65535 whatever CAM_BITS is. At/below 255 means
-                                          # the data never left the low byte.
-                                          "saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
-                                          % (name, motion_ms, lines, img.shape[0],
-                                             int(img[:lines].max()), over)))
+                                          name, motion_ms, full, EXT_SYNC, rate))
                         except Exception as e:
                             print("capture save failed:", e)
                 elif ev == "seq_done":
