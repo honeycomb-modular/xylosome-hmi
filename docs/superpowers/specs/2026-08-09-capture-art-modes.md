@@ -316,3 +316,45 @@ mid-diagnosis, so do it alone against a known-good baseline.
 - **`tdi.stages`** — `docs/camera_capture_note.md:212` already records that the
   "48 is best" result predates the trigger fix. 96 is factory. It was set to 48
   here from a stale memory note and cost a stop for nothing.
+
+---
+
+## 8. hdr — WORKING, and why it is chained not multi-pass
+
+`capture.hdr` fires **one execute per bracket**, each a single-pass sequence, with
+the exposure ladder carried by per-bracket velocity. Verified 2026-08-09:
+8285/8288 lines on all three brackets, peak 65520, durations 251/501/1001 ms.
+
+**Why chained.** Multi-pass under EXSYNC still starves the pass after a full
+frame by a fixed ~0.44 s even after §7's fixes — with the arm landing 9-14 ms
+into a 2.47 s settle and every frame-sized operation moved off the status thread.
+4-pass COLOUR fills perfectly with BIGGER frames and a SHORTER gap, so it is not
+the settle and not the frame size. Single-pass sequences have never failed.
+The multi-pass defect is real and still open; stack still uses that path.
+
+**Two things chaining needs, both learned the hard way:**
+
+- **3 s between brackets.** The agent destroys the Sapera acquisition at
+  `seq_done` and creates a new one for the next sequence. Fire the next execute
+  on `seq_done` and the third bracket comes back completely black; 1.5 s was
+  still not enough (measured 1.53 s sweep-end to execute). 3 s works.
+- **minVelDegS must be a FLOOR, not the peak.** Passing the peak for both means
+  that when xylod caps `maxVelDegS` to hold the line count, the uncapped min wins
+  — the axis outruns the capped max and the trigger overshoots the camera
+  ceiling (seen: 37000 intended, 45194 emitted). Pass 1.0.
+
+**Exposure is time, not gain.** Each bracket runs at a different velocity, so the
+trigger rate scales with it and each line integrates proportionally longer — same
+arc, same line count, same geometry, real photons. Gain sits before the ADC so it
+rescues clipped highlights but amplifies noise with signal and collects nothing
+extra.
+
+**Known limitation — brackets do not register as tightly as colour mode.** Colour
+runs every pass at the SAME speed; hdr runs each at a different one. Any fixed
+time latency between sweep start and the first counted line becomes a different
+ANGLE at each speed — 10 ms is 2.2 deg at 220 deg/s but 0.55 deg at 55 deg/s. Fix
+is to offset each bracket's `arcStartDeg` by `latency * velocity`; the latency is
+measurable from the shift between two brackets of known speed ratio. Not done.
+
+Each bracket lands as its own Suite session — grouping them is display work, and
+is what the multi-pass detour was originally trying to buy.
