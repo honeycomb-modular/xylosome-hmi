@@ -86,15 +86,6 @@ RAW_SHIFT = 16 - CAM_BITS
 # so no time-crop is needed. Camera runs external sync (sem 3) during a scan.
 # 'freerun': the old fallback — camera internal-sync + a generous frame cropped
 # to the sweep by time. LIVE focus always stays free-run regardless.
-# EXPERIMENT 2026-08-09: recreate the grabber for every pass after the first.
-# Under EXSYNC, pass 0 is the only pass that gets a freshly-created
-# SapAcquisition — every later pass reuses the one opened at sequence start, so
-# any shaft-encoder decode state carries across. Pass 0 is also the only pass
-# that reliably fills, in EVERY multi-pass mode including plain 4-pass colour
-# (which, per Hoyte, has only ever been run in freerun — EXSYNC multi-pass is
-# untested ground, not a regression). Set REARM_FRESH=0 to disable.
-REARM_FRESH = os.environ.get("REARM_FRESH", "1") != "0"
-
 CAP_SYNC = os.environ.get("CAP_SYNC", "exsync").lower()
 EXT_SYNC = CAP_SYNC == "exsync"
 # WORKING.ccf -> ext-sync: 6-line diff captured from CamExpert. The grabber
@@ -581,10 +572,9 @@ def xylod_client():
     in_seq = False # a sequence is in flight (board opened, or the open was refused)
     armed = None   # pass index whose EXSYNC snap is running, awaiting collect
     planned = 0    # lines xylod last said a pass will deliver (status, 25 Hz)
-    open_lines = 0 # frame height the board was opened with (for a per-pass re-open)
 
     def open_board():
-        nonlocal seq, grab, have, open_lines
+        nonlocal seq, grab, have
         seq += 1
         # Frame height = the lines xylod says this pass will deliver (the HMI aspect
         # bar, after xylod's rate clamp). Sizing to it is what makes the aspect real:
@@ -622,7 +612,6 @@ def xylod_client():
         if not have and board_lock.reap():
             time.sleep(0.3)
             have = board_lock.acquire(who)
-        open_lines = lines
         if have:
             try:
                 grab = Grabber(lines=lines)
@@ -671,17 +660,6 @@ def xylod_client():
                     planned = int(m.get("plannedLines") or 0)
                     if p >= 0 and not in_seq:
                         in_seq = True; open_board()
-                    if (in_seq and grab and armed is None and st == "settle"
-                            and p > 0 and REARM_FRESH):
-                        # Give this pass the same clean acquisition pass 0 gets.
-                        try:
-                            t_re = time.monotonic()
-                            grab.close()
-                            grab = Grabber(lines=open_lines)
-                            print("re-opened board for pass %d (%dms)"
-                                  % (p, (time.monotonic() - t_re) * 1000))
-                        except Exception as e:
-                            print("capture: re-open failed:", e)
                     if in_seq and grab and armed is None and st == "settle" and p >= 0:
                         # settle is 300ms; the arm (buffer clear + Snap) must fit inside
                         # it, so log what it cost — if this approaches 300 the clear has
