@@ -69,8 +69,19 @@ bool Sequencer::stepMove(double dt) {
 void Sequencer::enterPass(int pass) {
     m_pass = pass;
     m_st = St::SeqFilter;
-    const int slot = (m_job.colorMode == 1) ? 3 : pass;   // BW → Clear
+    // A pinned slot wins; otherwise BW → Clear and colour walks R/G/B/C. With an
+    // explicit pass count the walk can run past the wheel, so clamp — an 8-pass
+    // stack holds the last slot rather than indexing off the end.
+    int slot = (m_job.filterSlot >= 0) ? m_job.filterSlot
+             : (m_job.colorMode == 1)  ? 3
+                                       : pass;
+    slot = std::max(0, std::min(3, slot));
     m_bk.fwMoveToSlot(slot);
+}
+
+// Sub-pixel dither shifts the whole sweep a little further each pass.
+double Sequencer::passArcStart() const {
+    return m_job.arcStartDeg + double(std::max(0, m_pass)) * m_job.passOffsetDeg;
 }
 
 void Sequencer::cycle(double dt) {
@@ -206,6 +217,15 @@ void Sequencer::cycle(double dt) {
             // profile, because lineHzNow is derived from the same v that is
             // integrated into the arc.
             const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
+            // A time-indexed profile spends part of the pass stationary or
+            // turning around, so its mean magnitude — not its peak — is what
+            // decides how far it travels and how many lines it delivers.
+            m_meanAbsProfile = 1.0;
+            if (m_job.timeProfile && m_job.profile.size() >= 2) {
+                double s = 0.0;
+                for (double p : m_job.profile) s += std::fabs(p);
+                m_meanAbsProfile = std::max(1e-6, s / double(m_job.profile.size()));
+            }
             if (m_job.staticHold) {
                 // No sweep to integrate: the artist picks a line count and a
                 // duration, so the rate is simply one divided by the other. Asking
@@ -226,6 +246,22 @@ void Sequencer::cycle(double dt) {
                     m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
                 }
             }
+            else if (m_job.timeProfile) {
+                // Travel is not monotonic, so there is no arc to divide by. What
+                // paces the trigger is how much of the pass is spent MOVING:
+                // lines = baseHz * mean|profile| * durationS. Solve that for the
+                // wanted count, then let the ceiling cap it (a reversing sweep
+                // has no single "peak velocity" to slow down instead).
+                const double want = (m_job.lineTarget > 0.0)
+                                  ? m_job.lineTarget
+                                    / std::max(1e-6, m_meanAbsProfile * m_job.durationS)
+                                  : m_job.lineBaseHz;
+                if (want > m_cfg.lineMaxHz)
+                    LOGW("seq: %.0f lines over %.1f s needs %.0f Hz > line_max_hz %.0f "
+                         "— clamping, the pass will deliver fewer",
+                         m_job.lineTarget, m_job.durationS, want, m_cfg.lineMaxHz);
+                m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
+            }
             else if (m_job.lineCurve && m_job.lineTarget > 0.0) {
                 const double want = m_job.lineTarget * m_job.maxVelDegS / arcAbs;
                 if (want > m_cfg.lineMaxHz) {
@@ -240,10 +276,15 @@ void Sequencer::cycle(double dt) {
             }
             m_plannedLines = m_job.staticHold
                 ? int(m_job.lineBaseHz * m_job.durationS + 0.5)
+                : m_job.timeProfile
+                ? int(m_job.lineBaseHz * (m_job.lineCurve ? m_meanAbsProfile : 1.0)
+                      * m_job.durationS + 0.5)
                 : m_job.lineCurve
                 ? int(m_job.lineBaseHz * arcAbs / std::max(1e-6, m_job.maxVelDegS) + 0.5)
                 : 0;   // fixed-rate mode: lines depend on duration, not arc — unknown here
-            m_passCount = (m_job.colorMode == 1) ? 1 : 4;
+            // An explicit count wins; otherwise the colour/BW behaviour stands.
+            m_passCount = (m_job.passCount > 0) ? m_job.passCount
+                        : (m_job.colorMode == 1) ? 1 : 4;
             m_bk.axisEnable(true);
             m_pauseRamp = 1.0; m_pausing = false;
             m_lineCount = 0.0; m_blinkTick = 0; m_blinkLeft = 0.0;
@@ -312,7 +353,7 @@ void Sequencer::cycle(double dt) {
 
     case St::SeqFilter:
         if (!m_bk.fwBusy()) {
-            startMove(m_job.arcStartDeg, m_job.returnVelDegS);
+            startMove(passArcStart(), m_job.returnVelDegS);
             m_st = St::SeqReposition;
         }
         break;
@@ -332,7 +373,10 @@ void Sequencer::cycle(double dt) {
             m_bk.setPassActive(true);
             m_bk.setPassIndex(true);
             m_indexPulseLeft = 0.050;
-            const int slot = (m_job.colorMode == 1) ? 3 : m_pass;
+            int slot = (m_job.filterSlot >= 0) ? m_job.filterSlot
+                     : (m_job.colorMode == 1)  ? 3
+                                               : m_pass;
+            slot = std::max(0, std::min(3, slot));   // must match enterPass()
             char b[128];
             std::snprintf(b, sizeof b,
                 "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\",\"tMs\":%lld}",
@@ -360,6 +404,29 @@ void Sequencer::cycle(double dt) {
             lineHzNow  = m_job.lineBaseHz * m_pauseRamp;
             m_dwellS  += dt * m_pauseRamp;
             passDone   = m_dwellS >= m_job.durationS;
+        } else if (m_job.timeProfile) {
+            // Reversible sweep. The profile is indexed by TIME and its samples
+            // are signed, so the axis can turn around mid-pass — which is the
+            // whole point, and also why position cannot index the curve here
+            // (x = arcS/arc only ever grows).
+            //
+            // minVelDegS is deliberately NOT applied: the floor exists to stop a
+            // position-indexed sweep stalling forever at v=0, but here the pass
+            // ends on the clock, and forcing a minimum would make the turnaround
+            // impossible — the axis could never pass through zero.
+            m_dwellS += dt * m_pauseRamp;
+            const double x = m_dwellS / std::max(1e-6, m_job.durationS);
+            const double v = profileAt(x) * m_job.maxVelDegS * m_pauseRamp;  // signed
+            m_setpoint += v * dt;
+            // No arc bounds the travel here, so the soft limits are the only
+            // thing that does. Clamp every cycle: a profile whose mean is not
+            // zero drifts, and drift with nothing to stop it is a crash.
+            m_setpoint = std::min(m_cfg.softMaxDeg, std::max(m_cfg.softMinDeg, m_setpoint));
+
+            lineHzNow = m_job.lineCurve
+                ? m_job.lineBaseHz * (std::fabs(v) / std::max(1e-6, m_job.maxVelDegS))
+                : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+            passDone = m_dwellS >= m_job.durationS;
         } else {
             const double arc = m_job.arcEndDeg - m_job.arcStartDeg;     // signed
             const double arcAbs = std::max(1e-6, std::fabs(arc));
@@ -368,7 +435,7 @@ void Sequencer::cycle(double dt) {
                                           profileAt(x) * m_job.maxVelDegS);
             const double v = vProf * m_pauseRamp;
             m_arcS += v * dt;
-            m_setpoint = m_job.arcStartDeg + (arc > 0 ? m_arcS : -m_arcS);
+            m_setpoint = passArcStart() + (arc > 0 ? m_arcS : -m_arcS);
 
             // line trigger follows the velocity (the third creative axis)
             lineHzNow = m_job.lineCurve
@@ -386,7 +453,11 @@ void Sequencer::cycle(double dt) {
         }
 
         if (passDone) {
-            if (!m_job.staticHold) m_setpoint = m_job.arcEndDeg;
+            // Snap to the exact arc end so rounding cannot leave the pass short.
+            // Neither a static hold nor a reversing sweep HAS an arc end, and
+            // snapping one there would be a jump to somewhere it never was.
+            if (!m_job.staticHold && !m_job.timeProfile)
+                m_setpoint = passArcStart() + (m_job.arcEndDeg - m_job.arcStartDeg);
             m_bk.setLineHz(0.0);
             m_bk.setPassActive(false);
             char b[96];

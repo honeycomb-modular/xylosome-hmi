@@ -45,6 +45,31 @@ struct ScanJob {
     // pass_start / pass_end / pass_active / the index pulse — is unchanged.
     bool   staticHold  = false;
     double durationS   = 0.0;      // pass length; required when staticHold
+
+    // ── multi-pass structure ─────────────────────────────────────────────────
+    // passCount 0 keeps the colorMode behaviour (1 BW pass / 4 colour passes).
+    // An explicit N runs N passes, which is what stacking, exposure bracketing
+    // and sub-pixel dithering all need and none of them could ask for before.
+    int    passCount     = 0;
+    // Shifts the whole arc by (pass * passOffsetDeg). Sub-pixel dither: the
+    // passes are the same sweep nudged a fraction of a pixel apart.
+    double passOffsetDeg = 0.0;
+    // -1 keeps the per-pass filter walk (R/G/B/C). >= 0 pins one slot for every
+    // pass, so an N-pass stack does not drag the wheel round between passes.
+    int    filterSlot    = -1;
+
+    // ── time-indexed profile (reversible motion) ─────────────────────────────
+    // Normally the profile is indexed by POSITION along the arc, which makes the
+    // sweep monotonic by construction — the axis physically cannot turn around,
+    // because x = arcS/arc only ever grows. Set timeProfile and the profile is
+    // indexed by TIME through the pass instead, and its samples are SIGNED, so
+    // negative means reverse. That is what pendulum and party motion need.
+    //
+    // The pass is then bounded by durationS, not by reaching arcEndDeg (which is
+    // meaningless once travel is not monotonic). arcStartDeg is still where the
+    // pass begins. Travel is bounded only by the soft limits, so they are
+    // enforced every cycle in this mode.
+    bool   timeProfile = false;
 };
 
 struct SeqCommand {
@@ -96,7 +121,8 @@ private:
     void startMove(double target, double vel, double accel = 0.0);   // accel<=0 → scan accel
     bool stepMove(double dt);                 // trapezoid toward m_moveTarget
     void enterPass(int pass);
-    double profileAt(double x) const;         // linear interp, 0..1 → 0..1
+    double passArcStart() const;              // arcStartDeg shifted by the pass offset
+    double profileAt(double x) const;         // linear interp; samples may be signed
     long long nowMs() const;
 
     const Config &m_cfg;
@@ -120,6 +146,7 @@ private:
     double m_moveAcc = 0.0;        // accel for the current point-to-point move (set by startMove)
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;
+    double m_meanAbsProfile = 1.0;  // mean |profile|, time-indexed passes only
     double m_lineCount  = 0.0;      // accumulated scanned lines this sequence
     int    m_plannedLines = 0;      // lines each pass will deliver, after the rate clamp
     long   m_blinkTick  = 0;        // last line_blink_div boundary crossed

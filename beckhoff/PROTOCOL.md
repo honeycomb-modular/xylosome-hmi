@@ -50,6 +50,41 @@ Every command may carry an optional `"id"` (int) which is echoed in the ack.
 }
 ```
 
+#### Optional: multi-pass structure
+
+| field | default | meaning |
+|---|---|---|
+| `passes` | `0` | explicit pass count (1–64). `0` keeps the `colorMode` behaviour: 1 pass BW, 4 passes colour. Needed by stacking, exposure bracketing and dithering, none of which fit 1-or-4. |
+| `passOffsetDeg` | `0.0` | shifts the whole arc by `pass * passOffsetDeg`. Sub-pixel dither: the same sweep nudged a fraction of a pixel each pass. |
+| `filterSlot` | `-1` | `-1` walks the filters per pass (R/G/B/C). `0–3` pins one slot for every pass, so an N-pass stack does not drag the wheel round between passes. Out-of-range pass indices clamp to the last slot. |
+
+#### Optional: `timeProfile` — reversible motion
+
+```json
+{ "cmd": "execute", "timeProfile": true, "durationS": 12.0,
+  "arcStartDeg": 0.0, "maxVelDegS": 60.0,
+  "profile": [0.0, 1.0, 0.0, -1.0, 0.0] }
+```
+
+Normally `profile[]` is indexed by **position** along the arc, which makes the
+sweep monotonic by construction — `x = arcS/arc` only ever grows, so the axis
+physically cannot turn around. With `timeProfile` the profile is indexed by
+**time** through the pass and its samples are **signed**: negative means
+reverse. That is what pendulum and party motion need.
+
+- `durationS` is **required** and bounds the pass; `arcEndDeg` is ignored.
+- `arcStartDeg` is still where the pass begins (the axis repositions there).
+- `minVelDegS` is **not** applied. The floor exists to stop a position-indexed
+  sweep stalling at v=0 forever; here it would make the turnaround impossible,
+  since the axis could never pass through zero.
+- Travel is bounded **only by the soft limits**, which are enforced every cycle.
+  A profile whose mean is non-zero drifts, and the limits are what stop it.
+- Line pacing uses `mean|profile|`, not peak velocity: a reversing sweep has no
+  single peak to slow down, so a `lines` target that needs more than
+  `line_max_hz` is clamped and the pass delivers fewer.
+- Mutually exclusive with `static` — rejected with `"static and timeProfile are
+  exclusive"`.
+
 The server acks immediately (`{"ack":"execute","ok":true}`) and then drives the
 sequence; progress arrives via events + status pushes.
 

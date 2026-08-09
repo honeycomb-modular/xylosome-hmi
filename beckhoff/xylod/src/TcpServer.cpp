@@ -119,9 +119,29 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
         }
         j.staticHold = req.value("static", false);
         j.durationS  = req.value("durationS", 0.0);
+        j.passCount     = req.value("passes", 0);
+        j.passOffsetDeg = req.value("passOffsetDeg", 0.0);
+        j.filterSlot    = req.value("filterSlot", -1);
+        j.timeProfile   = req.value("timeProfile", false);
         if (req.contains("profile") && req["profile"].is_array())
             j.profile = req["profile"].get<std::vector<double>>();
-        if (j.staticHold) {
+        if (j.passCount < 0 || j.passCount > 64) {
+            ack["ok"] = false; ack["err"] = "passes out of range"; post = false;
+        }
+        else if (j.timeProfile) {
+            // A reversing sweep is bounded by the clock, not by an arc, and its
+            // travel is limited only by the soft limits — so the duration is the
+            // one thing that must be right.
+            if (j.durationS <= 0.0) {
+                ack["ok"] = false; ack["err"] = "duration missing"; post = false;
+            } else if (j.profile.size() < 2) {
+                ack["ok"] = false; ack["err"] = "profile missing"; post = false;
+            } else if (j.staticHold) {
+                ack["ok"] = false; ack["err"] = "static and timeProfile are exclusive";
+                post = false;
+            }
+        }
+        else if (j.staticHold) {
             // A static pass has no sweep, so neither a velocity profile nor an
             // arc means anything — it is bounded by time alone.
             if (j.durationS <= 0.0) {
