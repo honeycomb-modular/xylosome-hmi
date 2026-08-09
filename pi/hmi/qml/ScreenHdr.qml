@@ -252,11 +252,16 @@ Item {
     // The agent closes the board at seq_done and reopens it for the next
     // sequence. Firing the next bracket the instant seq_done arrives races that:
     // brackets fired 2.3 s apart gave two clean frames and one completely black
-    // one. Chrono has the same gap for the same reason. 1.5 s is comfortably
-    // longer than a close/open and is dead time between brackets anyway.
+    // one. Chrono has the same gap for the same reason.
+    //
+    // 1.5 s was NOT enough: with the gap measurably live (1.53 s from sweep end
+    // to the next execute) the third bracket was still completely black. The
+    // agent destroys the Sapera acquisition at seq_done and creates a new one for
+    // the next sequence — the same destroy/create pair that took the native
+    // driver down when attempted per-pass, so it plainly needs longer. 3 s.
     Timer {
         id: bracketGap
-        interval: 1500; repeat: false
+        interval: 3000; repeat: false
         onTriggered: {
             if (root.execState !== "running") return
             root.fireBracket(root.shotIdx + 1)
