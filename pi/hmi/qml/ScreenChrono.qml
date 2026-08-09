@@ -148,6 +148,12 @@ Item {
     function fireFrame() {
         if (root.frameRunning) return          // previous frame overran its slot
         root.frameRunning = true
+        // One session per FRAME: each frame is its own execute and its own TIF,
+        // so each needs its own sidecar or the Suite cannot see it.
+        Recorder.startSession()
+        Recorder.setScanContext(Beckhoff.positionDeg, Beckhoff.positionDeg,
+                                0, 0, [])
+        Recorder.startPass(0)
         if (Beckhoff.connected) {
             // Hold wherever the axis already is — identical framing every frame.
             Beckhoff.executeStatic(Motor.colorMode, Beckhoff.positionDeg,
@@ -159,6 +165,8 @@ Item {
     function frameFinished() {
         if (!root.frameRunning) return
         root.frameRunning = false
+        Recorder.endPass(0)
+        Recorder.commitSession()   // writes the Suite's sidecar for this frame
         root.framesDone  += 1
         if (root.framesDone >= root.frameCount) root.finishRun()
     }
@@ -180,6 +188,8 @@ Item {
         finishClear.start()
     }
     function abortRun() {
+        // Only if a frame was actually open — frameFinished() commits the rest.
+        if (root.frameRunning) { Recorder.endPass(0); Recorder.commitSession() }
         intervalTimer.stop(); simFrame.stop()
         root.execState    = "idle"
         root.frameRunning = false

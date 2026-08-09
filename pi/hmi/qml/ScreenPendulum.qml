@@ -176,6 +176,13 @@ Item {
         return prof
     }
     function startRun() {
+        // Without a session the scan lands as a bare TIF: commitSession()
+        // is what writes the sidecar the Review Suite pairs against, so a
+        // mode that skips this produces files the Suite cannot see.
+        Recorder.startSession()
+        Recorder.setScanContext(root.centreDeg - root.amplitudeDeg, root.centreDeg + root.amplitudeDeg,
+                                root.peakVel, 0, root.buildSineProfile())
+        Recorder.startPass(0)
         root.progressFrac = 0
         root.execState    = "running"
         root.blinkVisible = true
@@ -199,6 +206,8 @@ Item {
         }
     }
     function finishRun() {
+        Recorder.endPass(0)
+        Recorder.commitSession()   // writes the Suite's sidecar
         simTimer.stop()
         root.progressFrac = 1
         root.execState    = "idle"
@@ -206,6 +215,8 @@ Item {
         finishClear.start()
     }
     function abortRun() {
+        Recorder.endPass(0)
+        Recorder.commitSession()   // writes the Suite's sidecar
         simTimer.stop()
         root.execState    = "idle"
         root.blinkVisible = true

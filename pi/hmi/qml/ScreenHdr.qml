@@ -241,6 +241,8 @@ Item {
         finishClear.start()
     }
     function abortRun() {
+        // Only if a bracket was open — nextBracket() commits the completed ones.
+        if (root.shotIdx >= 0) { Recorder.endPass(0); Recorder.commitSession() }
         camSettle.stop(); simTimer.stop()
         root.restoreExposure()       // never leave the camera on a bracket
         root.execState = "idle"
@@ -256,6 +258,11 @@ Item {
         interval: 400; repeat: false
         onTriggered: {
             if (root.execState !== "running") return
+            // One session per BRACKET: each is its own execute and its own TIF.
+            Recorder.startSession()
+            Recorder.setScanContext(scanCfg.hand1Angle, scanCfg.hand2Angle,
+                                    root.speed, root.speed, root.flatProfile())
+            Recorder.startPass(0)
             if (Beckhoff.connected) {
                 Beckhoff.executeScan(1,                       // BW: one pass each
                                      scanCfg.hand1Angle, scanCfg.hand2Angle,
@@ -287,6 +294,8 @@ Item {
 
     function nextBracket() {
         if (root.execState !== "running") return
+        Recorder.endPass(0)
+        Recorder.commitSession()   // sidecar for the bracket just captured
         if (root.shotIdx + 1 < root.brackets) root.fireBracket(root.shotIdx + 1)
         else                                  root.finishRun()
     }
