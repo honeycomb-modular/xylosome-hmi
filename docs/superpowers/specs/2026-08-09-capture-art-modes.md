@@ -255,3 +255,64 @@ Unexplained: why an intermediate rate loses most triggers while both a higher
 and a lower rate do not. Next place to look is the EL2521 itself (does it
 actually emit the commanded frequency after a mid-sequence change?) and the
 grabber's EXSYNC handling — not the daemon.
+
+---
+
+## 7. Multi-pass under EXSYNC — SOLVED, 2026-08-09
+
+Multi-pass had **never worked under EXSYNC**. It was not a regression: EXSYNC was
+built and validated for single-pass scans, and 4-pass colour had only ever been
+run in freerun. Stack and hdr were simply the first modes to ask for it.
+
+**Two independent faults, stacked** — which is why every single-cause theory
+failed for hours.
+
+### 7a. Stale transfer → whole passes returning ZERO
+
+`Grabber.arm()` did `buf.Clear()` + `xfer.Snap(1)`, and `xfer.Abort()` was called
+**only when a frame came back incomplete**. So after a FULL pass the next Snap was
+issued on a transfer that had completed and was never reset, and sometimes never
+took. Pass 0 is the only pass that never inherits a used transfer — and it was the
+only pass that reliably filled, in every multi-pass mode.
+
+Fix: `arm()` aborts unconditionally before Clear + Snap. Aborting an idle transfer
+is harmless. (Do NOT instead recreate the SapAcquisition per pass — tried, it takes
+the native driver down with no traceback and kills the agent.)
+
+### 7b. Blocked status thread → PARTIAL frames
+
+`tifffile.imwrite` of a ~400 MB frame ran on the thread that reads xylod's status.
+While it blocked, the status backlog grew, the next pass's settle was read late,
+and its Snap was armed after the sweep had already started.
+
+The signature: with 7a fixed, a pass was starved **exactly when the previous pass
+produced a big file** — 26756 full / 11058 / 26745 full / 4894, alternating.
+
+Fixes: the write moved to a worker thread (queue depth 1; `seq_done` joins it), and
+`settleMs` 150 → 1200 ms to cover what remains. `collect()` still copies the frame
+three times (`buf.Read`, `string_at`, `<< RAW_SHIFT`) and `filled_lines()`/`max()`
+each scan it again — about a second on a full frame. Slimming that is the way to
+claw the settle back; it is also the change that broke the agent when attempted
+mid-diagnosis, so do it alone against a known-good baseline.
+
+**Result:** 4-pass colour, all four passes 26745/26756, peak 65520.
+
+### 7c. Ruled out by measurement — do not re-chase
+
+- **xylod** — emits and sustains the commanded rate on every pass (its own
+  per-pass log vs the agent's collected count). Fully exonerated.
+- **The EL2521 and the grabber's decode** — a speed-curve scan has correct
+  geometry, which it could not if quadrature were mis-decoded. No scope needed.
+- **Rate, and rate changing between passes** — a same-rate 3-pass stack failed
+  identically; 7382 Hz is flawless in a single pass.
+- **The inter-pass gap alone** — 150 ms and 1800 ms behaved the same while 7a was
+  present.
+- **Lines arriving late** — a 4 s collect grace recovered nothing; they never
+  arrive.
+- **`Shaft Encoder Direction`** — `0` does not mean "count both ways" here, it
+  stops the grabber clocking entirely (every pass zero, including pass 0). Leave
+  at `1`. Emitting reverse quadrature during the return is also counted, so the
+  direction filter does not reject it: pass 0 fell to 62 lines.
+- **`tdi.stages`** — `docs/camera_capture_note.md:212` already records that the
+  "48 is best" result predates the trigger fix. 96 is factory. It was set to 48
+  here from a stale memory note and cost a stop for nothing.
