@@ -83,8 +83,14 @@ signalled — `pass_start` (with `"filter":"R"`), `pass_end`, `seq_done` are in
 **Unexploited lever:** `line.mode` is `"curve"` (rate ∝ instantaneous velocity)
 or `"fixed"` (constant `baseHz`). Fixed + a varying profile deliberately breaks
 geometry — the subject stretches where the axis is slow, compresses where fast.
-`executeScan()` only takes `targetLines`, so the HMI likely always sends
-`"curve"`. Exposing this is probably a one-line change for a genuinely new look.
+
+*Corrected 2026-08-09 after reading the source:* it is **not** hardcoded.
+`BeckhoffLink.cpp:154-158` already reads it from QSettings —
+`beckhoff/lineMode` (default `"curve"`) and `beckhoff/lineBaseHz` (default
+5000). But **nothing writes either key**: no QML and no C++ sets them, so the
+lever is dormant and reachable only by hand-editing the Pi's settings file.
+There is therefore *no code change at all* needed to use fixed mode — only a UI
+control to select it. Cheaper than first assessed.
 
 ### 5b. Buckets
 
@@ -141,6 +147,34 @@ without touching the proven motion path.
 **Suggested order:** Chrono and Stack first (bucket B — real modes, zero risk,
 they exercise the UI pattern), then the `line.mode` unlock (one line, new look),
 then the capture-PC exposure axis (bucket C), and only then the xylod keystone.
+
+### 5d-bis. Build log
+
+**2026-08-09, branch `art-modes`** (not merged to `main`):
+
+- `bbb355f` — modes picker lists the planned modes, greyed, under a hairline.
+  Not in `modeFocus.targets`, so they are not focusable or clickable.
+- `240c61e` — **`capture.chrono` built.** Each frame is an `executeStatic`; a
+  `Timer` spaces them. Per-frame shape is read from `capture.static`'s saved
+  settings rather than duplicated. Refuses to start when interval ≤ frame span,
+  because the second `executeStatic` would restart the first mid-frame rather
+  than queue. chrono graduated into the live list; planned block reflowed 3×3.
+
+Verified: all 31 QML files compile under `qmlcachegen` (msys2 UCRT64 Qt6).
+`qmllint` alone was **not** sufficient — it passed a duplicate
+`Component.onCompleted` that `qmlcachegen` caught. Use qmlcachegen for QML
+verification on the Capture PC; a full build cannot run there because
+`PendantReader.cpp` is Linux-only.
+
+**Not visually verified** — needs the 960×540 panel. Open: planned-block row
+spacing at 22 px, whether the greyed treatment reads as disabled rather than
+broken, and chrono's two-slider layout.
+
+**Stack deliberately not built.** Its HMI half is trivial (loop N BW executes)
+but its *value* is the averaging, which is capture-PC work — and COOP.md §5
+says the capture agent must not be restarted from code. Building only the HMI
+half would ship something that duplicates chrono without the payoff. Needs
+Hoyte present.
 
 ### 5d. UI consequence
 
