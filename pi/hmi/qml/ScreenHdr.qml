@@ -120,12 +120,16 @@ Item {
     property real   passFrac:     0.0
     property bool   homed:        false
     // Which bracket is in flight, straight from the daemon's pass index.
-    readonly property int shotIdx: root.execState === "idle" ? -1
-                                 : Math.max(0, Beckhoff.passIndex)
+    property int shotIdx: -1
+    // Bracket i runs at fastestVel scaled down — slower means longer integration
+    // per line, which is the exposure ladder.
+    function velFor(i) {
+        return root.fastestVel * Math.pow(2, -i * root.stopsPer)
+    }
 
     readonly property real overallFrac: {
-        if (root.brackets <= 0 || root.execState === "idle") return 0
-        return Math.min(1, (Math.max(0, Beckhoff.passIndex) + root.passFrac) / root.brackets)
+        if (root.brackets <= 0 || root.shotIdx < 0) return 0
+        return Math.min(1, (root.shotIdx + root.passFrac) / root.brackets)
     }
 
     // Exposure multiple of each bracket relative to the first.
@@ -208,32 +212,44 @@ Item {
         for (var i = 0; i < 32; i++) p.push(1.0)
         return p
     }
-    function startRun() {
-        // Without a session the scan lands as a bare TIF: commitSession() is
-        // what writes the sidecar the Suite pairs against.
+    // One bracket = one execute = one single-pass sequence. Multi-pass under
+    // EXSYNC still starves the pass after a full frame by a fixed ~0.44 s, even
+    // with the arm landing 10 ms into a 2.5 s settle and every frame-sized
+    // operation moved off the status thread. Single-pass sequences are the one
+    // path that has never failed, so each bracket gets its own — board opened
+    // and closed fresh, exactly like the scan mode that works.
+    //
+    // Costs a board open per bracket and lands each as its own Suite session.
+    // Both are worth it over a set where the middle frame is a slice.
+    function fireBracket(i) {
+        root.shotIdx  = i
+        root.passFrac = 0
         Recorder.startSession()
         Recorder.setScanContext(root.hand1Angle, root.hand2Angle,
-                                root.speed, root.speed, root.flatProfile())
+                                root.velFor(i), 1.0, root.flatProfile())
         Recorder.startPass(0)
-        root.passFrac     = 0
-        root.execState    = "running"
-        root.blinkVisible = true
-        root.homed        = false
         if (Beckhoff.connected) {
-            // ONE job, N passes, one scale per bracket. Filter pinned to Clear
-            // and no arc offset — the brackets differ only in exposure.
-            Beckhoff.executeStack(root.brackets, 3, 0.0,
-                                  root.hand1Angle, root.hand2Angle,
-                                  root.fastestVel, 1.0,
-                                  root.lines, root.flatProfile(), root.scales())
+            Beckhoff.executeScan(1, root.hand1Angle, root.hand2Angle,
+                                 root.velFor(i), 1.0,
+                                 root.lines, root.flatProfile())
         } else {
             simTimer.start()
         }
     }
+    function startRun() {
+        root.execState    = "running"
+        root.blinkVisible = true
+        root.homed        = false
+        root.fireBracket(0)
+    }
+    function nextBracket() {
+        Recorder.endPass(0)
+        Recorder.commitSession()      // sidecar for the bracket just captured
+        if (root.shotIdx + 1 < root.brackets) root.fireBracket(root.shotIdx + 1)
+        else                                  root.finishRun()
+    }
     function finishRun() {
         simTimer.stop()
-        Recorder.endPass(0)
-        Recorder.commitSession()   // writes the Suite's sidecar
         root.passFrac  = 1
         root.execState = "idle"
         root.blinkVisible = true
@@ -247,6 +263,7 @@ Item {
         Recorder.commitSession()
         root.execState = "idle"
         root.blinkVisible = true
+        root.shotIdx   = -1
         root.passFrac  = 0
     }
 
@@ -276,7 +293,9 @@ Item {
             if (root.execState === "running" && Beckhoff.connected)
                 root.passFrac = Beckhoff.progress
         }
-        function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
+        function onSequenceDone(passes) {
+            if (root.execState !== "idle") root.nextBracket()
+        }
         function onFaulted(text)        { root.abortRun() }
         function onConnectedChanged()   { if (!Beckhoff.connected && root.execState !== "idle") root.abortRun() }
     }
