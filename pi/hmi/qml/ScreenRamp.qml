@@ -32,7 +32,6 @@ Item {
         category: "ramp"
         property alias startSpeed: root.startSpeed
         property alias endSpeed:   root.endSpeed
-        property alias lines:      root.lines
         property alias coupling:   root.coupling
     }
 
@@ -53,9 +52,10 @@ Item {
     property real startSpeed:  8.0
     property real endSpeed:   120.0
 
-    readonly property int linesMin: 256
-    readonly property int linesMax: 65000
-    property int lines: 22200
+    // Derived from the arc by the optical calibration — see Calib.qml. Asking
+    // for a free line count is what stretched every scan and stopped frames
+    // filling inside their pass.
+    readonly property int lines: Calib.linesForArc(root.arcDeg)
 
     property string coupling: "curve"          // curve | fixed
 
@@ -74,15 +74,6 @@ Item {
     property bool   homed:        false
 
     // ── Log-scale helper for the line count (same grammar as static's frame) ────
-    readonly property real _lnLines: Math.log(root.linesMax)
-    function fracOfLines(n) {
-        n = Math.max(root.linesMin, Math.min(root.linesMax, n))
-        return Math.log(n) / root._lnLines
-    }
-    function linesOfFrac(f) {
-        f = Math.max(root.fracOfLines(root.linesMin), Math.min(1, f))
-        return Math.round(Math.exp(f * root._lnLines))
-    }
     function fmtLines(n) {
         return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")
     }
@@ -104,14 +95,13 @@ Item {
         index: 0
         // Reading order — left to right, then down a line:
         //   start · end · lines · [line:] · [settings] · [modes] · chip · [abort] · [home]
-        targets: [startProxy, endProxy, linesProxy, couplingBtn, settingsBtn, modesBtn]
+        targets: [startProxy, endProxy, couplingBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
         onActivated: function(item) {
             if (item === startProxy)      root.enterEditing("start")
             else if (item === endProxy)   root.enterEditing("end")
-            else if (item === linesProxy) root.enterEditing("lines")
             else if (item.clicked)        item.clicked()
         }
         onAdjust: function(delta) {
@@ -121,8 +111,6 @@ Item {
             else if (root.editTarget === "end")
                 root.endSpeed   = Math.max(root.speedMin,
                                   Math.min(root.speedMax, root.endSpeed + delta * 2))
-            else if (root.editTarget === "lines")
-                root.lines = root.linesOfFrac(root.fracOfLines(root.lines) + delta * 0.015)
         }
         onConfirmed: root.exitEditing()
         onCanceled:  root.exitEditing()
@@ -322,27 +310,20 @@ Item {
     Item {
         x: Theme.marginX; y: 210; width: Theme.contentW; height: 58
 
-        Item { id: linesProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (rampFocus.current === linesProxy && !rampFocus.editing) ? linesProxy : null
-        }
-
         Rectangle {
             anchors.fill: parent
             color: Theme.panel; radius: 2
-            border.width: root.editTarget === "lines" ? 2 : 1
-            border.color: root.editTarget === "lines" ? Theme.accent : Theme.border
+            border.width: 1
+            border.color: Theme.border
 
             Rectangle {
                 x: 1; y: 1; height: parent.height - 2
-                width: (parent.width - 2) * root.fracOfLines(root.lines)
+                width: parent.width - 2
                 color: Theme.accent; opacity: 0.16
             }
             Text {
                 anchors.centerIn: parent
-                text:  root.fmtLines(root.lines) + " lines"
+                text:  root.fmtLines(root.lines) + " lines  ·  from the arc"
                 color: Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
@@ -496,6 +477,5 @@ Item {
 
     Component.onCompleted: {
         rampFocus.editing = false
-        root.lines = Math.max(root.linesMin, Math.min(root.linesMax, root.lines))
     }
 }

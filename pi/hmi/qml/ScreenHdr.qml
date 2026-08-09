@@ -42,7 +42,6 @@ Item {
         property alias brackets: root.brackets
         property alias stopsPer: root.stopsPer
         property alias speed:    root.speed
-        property alias lines:    root.lines
         property alias hand1Angle: root.hand1Angle
         property alias hand2Angle: root.hand2Angle
     }
@@ -69,9 +68,8 @@ Item {
     readonly property real speedMax: 300.0
     property real speed: 60.0
 
-    readonly property int linesMin: 256
-    readonly property int linesMax: 65000
-    property int lines: 22200
+    // Derived, not dialled: the optics decide how many lines an arc holds.
+    readonly property int lines: Calib.linesForArc(root.arcDeg)
 
     // The camera will not sync below this; the slowest bracket must clear it.
     readonly property real rateFloorHz: 3500.0
@@ -88,10 +86,15 @@ Item {
         return out
     }
     readonly property real spanStops: (root.brackets - 1) * root.stopsPer
-    readonly property real baseHz: root.arcDeg > 0
-                                 ? root.lines * root.speed / root.arcDeg : 0
+    // arc cancels out of lines*speed/arc — see Calib.qml.
+    readonly property real baseHz: Calib.rateForSpeed(root.speed)
     readonly property real slowestHz: root.baseHz * Math.pow(2, -root.spanStops)
     readonly property bool rateTooLow:  root.slowestHz < root.rateFloorHz
+    // How many stops of bracketing this speed actually affords.
+    readonly property real headroomStops:
+        root.baseHz > root.rateFloorHz
+            ? Math.log(Math.min(root.baseHz, root.rateCeilHz) / root.rateFloorHz) / Math.log(2)
+            : 0
     readonly property bool rateTooHigh: root.baseHz    > root.rateCeilHz
     // Each bracket takes longer than the last, so the set is not brackets*sweep.
     readonly property real totalSetSec: {
@@ -122,15 +125,6 @@ Item {
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
-    readonly property real _lnLines: Math.log(root.linesMax)
-    function fracOfLines(n) {
-        n = Math.max(root.linesMin, Math.min(root.linesMax, n))
-        return Math.log(n) / root._lnLines
-    }
-    function linesOfFrac(f) {
-        f = Math.max(root.fracOfLines(root.linesMin), Math.min(1, f))
-        return Math.round(Math.exp(f * root._lnLines))
-    }
     function fmtLines(n) { return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") }
     function fmtDuration(sec) {
         sec = Math.max(0, Math.round(sec))
@@ -156,7 +150,7 @@ Item {
         index: 0
         // Reading order — left to right, then down a line:
         //   brackets · stops · speed · lines · field · [settings] · [modes] · chip · [abort] · [home]
-        targets: [brProxy, stepProxy, speedProxy, linesProxy,
+        targets: [brProxy, stepProxy, speedProxy,
                   fov1Proxy, fov2Proxy, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
@@ -165,7 +159,6 @@ Item {
             if (item === brProxy)          root.enterEditing("brackets")
             else if (item === stepProxy)   root.enterEditing("step")
             else if (item === speedProxy)  root.enterEditing("speed")
-            else if (item === linesProxy)  root.enterEditing("lines")
             else if (item === fov1Proxy)   root.enterEditing("fov1")
             else if (item === fov2Proxy)   root.enterEditing("fov2")
             else if (item.clicked)         item.clicked()
@@ -181,8 +174,6 @@ Item {
             else if (root.editTarget === "speed")
                 root.speed = Math.max(root.speedMin,
                              Math.min(root.speedMax, root.speed + delta * 2))
-            else if (root.editTarget === "lines")
-                root.lines = root.linesOfFrac(root.fracOfLines(root.lines) + delta * 0.015)
             else if (root.editTarget === "fov1")
                 root.hand1Angle = Math.max(root.axisMinDeg,
                                   Math.min(root.axisMaxDeg, root.hand1Angle + delta))
@@ -372,7 +363,8 @@ Item {
     // ── Speed / lines ───────────────────────────────────────────────────────────
     Text {
         x: Theme.marginX; y: 154
-        text: "speed"; color: Theme.colorTextDim
+        text: "speed  ·  " + root.headroomStops.toFixed(1) + " stops of headroom"
+        color: root.spanStops > root.headroomStops ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
@@ -407,32 +399,25 @@ Item {
 
     Text {
         x: 502; y: 154
-        text: "lines"; color: Theme.colorTextDim
+        text: "lines (derived)"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
         x: 502; y: 170; width: 440; height: 46
 
-        Item { id: linesProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (hdrFocus.current === linesProxy && !hdrFocus.editing) ? linesProxy : null
-        }
-
         Rectangle {
             anchors.fill: parent
             color: Theme.panel; radius: 2
-            border.width: root.editTarget === "lines" ? 2 : 1
-            border.color: root.editTarget === "lines" ? Theme.accent : Theme.border
+            border.width: 1
+            border.color: Theme.border
             Rectangle {
                 x: 1; y: 1; height: parent.height - 2
-                width: (parent.width - 2) * root.fracOfLines(root.lines)
+                width: parent.width - 2
                 color: Theme.accent; opacity: 0.16
             }
             Text {
                 anchors.centerIn: parent
-                text:  root.fmtLines(root.lines) + " lines"
+                text:  root.fmtLines(root.lines) + " lines  ·  from the arc"
                 color: Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
@@ -526,7 +511,7 @@ Item {
                + root.fmtHz(root.slowestHz) + " Hz"
                + (root.rateTooLow
                   ? "  ·  below the camera's " + root.fmtHz(root.rateFloorHz)
-                    + " Hz floor — fewer brackets, smaller step, or a faster sweep"
+                    + " Hz floor — raise the speed, or use fewer/smaller stops"
                   : root.rateTooHigh
                   ? "  ·  first bracket is over the " + root.fmtHz(root.rateCeilHz)
                     + " Hz ceiling — xylod will slow the sweep to keep the count"
@@ -699,6 +684,5 @@ Item {
 
     Component.onCompleted: {
         hdrFocus.editing = false
-        root.lines = Math.max(root.linesMin, Math.min(root.linesMax, root.lines))
     }
 }

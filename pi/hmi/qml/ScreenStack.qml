@@ -31,7 +31,6 @@ Item {
         category: "stack"
         property alias passes: root.passes
         property alias speed:  root.speed
-        property alias lines:  root.lines
         property alias dither: root.dither
     }
 
@@ -52,9 +51,10 @@ Item {
     readonly property real speedMax: 300.0
     property real speed: 60.0
 
-    readonly property int linesMin: 256
-    readonly property int linesMax: 65000
-    property int lines: 22200
+    // Derived from the arc by the optical calibration — see Calib.qml. Asking
+    // for a free line count is what stretched every scan and stopped frames
+    // filling inside their pass.
+    readonly property int lines: Calib.linesForArc(root.arcDeg)
 
     readonly property real arcDeg: Math.abs(scanCfg.hand2Angle - scanCfg.hand1Angle)
     readonly property real sweepSec: root.arcDeg / Math.max(0.001, root.speed)
@@ -91,15 +91,6 @@ Item {
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
-    readonly property real _lnLines: Math.log(root.linesMax)
-    function fracOfLines(n) {
-        n = Math.max(root.linesMin, Math.min(root.linesMax, n))
-        return Math.log(n) / root._lnLines
-    }
-    function linesOfFrac(f) {
-        f = Math.max(root.fracOfLines(root.linesMin), Math.min(1, f))
-        return Math.round(Math.exp(f * root._lnLines))
-    }
     function fmtLines(n) { return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") }
     function fmtDuration(sec) {
         sec = Math.max(0, Math.round(sec))
@@ -119,14 +110,13 @@ Item {
         index: 0
         // Reading order — left to right, then down a line:
         //   passes · speed · lines · [settings] · [modes] · chip · [abort] · [home]
-        targets: [passProxy, speedProxy, linesProxy, ditherBtn, settingsBtn, modesBtn]
+        targets: [passProxy, speedProxy, ditherBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
         onActivated: function(item) {
             if (item === passProxy)        root.enterEditing("passes")
             else if (item === speedProxy)  root.enterEditing("speed")
-            else if (item === linesProxy)  root.enterEditing("lines")
             else if (item.clicked)         item.clicked()
         }
         onAdjust: function(delta) {
@@ -134,8 +124,6 @@ Item {
                 root.passes = Math.max(root.passMin, Math.min(root.passMax, root.passes + delta))
             else if (root.editTarget === "speed")
                 root.speed = Math.max(root.speedMin, Math.min(root.speedMax, root.speed + delta * 2))
-            else if (root.editTarget === "lines")
-                root.lines = root.linesOfFrac(root.fracOfLines(root.lines) + delta * 0.015)
         }
         onConfirmed: root.exitEditing()
         onCanceled:  root.exitEditing()
@@ -320,33 +308,26 @@ Item {
     // ── Lines ───────────────────────────────────────────────────────────────────
     Text {
         x: Theme.marginX; y: 190
-        text: "lines"; color: Theme.colorTextDim
+        text: "lines (derived)"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
         x: Theme.marginX; y: 210; width: Theme.contentW; height: 58
 
-        Item { id: linesProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (stackFocus.current === linesProxy && !stackFocus.editing) ? linesProxy : null
-        }
-
         Rectangle {
             anchors.fill: parent
             color: Theme.panel; radius: 2
-            border.width: root.editTarget === "lines" ? 2 : 1
-            border.color: root.editTarget === "lines" ? Theme.accent : Theme.border
+            border.width: 1
+            border.color: Theme.border
 
             Rectangle {
                 x: 1; y: 1; height: parent.height - 2
-                width: (parent.width - 2) * root.fracOfLines(root.lines)
+                width: parent.width - 2
                 color: Theme.accent; opacity: 0.16
             }
             Text {
                 anchors.centerIn: parent
-                text:  root.fmtLines(root.lines) + " lines"
+                text:  root.fmtLines(root.lines) + " lines  ·  from the arc"
                 color: Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
@@ -504,6 +485,5 @@ Item {
 
     Component.onCompleted: {
         stackFocus.editing = false
-        root.lines = Math.max(root.linesMin, Math.min(root.linesMax, root.lines))
     }
 }

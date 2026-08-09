@@ -21,6 +21,9 @@ qt_standard_project_setup(REQUIRES 6.2)
 set_source_files_properties(qml/Theme.qml PROPERTIES
     QT_QML_SINGLETON_TYPE TRUE
 )
+set_source_files_properties(qml/Calib.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Executable + QML module (same target — Qt6 "inline" style)
@@ -46,6 +49,7 @@ qt_add_qml_module(xylosome_hmi
     VERSION 1.0
     QML_FILES
         qml/Theme.qml
+        qml/Calib.qml
         qml/main.qml
         # ── Reusable components ──
         qml/Hairline.qml
