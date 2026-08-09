@@ -14,7 +14,7 @@
 # Env:   XYLOD_HOST (default 192.168.2.2), CAPTURE_DIR (default D:\capture)
 # PREREQ: CamExpert closed (COM3 + board are single-occupant).
 
-import os, sys, re, json, socket, threading, time, ctypes, tempfile
+import os, sys, re, json, socket, threading, time, ctypes, tempfile, queue
 import numpy as np
 import serial
 import tifffile
@@ -86,6 +86,41 @@ RAW_SHIFT = 16 - CAM_BITS
 # so no time-crop is needed. Camera runs external sync (sem 3) during a scan.
 # 'freerun': the old fallback — camera internal-sync + a generous frame cropped
 # to the sweep by time. LIVE focus always stays free-run regardless.
+# ── background TIFF writer ────────────────────────────────────────────────────
+# imwrite of a 400 MB frame blocks for around a second, and it ran on the thread
+# that reads xylod's status. While it blocks, the status backlog grows and the
+# NEXT pass's settle is read late, so its Snap is armed after the sweep has
+# already started and the frame comes back short.
+#
+# The signature is unmistakable once you line the passes up: a pass is starved
+# exactly when the PREVIOUS pass produced a big file, and fine when the previous
+# one was small. 4-pass colour, 2026-08-09: 26756 full / 11058 / 26745 full /
+# 4894 — alternating with the size of the file written just before it.
+#
+# Depth 1: at most one frame queued plus one being written, so memory stays
+# bounded on 400 MB frames. The frame handed over is independent of the Sapera
+# buffer (collect() returns a fresh array), so closing the board cannot pull it
+# out from under the writer. collect() itself is deliberately NOT touched.
+_write_q = queue.Queue(maxsize=1)
+
+def _tiff_writer():
+    while True:
+        job = _write_q.get()
+        try:
+            if job is None:
+                return
+            tmp, dst, img, meta, msg = job
+            try:
+                tifffile.imwrite(tmp, img, metadata=meta)
+                os.replace(tmp, dst)
+                print(msg)
+            except Exception as e:
+                print("capture save failed:", e)
+        finally:
+            _write_q.task_done()
+
+threading.Thread(target=_tiff_writer, daemon=True, name="tiff-writer").start()
+
 CAP_SYNC = os.environ.get("CAP_SYNC", "exsync").lower()
 EXT_SYNC = CAP_SYNC == "exsync"
 # WORKING.ccf -> ext-sync: 6-line diff captured from CamExpert. The grabber
@@ -747,18 +782,19 @@ def xylod_client():
                         name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                         tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
                         try:
-                            tifffile.imwrite(tmp, img[:lines],
-                                             metadata={"camera": scan_settings, "bits": CAM_BITS})
-                            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            # peak is in left-justified 16-bit: full scale is 65535
-                            # whatever CAM_BITS is. A peak stuck at/below 255 means the
-                            # data never left the low byte — .ccf Pixel Mask or clm.
-                            print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
-                                  % (name, motion_ms, lines, img.shape[0],
-                                     int(img[:lines].max()), over))
+                            _write_q.put((tmp, os.path.join(CAPTURE_DIR, name),
+                                          img[:lines],
+                                          {"camera": scan_settings, "bits": CAM_BITS},
+                                          # peak is left-justified 16-bit: full scale is
+                                          # 65535 whatever CAM_BITS is. At/below 255 means
+                                          # the data never left the low byte.
+                                          "saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
+                                          % (name, motion_ms, lines, img.shape[0],
+                                             int(img[:lines].max()), over)))
                         except Exception as e:
                             print("capture save failed:", e)
                 elif ev == "seq_done":
+                    _write_q.join()      # every frame on disk before the board goes
                     close_board()
         except OSError as e:
             print("xylod conn error (%s) - retry" % e); time.sleep(2)
