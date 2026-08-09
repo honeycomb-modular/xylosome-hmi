@@ -85,6 +85,17 @@ public:
     Q_INVOKABLE void jog(double velDegS);
     Q_INVOKABLE void moveTo(double posDeg, double velDegS);   // absolute step moves (dial jog)
     Q_INVOKABLE void setFilter(int slot);
+    // Line-rate coupling for the NEXT executeScan. "curve" = trigger rate tracks
+    // instantaneous velocity, so geometry stays honest. "fixed" = constant
+    // baseHz regardless of speed, which stretches the subject where the axis is
+    // slow and compresses it where fast — an optical effect, not a bug.
+    //
+    // Goes through QSettings because that is where executeScan() already reads
+    // it (and has since before this accessor existed — the key was simply never
+    // written by anything). sync() so a scan fired straight after cannot read
+    // the previous value.
+    Q_INVOKABLE void    setLineMode(const QString &mode);   // "curve" | "fixed"
+    Q_INVOKABLE QString lineMode() const;
     Q_INVOKABLE void faultReset();
 
 signals:

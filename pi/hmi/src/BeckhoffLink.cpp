@@ -229,3 +229,15 @@ void BeckhoffLink::setFilter(int slot) {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("filter")},
               {QStringLiteral("slot"), slot}});
 }
+
+void BeckhoffLink::setLineMode(const QString &mode) {
+    QSettings s;
+    s.setValue(QStringLiteral("beckhoff/lineMode"),
+               mode == QStringLiteral("fixed") ? mode : QStringLiteral("curve"));
+    s.sync();   // executeScan() reads QSettings directly — don't race the flush
+}
+
+QString BeckhoffLink::lineMode() const {
+    return QSettings().value(QStringLiteral("beckhoff/lineMode"),
+                             QStringLiteral("curve")).toString();
+}
