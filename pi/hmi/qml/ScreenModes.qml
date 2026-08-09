@@ -94,11 +94,11 @@ Item {
             { name: "pendulum",  desc: "swings back and forth while scanning",         page: "ScreenPendulum.qml" },
             { name: "stack",     desc: "N identical sweeps — average, or dither for detail", page: "ScreenStack.qml" },
             { name: "party",     desc: "an irregular dance — seeded, repeatable",      page: "ScreenParty.qml"  },
+            { name: "hdr",       desc: "the same sweep at several exposures",          page: "ScreenHdr.qml"    },
             { name: "jog",       desc: "position the axis — nothing is captured",      page: "ScreenJog.qml"    },
 
             { name: "trichrome", desc: "sequential R/G/B filter passes"      },
             { name: "gradient",  desc: "exposure varies over the scan"       },
-            { name: "hdr",       desc: "bracketed exposures of one scene"    },
             { name: "echo",      desc: "repeated / offset structure"         }
         ]
 
