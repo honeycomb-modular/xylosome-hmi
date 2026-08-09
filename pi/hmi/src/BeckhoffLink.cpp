@@ -277,8 +277,11 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
         // it because the filter wheel's rotation buys seconds of gap; pinning
         // the filter (which stack and hdr do) collapsed the gap to reposition
         // plus settle, about 0.9 s, and the dead time no longer fitted.
-        // The dead time is inside the capture agent. The gap is ours.
-        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 1800.0).toDouble()},
+        // Fixed properly in the agent on 2026-08-09 (async TIFF write + one copy
+        // instead of three), so this no longer has to hide a full second. Kept
+        // above the single-scan 150 ms as margin: the arm still has to land
+        // inside the settle window.
+        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 600.0).toDouble()},
         {QStringLiteral("returnVelDegS"), s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),          line},
         {QStringLiteral("profile"),       prof},

@@ -14,7 +14,7 @@
 # Env:   XYLOD_HOST (default 192.168.2.2), CAPTURE_DIR (default D:\capture)
 # PREREQ: CamExpert closed (COM3 + board are single-occupant).
 
-import os, sys, re, json, socket, threading, time, ctypes, tempfile
+import os, sys, re, json, socket, threading, time, ctypes, tempfile, queue
 import numpy as np
 import serial
 import tifffile
@@ -28,6 +28,42 @@ sys.path.append(SAP + r"\Components\NET\Bin")
 clr.AddReference("DALSA.SaperaLT.SapClassBasic")
 from DALSA.SaperaLT.SapClassBasic import SapLocation, SapAcquisition, SapBuffer, SapAcqToBuf
 from System.Runtime.InteropServices import Marshal
+
+# ── background TIFF writer ────────────────────────────────────────────────────
+# imwrite of a 400 MB frame takes about a second, and it used to run on the very
+# thread that reads xylod's status stream. During that second the status backlog
+# grew, so the NEXT pass's settle was read late and the snap armed about a second
+# INTO the sweep. Every pass after the first lost that second; sweeps shorter than
+# it (a narrow field) returned zero lines. Normal 4-pass colour scans hid it
+# because the filter wheel's rotation gave the writer time to finish.
+#
+# Depth 1 on purpose: at most one frame queued plus one being written, so memory
+# stays bounded even on 400 MB frames. The frame handed over is independent of the
+# Sapera buffer (collect() returns a fresh array), so closing the board cannot
+# pull it out from under the writer.
+_write_q = queue.Queue(maxsize=1)
+
+def _tiff_writer():
+    while True:
+        job = _write_q.get()
+        try:
+            if job is None:
+                return
+            tmp, dst, img, meta, name, motion_ms, lines, total, over = job
+            try:
+                tifffile.imwrite(tmp, img, metadata=meta)
+                os.replace(tmp, dst)
+                # peak is left-justified 16-bit: full scale is 65535 whatever
+                # CAM_BITS is. Computed here, not on the status thread — .max()
+                # over a 400 MB frame is not free either.
+                print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
+                      % (name, motion_ms, lines, total, int(img.max()), over))
+            except Exception as e:
+                print("capture save failed:", e)
+        finally:
+            _write_q.task_done()
+
+threading.Thread(target=_tiff_writer, daemon=True, name="tiff-writer").start()
 
 COM, BAUD   = "COM3", 9600
 SERVER      = "Xtium-CL_MX4_1"
@@ -400,9 +436,18 @@ class Grabber:
             try: self.xfer.Abort()      # partial frame: stop it so the next arm is clean
             except Exception: pass
         self.buf.Read(0, 0, self.n, self.ptr)
-        raw = ctypes.string_at(int(self.ptr.ToInt64()), self.n * 2)
-        img = np.frombuffer(raw, dtype="<u2").reshape(self.h, self.w)
-        return img << RAW_SHIFT      # right-justified board data -> true 16-bit
+        # Map the unmanaged buffer instead of duplicating it. string_at copied the
+        # whole frame into a bytes object and `img << RAW_SHIFT` allocated another
+        # — three copies of a 400 MB frame on the thread that also reads xylod's
+        # status. Exactly one copy is genuinely needed, because self.ptr is reused
+        # by the next pass, so make it exactly one and shift it in place.
+        src = np.ctypeslib.as_array(
+            ctypes.cast(ctypes.c_void_p(int(self.ptr.ToInt64())),
+                        ctypes.POINTER(ctypes.c_uint16)),
+            shape=(self.h, self.w))
+        img = src.copy()             # detach from the reusable buffer
+        img <<= RAW_SHIFT            # right-justified board data -> true 16-bit
+        return img
     def frame(self):
         self.arm(); return self.collect()
     def close(self):
@@ -734,19 +779,17 @@ def xylod_client():
                             over = " (sweep exceeded frame — lower line rate)" if want > img.shape[0] else ""
                         name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
                         tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
-                        try:
-                            tifffile.imwrite(tmp, img[:lines],
-                                             metadata={"camera": scan_settings, "bits": CAM_BITS})
-                            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            # peak is in left-justified 16-bit: full scale is 65535
-                            # whatever CAM_BITS is. A peak stuck at/below 255 means the
-                            # data never left the low byte — .ccf Pixel Mask or clm.
-                            print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
-                                  % (name, motion_ms, lines, img.shape[0],
-                                     int(img[:lines].max()), over))
-                        except Exception as e:
-                            print("capture save failed:", e)
+                        # Hand off and return to the status loop immediately — see
+                        # _tiff_writer. A peak stuck at/below 255 still means the data
+                        # never left the low byte (.ccf Pixel Mask or clm).
+                        _write_q.put((tmp, os.path.join(CAPTURE_DIR, name),
+                                      img[:lines],
+                                      {"camera": scan_settings, "bits": CAM_BITS},
+                                      name, motion_ms, lines, img.shape[0], over))
                 elif ev == "seq_done":
+                    # Let every frame reach disk before releasing the board, so a
+                    # sequence is never reported done with writes still in flight.
+                    _write_q.join()
                     close_board()
         except OSError as e:
             print("xylod conn error (%s) - retry" % e); time.sleep(2)
