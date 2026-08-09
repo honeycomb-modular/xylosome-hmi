@@ -91,6 +91,7 @@ Item {
             { name: "static",    desc: "lines only — the camera never moves",          page: "ScreenStatic.qml" },
             { name: "chrono",    desc: "the same frame on an interval — time-lapse",   page: "ScreenChrono.qml" },
             { name: "ramp",      desc: "linear speed ramp — lines follow it, or don't", page: "ScreenRamp.qml"   },
+            { name: "pendulum",  desc: "swings back and forth while scanning",         page: "ScreenPendulum.qml" },
             { name: "jog",       desc: "position the axis — nothing is captured",      page: "ScreenJog.qml"    },
 
             { name: "stack",     desc: "multi-pass averaging for SNR"        },
@@ -99,7 +100,6 @@ Item {
             { name: "hdr",       desc: "bracketed exposures of one scene"    },
             { name: "superres",  desc: "sub-pixel offset passes"             },
             { name: "party",     desc: "back/forth, varied start/stop"       },
-            { name: "pendulum",  desc: "sinusoidal motion"                   },
             { name: "echo",      desc: "repeated / offset structure"         }
         ]
 

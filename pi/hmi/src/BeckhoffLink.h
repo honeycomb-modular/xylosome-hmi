@@ -76,6 +76,19 @@ public:
     // clock, not by an arc — there is no curve and no velocity to send.
     Q_INVOKABLE void executeStatic(int colorMode, double holdDeg,
                                    double durationSec, int targetLines);
+    // executeReversing: the profile is SIGNED and indexed by time, so the axis
+    // can turn around mid-pass — pendulum and party motion. Bounded by
+    // durationSec, not by an arc end; travel is limited by xylod's soft limits.
+    Q_INVOKABLE void executeReversing(int colorMode, double arcStartDeg,
+                                      double maxVelDegS, double durationSec,
+                                      int targetLines, const QVariantList &profile);
+    // executeStack: N passes of the same sweep. filterSlot pins one filter for
+    // all of them (so the wheel does not walk R/G/B/C), and passOffsetDeg shifts
+    // the arc a little further each pass — sub-pixel dither for super-res.
+    Q_INVOKABLE void executeStack(int passes, int filterSlot, double passOffsetDeg,
+                                  double arcStartDeg, double arcEndDeg,
+                                  double maxVelDegS, double minVelDegS,
+                                  int targetLines, const QVariantList &profile);
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void stop();

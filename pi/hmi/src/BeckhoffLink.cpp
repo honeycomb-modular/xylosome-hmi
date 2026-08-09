@@ -204,6 +204,73 @@ void BeckhoffLink::executeStatic(int colorMode, double holdDeg,
     });
 }
 
+void BeckhoffLink::executeReversing(int colorMode, double arcStartDeg,
+                                    double maxVelDegS, double durationSec,
+                                    int targetLines, const QVariantList &profile)
+{
+    QJsonArray prof;
+    for (const QVariant &v : profile) prof.append(v.toDouble());
+
+    QSettings s;
+    QJsonObject line{
+        {QStringLiteral("mode"),   s.value(QStringLiteral("beckhoff/lineMode"),
+                                           QStringLiteral("curve")).toString()},
+        {QStringLiteral("baseHz"), s.value(QStringLiteral("beckhoff/lineBaseHz"), 5000.0).toDouble()},
+    };
+    if (targetLines > 0) line[QStringLiteral("lines")] = targetLines;
+
+    sendJson({
+        {QStringLiteral("cmd"),          QStringLiteral("execute")},
+        {QStringLiteral("timeProfile"),  true},
+        {QStringLiteral("colorMode"),    colorMode},
+        // arcEndDeg is ignored for a time-indexed pass; arcStartDeg is where the
+        // axis repositions to before it starts swinging.
+        {QStringLiteral("arcStartDeg"),  arcStartDeg},
+        {QStringLiteral("arcEndDeg"),    arcStartDeg},
+        {QStringLiteral("maxVelDegS"),   maxVelDegS},
+        {QStringLiteral("durationS"),    durationSec},
+        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
+        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
+        {QStringLiteral("line"),         line},
+        {QStringLiteral("profile"),      prof},
+    });
+}
+
+void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg,
+                                double arcStartDeg, double arcEndDeg,
+                                double maxVelDegS, double minVelDegS,
+                                int targetLines, const QVariantList &profile)
+{
+    QJsonArray prof;
+    for (const QVariant &v : profile) prof.append(v.toDouble());
+
+    QSettings s;
+    QJsonObject line{
+        {QStringLiteral("mode"),   s.value(QStringLiteral("beckhoff/lineMode"),
+                                           QStringLiteral("curve")).toString()},
+        {QStringLiteral("baseHz"), s.value(QStringLiteral("beckhoff/lineBaseHz"), 5000.0).toDouble()},
+    };
+    if (targetLines > 0) line[QStringLiteral("lines")] = targetLines;
+
+    sendJson({
+        {QStringLiteral("cmd"),           QStringLiteral("execute")},
+        // colorMode is ignored once `passes` is explicit, but send it anyway so
+        // a daemon predating the pass-structure change still runs something sane.
+        {QStringLiteral("colorMode"),     1},
+        {QStringLiteral("passes"),        passes},
+        {QStringLiteral("filterSlot"),    filterSlot},
+        {QStringLiteral("passOffsetDeg"), passOffsetDeg},
+        {QStringLiteral("arcStartDeg"),   arcStartDeg},
+        {QStringLiteral("arcEndDeg"),     arcEndDeg},
+        {QStringLiteral("maxVelDegS"),    maxVelDegS},
+        {QStringLiteral("minVelDegS"),    minVelDegS},
+        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
+        {QStringLiteral("returnVelDegS"), s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
+        {QStringLiteral("line"),          line},
+        {QStringLiteral("profile"),       prof},
+    });
+}
+
 void BeckhoffLink::pause()  { sendJson({{QStringLiteral("cmd"), QStringLiteral("pause")}}); }
 void BeckhoffLink::resume() { sendJson({{QStringLiteral("cmd"), QStringLiteral("resume")}}); }
 void BeckhoffLink::stop()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("stop")}}); }
