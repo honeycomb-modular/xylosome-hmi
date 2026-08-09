@@ -169,3 +169,86 @@ native status strip.
 - `pi/hmi/src/BeckhoffLink.h:69-88` — the Pi's command surface (for reference)
 - `pi/provisioning/labwc/autostart` — labwc / wlr-randr (wlroots confirmation)
 - `SESSION_NOTES.md:122` — existing TigerVNC (X11) note
+
+---
+
+## 10. Addendum — 2026-08-09, re-verified at the Capture PC
+
+Section 2 asked for its findings to be re-checked. Done, against `b4808b8`.
+**All of §2 still holds.** Three things to add — two that strengthen C-remote,
+one new option §3 never considered.
+
+### 10a. The Pi HMI is *already* a mouse-and-keyboard UI (strengthens C-remote)
+
+C-remote was costed as "look-only, driven awkwardly." That undersold it. The Pi
+UI is fully drivable by mouse and keyboard today, so remoting it yields a real
+control surface, not a picture:
+
+- **Every interactive element has a `MouseArea`** — `TerminalButton.qml:52`,
+  `NavRow.qml:86`, plus `BackButton`, `FocusIndicator`, `ScreenPresets`. Screens
+  that appear to have none (`ScreenHome`, `ScreenJog`, `ScreenLive`) simply
+  *compose* those components. The only components without a click path are
+  `LabelledValue` and `ChoiceList`, and `LabelledValue` is read-only telemetry.
+- **The curve editor is already drag-capable** — `ScreenScan.qml` (5 MouseAreas),
+  `ScreenTimed.qml` (3), `ScreenStatic.qml`.
+- **The encoder ring travels over VNC for free.** `FocusController.qml` is
+  transport-agnostic by design ("driven by keyboard keys in main.qml; later by
+  the Teensy pendant… never knows which"). `main.qml:65-84` maps arrows/Tab →
+  rotate, Enter/Space → click, Esc/Backspace → back, Delete → BTN1 execute.
+
+→ Mirroring gives clickable + draggable + full pendant grammar, pixel-identical,
+with zero UI maintenance. **Suggested addition:** map scroll-wheel → Up/Down in
+the Suite panel before forwarding, and the wheel *becomes* the encoder ring.
+
+### 10b. The rotation worry in §6 is smaller than feared
+
+`main.qml:14-15` is a plain landscape `960×540`. The `--transform 270` in
+`labwc/autostart` compensates for a physically sideways-mounted panel; the output
+post-transform is landscape, so the capture should be an ordinary landscape frame,
+not a portrait sliver. Still confirm in Step 0, but don't budget much for it.
+
+### 10c. NEW — option **D**: native PC UI that drives the *Pi*, not xylod
+
+§3 framed the choice as "Suite UI → xylod" (C-native) vs. "mirror" (C-remote) and
+missed a third wiring. **The Pi HMI already runs an HTTP server on `:8080`,
+in-process** (`main.cpp:51-53`) — the same port `HmiLink` already probes.
+
+A PC UI pointed at *that* keeps the Pi as the **sole xylod client**, so finding
+#1's two-writers hazard never arises, no daemon arbitration is needed, and the
+pendant stays live. Both surfaces would share `MotorModel`, so the curve is one
+object rather than two copies.
+
+**The gap:** `HttpServer` today drives only `MotorModel`, **not** the motion path.
+`main.cpp` registers `Motor` and `Beckhoff` as *separate* singletons, and all
+motion in QML goes to the latter — `Beckhoff.executeScan` (`ScreenScan.qml:1288`),
+`Beckhoff.moveTo` (`ScreenJog.qml:65`), `home`/`stop`/`setFilter`/`faultReset`.
+The handlers only touch `m_motor` (setpoint, mode, enable, zero, nodes, presets —
+ClearCore/ESP32-era concepts). So `:8080` can edit the curve but **cannot fire a
+scan on the Beckhoff path**.
+
+Closing it = expose the twelve `BeckhoffLink.h:69-88` verbs over `:8080`. Small,
+contained, Pi-side.
+
+**Residual cost that never goes away:** dual UI maintenance — 27 QML files
+including the curve editor. Every Pi change made twice, or the two drift.
+
+### 10d. Recommendation (unchanged in direction, sharper)
+
+| Wiring | Verdict |
+|---|---|
+| PC UI → xylod directly (C-native) | **No.** Real hazard, needs daemon arbitration. |
+| PC UI → Pi `:8080` (new option D) | Viable and safe, but dual UI maintenance forever. |
+| Mirror (C-remote) | **Still first.** Everything, ~an afternoon, zero maintenance. |
+
+**They are not exclusive, and the mirror does not block D.** Run the mirror; if
+something specifically grates (drag latency in the curve editor is the likely
+one), extend `:8080` and build a native panel *for just that*, docked beside the
+mirrored view — incremental, not a big-bang reimplementation.
+
+### 10e. New open item — `:8080` is unauthenticated
+
+The legacy surface is reachable by anything on the cart LAN and can rewrite the
+curve nodes. Not urgent on a closed link; **becomes urgent if D goes ahead** and
+it starts firing motion.
+
+- [ ] Auth on `:8080` before extending it with `BeckhoffLink` verbs.
