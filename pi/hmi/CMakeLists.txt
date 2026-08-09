@@ -67,6 +67,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenRamp.qml
         qml/ScreenPendulum.qml
         qml/ScreenStack.qml
+        qml/ScreenParty.qml
         qml/ScreenJog.qml
         qml/ScreenModes.qml
         qml/FaultChip.qml
