@@ -245,18 +245,32 @@ Item {
     function nextBracket() {
         Recorder.endPass(0)
         Recorder.commitSession()      // sidecar for the bracket just captured
-        if (root.shotIdx + 1 < root.brackets) root.fireBracket(root.shotIdx + 1)
+        if (root.shotIdx + 1 < root.brackets) bracketGap.restart()
         else                                  root.finishRun()
     }
+
+    // The agent closes the board at seq_done and reopens it for the next
+    // sequence. Firing the next bracket the instant seq_done arrives races that:
+    // brackets fired 2.3 s apart gave two clean frames and one completely black
+    // one. Chrono has the same gap for the same reason. 1.5 s is comfortably
+    // longer than a close/open and is dead time between brackets anyway.
+    Timer {
+        id: bracketGap
+        interval: 1500; repeat: false
+        onTriggered: {
+            if (root.execState !== "running") return
+            root.fireBracket(root.shotIdx + 1)
+        }
+    }
     function finishRun() {
-        simTimer.stop()
+        simTimer.stop(); bracketGap.stop()
         root.passFrac  = 1
         root.execState = "idle"
         root.blinkVisible = true
         finishClear.start()
     }
     function abortRun() {
-        simTimer.stop()
+        simTimer.stop(); bracketGap.stop()
         // A part-finished set still deserves a sidecar: xylod closes the pass on
         // stop and the agent saves the lines it collected.
         Recorder.endPass(0)
