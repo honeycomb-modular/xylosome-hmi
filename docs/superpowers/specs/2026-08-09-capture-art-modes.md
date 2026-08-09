@@ -358,3 +358,52 @@ measurable from the shift between two brackets of known speed ratio. Not done.
 
 Each bracket lands as its own Suite session — grouping them is display work, and
 is what the multi-pass detour was originally trying to buy.
+
+### 8a. Bracket registration — measured, corrected, verified
+
+The brackets did NOT register. Global cross-correlation reported zero shift and
+that was wrong — it averages a whole frame and happily hides a real offset.
+Locating a single hard edge (a doorframe against blown-out sky, centre of frame)
+in each bracket is what actually measures it.
+
+**Before**, 3-bracket set at 220 / 110 / 55 deg/s:
+
+    b0  edge line 3462.09   (reference)
+    b1  edge line 3015.02   -447.1 lines  -2.97 deg
+    b2  edge line 2786.72   -675.4 lines  -4.48 deg
+
+Fits a fixed TIME offset, shift = t * (rate0 - rate_i):
+t = 26.98 ms from b1, 27.17 ms from b2 — two brackets agreeing to 0.7%.
+
+Cause: the trigger is paced off COMMANDED motion, so it starts clocking while the
+axis is still accelerating. The catch-up costs a constant interval, which becomes
+a different ANGLE at each speed. Same-speed modes (colour, stack) share the error
+and never show it.
+
+**Correction:** `Calib.triggerLeadSec = 0.0271`; hdr offsets each bracket's whole
+arc by `lead * velocity`, both ends together so arc length and derived line count
+are unchanged.
+
+**After**, verified on the same edge:
+
+    b0  edge line 9024.56   (reference)
+    b1  edge line 9019.77    -4.8 lines  -0.032 deg
+    b2  edge line 9012.03   -12.5 lines  -0.083 deg
+
+54x better; 12.5 lines of 22443 is 0.06% of frame. The residual leans the same
+way, so the constant is ~0.4 ms low — about 27.5 ms would null it. Not chased:
+refining off a single subject risks fitting noise. Average two or three sets if
+it is ever worth doing.
+
+**Exposure ladder confirmed working** on that set: medians 3359 / 6554 / 15577 =
+x1.95 and x4.64. An earlier set showed only x1.70 / x1.75 and prompted a worry
+about an integration ceiling — that set had much shorter sweeps. At these rates
+exposure tracks the line period as designed.
+
+### 8b. Method note — how to measure this kind of thing
+
+Global cross-correlation over a full frame is the WRONG tool for a small
+geometric offset: it reported 0 lines when the truth was 447. Per-tile 2-D phase
+correlation was no better (peaks ~0.013, i.e. noise). What worked was locating
+ONE strong known edge sub-line in each frame and differencing. Ask which feature
+to use rather than searching blind.
