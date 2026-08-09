@@ -44,15 +44,17 @@ Item {
         property alias lever:    root.lever
         property alias speed:    root.speed
         property alias lines:    root.lines
+        property alias hand1Angle: root.hand1Angle
+        property alias hand2Angle: root.hand2Angle
     }
 
-    // The arc is capture ▸ scan's, not a second copy of it.
-    Settings {
-        id: scanCfg
-        category: "scan"
-        property real hand1Angle: -45
-        property real hand2Angle:  45
-    }
+    // HDR owns its FOV rather than inheriting capture ▸ scan's. Brackets are
+    // usually shot on a tighter field than a full sweep, and borrowing the scan
+    // arc meant a 177 deg sweep per bracket without ever saying so.
+    readonly property real axisMinDeg: -180
+    readonly property real axisMaxDeg:  180
+    property real hand1Angle: -30
+    property real hand2Angle:  30
 
     // ── Bracket definition ──────────────────────────────────────────────────────
     readonly property int bracketMin: 3
@@ -77,7 +79,7 @@ Item {
     readonly property real gainMin: -10.0
     readonly property real gainMax:  10.0
 
-    readonly property real arcDeg: Math.abs(scanCfg.hand2Angle - scanCfg.hand1Angle)
+    readonly property real arcDeg: Math.abs(root.hand2Angle - root.hand1Angle)
     readonly property real sweepSec: root.arcDeg / Math.max(0.001, root.speed)
     readonly property real totalSec: root.brackets * (root.sweepSec + 1.0)
 
@@ -157,7 +159,7 @@ Item {
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
     property var    focusController: hdrFocus
-    property string editTarget: "none"     // none | brackets | step | speed | lines
+    property string editTarget: "none"     // none | brackets | step | speed | lines | fov1 | fov2
 
     function focusBack() { root.StackView.view.pop() }
 
@@ -166,7 +168,8 @@ Item {
         index: 0
         // Reading order — left to right, then down a line:
         //   brackets · step · speed · lines · [lever] · [settings] · [modes] · chip · [abort] · [home]
-        targets: [brProxy, stepProxy, speedProxy, linesProxy, leverBtn, settingsBtn, modesBtn]
+        targets: [brProxy, stepProxy, speedProxy, linesProxy,
+                  fov1Proxy, fov2Proxy, leverBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -175,6 +178,8 @@ Item {
             else if (item === stepProxy)   root.enterEditing("step")
             else if (item === speedProxy)  root.enterEditing("speed")
             else if (item === linesProxy)  root.enterEditing("lines")
+            else if (item === fov1Proxy)   root.enterEditing("fov1")
+            else if (item === fov2Proxy)   root.enterEditing("fov2")
             else if (item.clicked)         item.clicked()
         }
         onAdjust: function(delta) {
@@ -190,6 +195,12 @@ Item {
                              Math.min(root.speedMax, root.speed + delta * 2))
             else if (root.editTarget === "lines")
                 root.lines = root.linesOfFrac(root.fracOfLines(root.lines) + delta * 0.015)
+            else if (root.editTarget === "fov1")
+                root.hand1Angle = Math.max(root.axisMinDeg,
+                                  Math.min(root.axisMaxDeg, root.hand1Angle + delta))
+            else if (root.editTarget === "fov2")
+                root.hand2Angle = Math.max(root.axisMinDeg,
+                                  Math.min(root.axisMaxDeg, root.hand2Angle + delta))
         }
         onConfirmed: root.exitEditing()
         onCanceled:  root.exitEditing()
@@ -260,12 +271,12 @@ Item {
             if (root.execState !== "running") return
             // One session per BRACKET: each is its own execute and its own TIF.
             Recorder.startSession()
-            Recorder.setScanContext(scanCfg.hand1Angle, scanCfg.hand2Angle,
+            Recorder.setScanContext(root.hand1Angle, root.hand2Angle,
                                     root.speed, root.speed, root.flatProfile())
             Recorder.startPass(0)
             if (Beckhoff.connected) {
                 Beckhoff.executeScan(1,                       // BW: one pass each
-                                     scanCfg.hand1Angle, scanCfg.hand2Angle,
+                                     root.hand1Angle, root.hand2Angle,
                                      root.speed, root.speed,
                                      root.lines, root.flatProfile())
             } else {
@@ -327,12 +338,12 @@ Item {
 
     // ── Brackets ────────────────────────────────────────────────────────────────
     Text {
-        x: Theme.marginX; y: 90
+        x: Theme.marginX; y: 84
         text: "brackets"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
-        x: Theme.marginX; y: 108; width: 440; height: 52
+        x: Theme.marginX; y: 100; width: 440; height: 46
 
         Item { id: brProxy; anchors.fill: parent }
 
@@ -365,13 +376,13 @@ Item {
 
     // ── Step ────────────────────────────────────────────────────────────────────
     Text {
-        x: 502; y: 90
+        x: 502; y: 84
         text: root.lever === "gain" ? "step" : "step (fixed by the ladder)"
         color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
-        x: 502; y: 108; width: 440; height: 52
+        x: 502; y: 100; width: 440; height: 46
         opacity: root.lever === "gain" ? 1.0 : 0.45
 
         Item { id: stepProxy; anchors.fill: parent }
@@ -406,12 +417,12 @@ Item {
 
     // ── Speed / lines ───────────────────────────────────────────────────────────
     Text {
-        x: Theme.marginX; y: 168
+        x: Theme.marginX; y: 154
         text: "speed"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
-        x: Theme.marginX; y: 186; width: 440; height: 52
+        x: Theme.marginX; y: 170; width: 440; height: 46
 
         Item { id: speedProxy; anchors.fill: parent }
 
@@ -441,12 +452,12 @@ Item {
     }
 
     Text {
-        x: 502; y: 168
+        x: 502; y: 154
         text: "lines"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
-        x: 502; y: 186; width: 440; height: 52
+        x: 502; y: 170; width: 440; height: 46
 
         Item { id: linesProxy; anchors.fill: parent }
 
@@ -474,13 +485,85 @@ Item {
         }
     }
 
+    // ── FOV — HDR's own, not capture.scan's ─────────────────────────────────────
+    Text {
+        x: Theme.marginX; y: 224
+        text: "field start"; color: Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+    Item {
+        x: Theme.marginX; y: 240; width: 440; height: 46
+
+        Item { id: fov1Proxy; anchors.fill: parent }
+
+        FocusIndicator {
+            inset: true
+            target: (hdrFocus.current === fov1Proxy && !hdrFocus.editing) ? fov1Proxy : null
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.panel; radius: 2
+            border.width: root.editTarget === "fov1" ? 2 : 1
+            border.color: root.editTarget === "fov1" ? Theme.accent : Theme.border
+            Rectangle {
+                x: 1; y: 1; height: parent.height - 2
+                width: (parent.width - 2) * (root.hand1Angle - root.axisMinDeg)
+                       / (root.axisMaxDeg - root.axisMinDeg)
+                color: Theme.accent; opacity: 0.16
+            }
+            Text {
+                anchors.centerIn: parent
+                text:  root.hand1Angle.toFixed(0) + "°"
+                color: Theme.colorText
+                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
+            }
+        }
+    }
+
+    Text {
+        x: 502; y: 224
+        text: "field end  ·  " + root.arcDeg.toFixed(0) + "° sweep"
+        color: root.arcDeg < 0.5 ? Theme.danger : Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+    Item {
+        x: 502; y: 240; width: 440; height: 46
+
+        Item { id: fov2Proxy; anchors.fill: parent }
+
+        FocusIndicator {
+            inset: true
+            target: (hdrFocus.current === fov2Proxy && !hdrFocus.editing) ? fov2Proxy : null
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.panel; radius: 2
+            border.width: root.editTarget === "fov2" ? 2 : 1
+            border.color: root.editTarget === "fov2" ? Theme.accent : Theme.border
+            Rectangle {
+                x: 1; y: 1; height: parent.height - 2
+                width: (parent.width - 2) * (root.hand2Angle - root.axisMinDeg)
+                       / (root.axisMaxDeg - root.axisMinDeg)
+                color: Theme.accent; opacity: 0.16
+            }
+            Text {
+                anchors.centerIn: parent
+                text:  root.hand2Angle.toFixed(0) + "°"
+                color: Theme.colorText
+                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
+            }
+        }
+    }
+
     // ── Lever + the ladder it produces ──────────────────────────────────────────
-    Hairline { x: Theme.marginX; y: 252; width: Theme.contentW }
+    Hairline { x: Theme.marginX; y: 294; width: Theme.contentW }
 
     TerminalButton {
         id: leverBtn
         controller: hdrFocus
-        x: Theme.marginX; y: 260
+        x: Theme.marginX; y: 300
         width: 232; height: 36
         label:  root.lever === "gain" ? "[bracket: gain]" : "[bracket: stages]"
         active: root.lever === "stages"
@@ -489,7 +572,7 @@ Item {
     }
 
     Text {
-        x: Theme.marginX + 250; y: 262
+        x: Theme.marginX + 250; y: 302
         text:  root.lever === "gain"
                ? "gain is continuous but amplifies noise with signal"
                : "stages is closer to true exposure but coarse — 48 is the sharp default"
@@ -497,7 +580,7 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Text {
-        x: Theme.marginX + 250; y: 280
+        x: Theme.marginX + 250; y: 318
         text:  Camera.connected
                ? ("now " + (root.lever === "gain" ? Camera.gain + " dB"
                                                   : Camera.tdiStages + " stages"))
@@ -508,7 +591,7 @@ Item {
 
     // The exposures this will actually shoot, in order.
     Row {
-        x: Theme.marginX; y: 308
+        x: Theme.marginX; y: 342
         spacing: 8
         Repeater {
             model: root.bracketValues()
@@ -530,15 +613,15 @@ Item {
     }
 
     Text {
-        x: Theme.marginX; y: 346
+        x: Theme.marginX; y: 376
         text:  "span " + root.spanStops.toFixed(1) + " stops"
-               + "  \xB7  arc " + root.arcDeg.toFixed(0) + "\xB0 from capture.scan"
+               + "  \xB7  " + root.arcDeg.toFixed(0) + "\xB0 field"
                + "  \xB7  about " + root.fmtDuration(root.totalSec)
         color: root.clipped ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Text {
-        x: Theme.marginX; y: 366
+        x: Theme.marginX; y: 394
         visible: root.clipped
         text:  root.lever === "gain"
                ? "brackets repeat at the \xB110 dB rail — fewer brackets or a smaller step"
@@ -550,7 +633,7 @@ Item {
     // ── Progress, one segment per bracket ───────────────────────────────────────
     Rectangle {
         id: strip
-        x: Theme.marginX; y: 392; width: Theme.contentW; height: 26
+        x: Theme.marginX; y: 410; width: Theme.contentW; height: 20
         color: Theme.panel; radius: 2
         border.width: 1; border.color: Theme.border
 
@@ -572,7 +655,7 @@ Item {
     }
 
     Text {
-        x: Theme.marginX; y: 428
+        x: Theme.marginX; y: 438
         text:  root.execState === "idle"
                ? "the camera is put back to where it was when the set ends"
                : "bracket " + (root.shotIdx + 1) + " / " + root.brackets
@@ -659,7 +742,7 @@ Item {
                     (root.execState === "paused" && root.blinkVisible)) ? "#6B2020" : Theme.panel
         onClicked: {
             if (root.execState === "idle") {
-                if (root.arcDeg <= 0) return        // no arc set in capture.scan yet
+                if (root.arcDeg < 0.5) return       // field start and end are the same
                 if (!Camera.connected) return       // every bracket would be identical
                 root.startRun()
             } else if (root.execState === "running") {
