@@ -63,6 +63,21 @@ Item {
                                     / Math.max(0.001, root.periodSec)
     readonly property bool tooFast: root.peakVel > root.velCeiling
     readonly property real durationSec: root.swings * root.periodSec
+
+    // Mirrors acc_limit_degs2 in /etc/xylod.conf. A sine's peak acceleration is
+    // 4*pi^2*A/T^2, and it rises with the SQUARE of the period — halving the
+    // period quadruples it. Exceed the drive's limit and it cannot track the
+    // commanded curve: it lags, and the swing comes out lopsided rather than
+    // faulting. Nothing downstream catches this, so it is caught here.
+    readonly property real accCeiling: 1500.0
+    readonly property real peakAcc: 4 * Math.PI * Math.PI * root.amplitudeDeg
+                                    / Math.max(0.001, root.periodSec * root.periodSec)
+    readonly property bool tooHard: root.peakAcc > root.accCeiling
+
+    // The pose the swing is centred on, captured at execute. The pass starts and
+    // parks at centreDeg - amplitude, so without restoring this every run would
+    // re-centre on the new lower pose and walk the axis down the arc.
+    property real centreDeg: 0.0
     // Fixed preview window — see the drawing below for why it must not scale.
     readonly property real previewWindowSec: 20.0
 
@@ -141,7 +156,13 @@ Item {
     // swings so a long run does not alias the waveform into something jagged —
     // ~32 samples per period, capped so the JSON stays sane.
     function buildSineProfile() {
-        var n = Math.max(64, Math.min(512, Math.round(root.swings * 32) + 1))
+        // (n-1) MUST divide exactly by the cycle count. Otherwise the last
+        // sample lands mid-cycle, the profile's mean is not zero, and xylod
+        // integrates that straight into positional drift — the axis would not
+        // come back to where it began. The old `min(512, swings*32+1)` broke
+        // exactly this whenever the cap bit, i.e. from 16 swings up.
+        var spc = Math.max(8, Math.min(32, Math.floor(3200 / Math.max(1, root.swings))))
+        var n = root.swings * spc + 1
         var prof = []
         for (var i = 0; i < n; i++) {
             var t = i / (n - 1)                       // 0..1 across the pass
@@ -154,6 +175,7 @@ Item {
         root.execState    = "running"
         root.blinkVisible = true
         root.homed        = false
+        root.centreDeg    = Beckhoff.positionDeg
         if (Beckhoff.connected) {
             // Start HALF A SWING BELOW the framed pose, so the swing is centred
             // on it. Integrating v = V·sin(ωt) from rest gives x = A(1 − cos ωt),
@@ -163,7 +185,7 @@ Item {
             // before the pass, and parks back there at the end, so the axis
             // finishes at the bottom of the swing rather than at the centre.
             Beckhoff.executeReversing(Motor.colorMode,
-                                      Beckhoff.positionDeg - root.amplitudeDeg,
+                                      root.centreDeg - root.amplitudeDeg,
                                       root.peakVel, root.durationSec,
                                       root.lines, root.buildSineProfile())
         } else {
@@ -210,7 +232,15 @@ Item {
             if (root.execState === "running" && Beckhoff.connected)
                 root.progressFrac = Beckhoff.progress
         }
-        function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
+        function onSequenceDone(passes) {
+            if (root.execState === "idle") return
+            root.finishRun()
+            // xylod parks at arcStartDeg, which is the BOTTOM of the swing. Left
+            // there, the next run would centre on that lower pose and the axis
+            // would walk down the arc a full amplitude every time. Put it back
+            // on the pose the swing was centred on.
+            if (Beckhoff.connected) Beckhoff.moveTo(root.centreDeg, 60.0)
+        }
         function onFaulted(text)        { root.abortRun() }
         function onConnectedChanged()   { if (!Beckhoff.connected && root.execState !== "idle") root.abortRun() }
     }
@@ -400,7 +430,7 @@ Item {
             property real amp:    root.amplitudeDeg
             property real period: root.periodSec
             property real dur:    root.durationSec
-            property bool hot:    root.tooFast
+            property bool hot:    root.tooFast || root.tooHard
             onAmpChanged:    requestPaint()
             onPeriodChanged: requestPaint()
             onDurChanged:    requestPaint()
@@ -422,7 +452,7 @@ Item {
                 // x(t) = pose − A·cos(ωt): starts at the bottom, swings through
                 // the centre to the top, and back.
                 var endX = w * Math.min(1, root.durationSec / winS)
-                ctx.strokeStyle = root.tooFast ? Theme.danger : Theme.accent
+                ctx.strokeStyle = (root.tooFast || root.tooHard) ? Theme.danger : Theme.accent
                 ctx.lineWidth = 2
                 ctx.beginPath()
                 for (var px = 0; px <= endX; px++) {
@@ -562,7 +592,7 @@ Item {
                     (root.execState === "paused" && root.blinkVisible)) ? "#6B2020" : Theme.panel
         onClicked: {
             if (root.execState === "idle") {
-                if (root.tooFast) return          // the axis cannot follow this swing
+                if (root.tooFast || root.tooHard) return   // the axis cannot follow this swing
                 root.startRun()
             } else if (root.execState === "running") {
                 if (Beckhoff.connected) Beckhoff.pause()
