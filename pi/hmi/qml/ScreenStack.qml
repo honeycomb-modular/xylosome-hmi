@@ -154,14 +154,17 @@ Item {
         root.blinkVisible = true
         root.homed        = false
         if (Beckhoff.connected) {
-            // Constant speed: pin min = max so the daemon's velocity floor cannot
-            // reshape a pass that is meant to be identical to its siblings.
+            // minVel is a FLOOR, not a pin. Passing speed for both meant that when
+            // xylod capped maxVelDegS to hold the line count, the uncapped min won
+            // — the axis outran the capped max and the trigger overshot the
+            // camera's ceiling. The profile is flat, so v = maxVel regardless and
+            // a real floor changes nothing.
             // offsetDeg is 0 unless dither is on, in which case each pass steps
             // a fraction of a line further along.
             // Filter 3 (Clear) pinned so the wheel stays put across passes.
             Beckhoff.executeStack(root.passes, 3, root.offsetDeg,
                                   scanCfg.hand1Angle, scanCfg.hand2Angle,
-                                  root.speed, root.speed,
+                                  root.speed, 1.0,
                                   root.lines, root.flatProfile())
         } else {
             simTimer.start()

@@ -224,7 +224,7 @@ Item {
             // and no arc offset — the brackets differ only in exposure.
             Beckhoff.executeStack(root.brackets, 3, 0.0,
                                   root.hand1Angle, root.hand2Angle,
-                                  root.fastestVel, root.fastestVel,
+                                  root.fastestVel, 1.0,
                                   root.lines, root.flatProfile(), root.scales())
         } else {
             simTimer.start()
@@ -683,6 +683,7 @@ Item {
                 if (root.arcDeg < 0.5) return       // field start and end are the same
                 if (root.rateTooLow) return         // the camera cannot sync that slow
                 if (root.tooFastVel) return         // darkest bracket outruns the axis
+                if (root.rateTooHigh) return        // and it would overrun the camera
                 root.startRun()
             } else if (root.execState === "running") {
                 if (Beckhoff.connected) Beckhoff.pause()

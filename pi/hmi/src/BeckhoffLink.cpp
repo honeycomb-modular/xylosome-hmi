@@ -286,13 +286,20 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
         // it because the filter wheel's rotation buys seconds of gap; pinning
         // the filter (which stack and hdr do) collapsed the gap to reposition
         // plus settle, about 0.9 s, and the dead time no longer fitted.
-        // 1200 ms, matching executeScan. Multi-pass under EXSYNC only started
+        // 2000 ms. Measured 2026-08-09: 4-pass COLOUR gets 2.13 s between passes
+        // and fills every one, because the filter wheel's rotation adds ~0.5 s on
+        // top of the settle. hdr and stack pin the filter so the wheel never
+        // moves, leaving only 1.67 s — and pass 1 came back empty. The wheel was
+        // buying colour the margin the host needs; pinned-filter jobs have to buy
+        // it explicitly.
+        //
+        // Was 1200, matching executeScan. Multi-pass under EXSYNC only started
         // working once the agent stopped blocking its status thread AND the
         // settle was long enough for the arm to land inside it — 4-pass colour
         // went from erratic partials to 26745/26756 on all four passes at this
         // value. hdr and stack are the same path and need the same margin; 600
         // was left over from an earlier guess and would have under-tested them.
-        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 1200.0).toDouble()},
+        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 2000.0).toDouble()},
         {QStringLiteral("returnVelDegS"), s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),          line},
         {QStringLiteral("profile"),       prof},
