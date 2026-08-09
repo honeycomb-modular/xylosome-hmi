@@ -46,6 +46,16 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
 
+    // Which one you are in now — stated rather than highlighted, since the rows
+    // are a destination list, not a radio group. Sits in the header because the
+    // planned block below took the space under the live rows.
+    Text {
+        x: Theme.marginX + Theme.contentW - width; y: 48
+        text:  "currently in " + root.fromPage.replace("Screen", "").replace(".qml", "").toLowerCase()
+        color: Theme.colorTextFaint
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+
     // ── The modes ─────────────────────────────────────────────────────────────
     NavRow {
         id: navScan
@@ -76,13 +86,59 @@ Item {
         onClicked: root.goTo("ScreenJog.qml")
     }
 
-    // Which one you are in now — stated rather than highlighted, since the rows
-    // are a destination list, not a radio group.
+    // ── Planned modes ─────────────────────────────────────────────────────────
+    // Roadmap, not product. These have no parameter page yet, so they are
+    // deliberately NOT in modeFocus.targets and cannot be clicked — there is
+    // nothing behind them to open. As each one is built it graduates up into the
+    // live list above, so this page states the build status without anyone
+    // maintaining it by hand.
+    //
+    // Order is by reach, not by taste: the left column needs no xylod change,
+    // the right column is blocked on reversible motion or a flexible pass count.
+    // See docs/superpowers/specs/2026-08-09-capture-art-modes.md §5.
+    Hairline { x: Theme.marginX; y: 330; width: Theme.contentW }
+
     Text {
-        x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride * 4 + 12
-        text:  "currently in " + root.fromPage.replace("Screen", "").replace(".qml", "").toLowerCase()
+        x: Theme.marginX; y: 342
+        text:  "planned"
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+
+    Repeater {
+        model: [
+            { name: "chrono",    desc: "interval repeats"  },
+            { name: "stack",     desc: "pass averaging"    },
+            { name: "trichrome", desc: "R/G/B passes"      },
+            { name: "ramp",      desc: "velocity over arc" },
+            { name: "gradient",  desc: "exposure over arc" },
+            { name: "hdr",       desc: "exposure brackets" },
+            { name: "superres",  desc: "sub-pixel passes"  },
+            { name: "party",     desc: "back/forth bursts" },
+            { name: "pendulum",  desc: "sine motion"       },
+            { name: "echo",      desc: "repeat / offset"   }
+        ]
+
+        delegate: Item {
+            x: Theme.marginX + (index < 5 ? 0 : 462)
+            y: 362 + (index % 5) * 22
+
+            readonly property var rowData: modelData
+
+            // One notch dimmer than a live row throughout: name reads as a live
+            // row's description, description as its faintest text.
+            Text {
+                text:  rowData.name
+                color: Theme.colorTextDim
+                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+            }
+            Text {
+                x: 110
+                text:  rowData.desc
+                color: Theme.colorTextFaint
+                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+            }
+        }
     }
 
     // ── Bottom bar ────────────────────────────────────────────────────────────
