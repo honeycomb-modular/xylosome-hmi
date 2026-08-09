@@ -7,6 +7,12 @@
 //
 // `fromPage` is the page that opened this one, so [back] returns to the mode
 // you were actually in rather than guessing.
+//
+// EVERY mode is on this list, built or not. A row with no `page` is greyed and
+// disabled — Item.enabled stops its MouseArea too, so it cannot be clicked, and
+// rebuildTargets() leaves it out of the encoder ring. Building a mode is then
+// one edit: give its row a page. Fourteen rows do not fit at the standard row
+// height, so the list runs compact (see NavRow.rowH / fontSize).
 
 import QtQuick
 import QtQuick.Controls
@@ -18,6 +24,10 @@ Item {
 
     property string fromPage: "ScreenScan.qml"
 
+    // Compact list geometry — 14 rows between the header and the bottom bar.
+    readonly property int listTop:    98
+    readonly property int listStride: 26
+
     function goTo(page) {
         root.StackView.view.replace(root.StackView.view.currentItem,
                                     Qt.resolvedUrl(page))
@@ -26,9 +36,19 @@ Item {
     property var focusController: modeFocus
     function focusBack() { root.goTo(root.fromPage) }
 
+    function rebuildTargets() {
+        var t = []
+        for (var i = 0; i < modeRepeater.count; i++) {
+            var it = modeRepeater.itemAt(i)
+            if (it && it.enabled) t.push(it)      // greyed rows are not in the ring
+        }
+        t.push(backBtn)
+        modeFocus.targets = t
+    }
+
     FocusController {
         id: modeFocus
-        targets: [navScan, navTimed, navStatic, navChrono, navJog, backBtn]
+        targets: [backBtn]
         onActivated: function(item) { item.clicked() }
     }
 
@@ -41,14 +61,13 @@ Item {
     }
     Text {
         x: Theme.marginX; y: 48
-        text:  "what the axis does while the camera scans"
+        text:  "what the axis does while the camera scans  ·  greyed = not built yet"
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
 
     // Which one you are in now — stated rather than highlighted, since the rows
-    // are a destination list, not a radio group. Sits in the header because the
-    // planned block below took the space under the live rows.
+    // are a destination list, not a radio group.
     Text {
         x: Theme.marginX + Theme.contentW - width; y: 48
         text:  "currently in " + root.fromPage.replace("Screen", "").replace(".qml", "").toLowerCase()
@@ -57,94 +76,50 @@ Item {
     }
 
     // ── The modes ─────────────────────────────────────────────────────────────
-    NavRow {
-        id: navScan
-        controller: modeFocus
-        x: Theme.marginX; y: Theme.contentTop + 40; width: Theme.contentW
-        rowName: "scan";   rowDesc: "velocity curve over an arc — 1 or 4 pass"
-        onClicked: root.goTo("ScreenScan.qml")
-    }
-    NavRow {
-        id: navTimed
-        controller: modeFocus
-        x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride; width: Theme.contentW
-        rowName: "timed";  rowDesc: "constant crawl over a span — seconds to 24 h"
-        onClicked: root.goTo("ScreenTimed.qml")
-    }
-    NavRow {
-        id: navStatic
-        controller: modeFocus
-        x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride * 2; width: Theme.contentW
-        rowName: "static"; rowDesc: "lines only — the camera never moves"
-        onClicked: root.goTo("ScreenStatic.qml")
-    }
-    NavRow {
-        id: navChrono
-        controller: modeFocus
-        x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride * 3; width: Theme.contentW
-        rowName: "chrono"; rowDesc: "the same frame on an interval — time-lapse"
-        onClicked: root.goTo("ScreenChrono.qml")
-    }
-    NavRow {
-        id: navJog
-        controller: modeFocus
-        x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride * 4; width: Theme.contentW
-        rowName: "jog";    rowDesc: "position the axis — nothing is captured"
-        onClicked: root.goTo("ScreenJog.qml")
-    }
-
-    // ── Planned modes ─────────────────────────────────────────────────────────
-    // Roadmap, not product. These have no parameter page yet, so they are
-    // deliberately NOT in modeFocus.targets and cannot be clicked — there is
-    // nothing behind them to open. As each one is built it graduates up into the
-    // live list above, so this page states the build status without anyone
-    // maintaining it by hand.
-    //
-    // Order is by reach, not by taste — reading down the columns, the reachable
-    // ones come first: stack/trichrome/ramp/gradient need no xylod change, the
-    // rest are blocked on reversible motion or a flexible pass count.
-    // See docs/superpowers/specs/2026-08-09-capture-art-modes.md §5.
-    Hairline { x: Theme.marginX; y: 374; width: Theme.contentW }
-
-    Text {
-        x: Theme.marginX; y: 386
-        text:  "planned"
-        color: Theme.colorTextFaint
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-    }
-
+    // Built ones first, then the planned ones ordered by reach: stack ·
+    // trichrome · ramp · gradient need no xylod change; the rest are blocked on
+    // reversible motion or a flexible pass count. See
+    // docs/superpowers/specs/2026-08-09-capture-art-modes.md §5.
     Repeater {
+        id: modeRepeater
+        onItemAdded:   root.rebuildTargets()
+        onItemRemoved: root.rebuildTargets()
+
         model: [
-            { name: "stack",     desc: "pass averaging"    },
-            { name: "trichrome", desc: "R/G/B passes"      },
-            { name: "ramp",      desc: "velocity over arc" },
-            { name: "gradient",  desc: "exposure over arc" },
-            { name: "hdr",       desc: "exposure brackets" },
-            { name: "superres",  desc: "sub-pixel passes"  },
-            { name: "party",     desc: "back/forth bursts" },
-            { name: "pendulum",  desc: "sine motion"       },
-            { name: "echo",      desc: "repeat / offset"   }
+            { name: "scan",      desc: "velocity curve over an arc — 1 or 4 pass",     page: "ScreenScan.qml"   },
+            { name: "timed",     desc: "constant crawl over a span — seconds to 24 h", page: "ScreenTimed.qml"  },
+            { name: "static",    desc: "lines only — the camera never moves",          page: "ScreenStatic.qml" },
+            { name: "chrono",    desc: "the same frame on an interval — time-lapse",   page: "ScreenChrono.qml" },
+            { name: "jog",       desc: "position the axis — nothing is captured",      page: "ScreenJog.qml"    },
+
+            { name: "stack",     desc: "multi-pass averaging for SNR"        },
+            { name: "trichrome", desc: "sequential R/G/B filter passes"      },
+            { name: "ramp",      desc: "velocity varies over the scan"       },
+            { name: "gradient",  desc: "exposure varies over the scan"       },
+            { name: "hdr",       desc: "bracketed exposures of one scene"    },
+            { name: "superres",  desc: "sub-pixel offset passes"             },
+            { name: "party",     desc: "back/forth, varied start/stop"       },
+            { name: "pendulum",  desc: "sinusoidal motion"                   },
+            { name: "echo",      desc: "repeated / offset structure"         }
         ]
 
-        delegate: Item {
-            x: Theme.marginX + Math.floor(index / 3) * 308
-            y: 408 + (index % 3) * 22
+        delegate: NavRow {
+            required property var  modelData
+            required property int  index
 
-            readonly property var rowData: modelData
+            controller: modeFocus
+            x: Theme.marginX
+            y: root.listTop + index * root.listStride
+            width: Theme.contentW
 
-            // One notch dimmer than a live row throughout: name reads as a live
-            // row's description, description as its faintest text.
-            Text {
-                text:  rowData.name
-                color: Theme.colorTextDim
-                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-            }
-            Text {
-                x: 110
-                text:  rowData.desc
-                color: Theme.colorTextFaint
-                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-            }
+            rowH:     root.listStride
+            fontSize: Theme.fontMonoS
+
+            enabled:  modelData.page !== undefined
+            rowName:  modelData.name
+            rowDesc:  modelData.desc
+
+            onClicked: if (modelData.page !== undefined) root.goTo(modelData.page)
         }
     }
 
@@ -165,4 +140,6 @@ Item {
         controller: null
         anchors { left: backBtn.right; leftMargin: 24; bottom: parent.bottom; bottomMargin: 27 }
     }
+
+    Component.onCompleted: root.rebuildTargets()
 }

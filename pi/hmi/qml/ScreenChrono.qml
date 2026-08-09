@@ -238,8 +238,6 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
 
-    FocusIndicator { target: chronoFocus.editing ? null : chronoFocus.current }
-
     // ── Interval (log slider, same grammar as static's timeline) ────────────────
     Text {
         x: Theme.marginX; y: 96
@@ -251,6 +249,14 @@ Item {
         x: Theme.marginX; y: 116; width: 440; height: 58
 
         Item { id: intervalProxy; anchors.fill: parent }
+
+        // Must be declared alongside its target: FocusIndicator reads target.x/y
+        // raw, so it only lines up when the two share a parent.
+        FocusIndicator {
+            inset: true
+            target: (chronoFocus.current === intervalProxy && !chronoFocus.editing)
+                    ? intervalProxy : null
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -270,6 +276,16 @@ Item {
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
         }
+
+        // Drag anywhere on the track to set the interval (log scale) — same
+        // grammar as static's timeline, so touch works without the encoder.
+        MouseArea {
+            anchors.fill: parent
+            enabled: root.execState === "idle"
+            function setFromX(mx) { root.intervalSec = root.intOfFrac(mx / width) }
+            onPressed:         function(m) { setFromX(m.x) }
+            onPositionChanged: function(m) { if (pressed) setFromX(m.x) }
+        }
     }
 
     // ── Count ───────────────────────────────────────────────────────────────────
@@ -284,18 +300,43 @@ Item {
 
         Item { id: countProxy; anchors.fill: parent }
 
+        FocusIndicator {
+            inset: true
+            target: (chronoFocus.current === countProxy && !chronoFocus.editing)
+                    ? countProxy : null
+        }
+
         Rectangle {
             anchors.fill: parent
             color: Theme.panel; radius: 2
             border.width: root.editTarget === "count" ? 2 : 1
             border.color: root.editTarget === "count" ? Theme.accent : Theme.border
 
+            Rectangle {
+                x: 1; y: 1; height: parent.height - 2
+                width: (parent.width - 2) * (root.frameCount - root.countMin)
+                       / (root.countMax - root.countMin)
+                color: Theme.accent; opacity: 0.16
+            }
             Text {
                 anchors.centerIn: parent
                 text:  root.frameCount + " \xD7"
                 color: Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
+        }
+
+        // Drag for a coarse count; the encoder still steps it one at a time.
+        MouseArea {
+            anchors.fill: parent
+            enabled: root.execState === "idle"
+            function setFromX(mx) {
+                var f = Math.max(0, Math.min(1, mx / width))
+                root.frameCount = Math.round(root.countMin
+                                             + f * (root.countMax - root.countMin))
+            }
+            onPressed:         function(m) { setFromX(m.x) }
+            onPositionChanged: function(m) { if (pressed) setFromX(m.x) }
         }
     }
 

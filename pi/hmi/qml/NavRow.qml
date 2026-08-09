@@ -23,9 +23,17 @@ Item {
     property string rowDesc: ""
     property var    controller: null
 
+    // Compact variant — the modes page puts every mode on one screen, which
+    // does not fit at the standard row height.
+    property int rowH:     Theme.rowHeight
+    property int fontSize: Theme.fontBody
+
+    // Greying uses Item.enabled, which also stops the MouseArea below: a row
+    // with no page behind it cannot be clicked, not merely styled as if.
+
     signal clicked()
 
-    height: Theme.rowHeight
+    height: rowH
 
     readonly property bool focused: controller ? controller.current === root : false
     property bool _pressed: false
@@ -48,9 +56,9 @@ Item {
     // ── ">" lead ─────────────────────────────────────────────────────────────
     Text {
         anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
-        text:  root.highlight ? ">" : " "
+        text:  (root.enabled && root.highlight) ? ">" : " "
         color: Theme.accent
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        font { family: Theme.fontFamilyMono; pixelSize: root.fontSize }
     }
 
     // ── Row number (faint) — hidden when empty ───────────────────────────────
@@ -59,7 +67,7 @@ Item {
         anchors { left: parent.left; leftMargin: 42; verticalCenter: parent.verticalCenter }
         text:  root.rowNum
         color: Theme.colorTextFaint
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        font { family: Theme.fontFamilyMono; pixelSize: root.fontSize }
     }
 
     // ── Row name ──────────────────────────────────────────────────────────────
@@ -70,16 +78,16 @@ Item {
             verticalCenter: parent.verticalCenter
         }
         text:  root.rowName
-        color: Theme.colorText
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        color: root.enabled ? Theme.colorText : Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: root.fontSize }
     }
 
     // ── Description ───────────────────────────────────────────────────────────
     Text {
         anchors { left: parent.left; leftMargin: 269; verticalCenter: parent.verticalCenter }
         text:  root.rowDesc
-        color: Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+        color: root.enabled ? Theme.colorTextDim : Theme.colorTextFaint
+        font { family: Theme.fontFamilyMono; pixelSize: root.fontSize }
     }
 
     // ── Touch target ──────────────────────────────────────────────────────────
