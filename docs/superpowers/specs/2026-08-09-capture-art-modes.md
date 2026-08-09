@@ -184,3 +184,74 @@ Hoyte present.
 proposed = 14 rows.** The flat list will not hold; it needs grouping (e.g.
 `capture` vs. `art`) or paging before the proposed modes land. Worth deciding
 before the first new mode, not after.
+
+---
+
+## 6. Bench findings, 2026-08-09 evening
+
+### 6a. The optical calibration — MEASURED
+
+TDI needs the subject to advance exactly one pixel per line trigger. That ratio
+is fixed by the optics; it is **not** a free parameter. Every mode used to
+default to `lines: 22200` regardless of arc, which can only be right at one
+field width.
+
+Measured against a scan Hoyte confirmed correct by eye:
+
+    26726 lines over 177.4 deg (arc -76.0 -> 101.4)  =  150.65 lines/deg
+
+Now lives in `pi/hmi/qml/Calib.qml`, persisted, with `lines` DERIVED from the
+arc in hdr/stack/ramp. Re-measure by scanning something round: lines scale
+linearly, so 1.4x too tall means multiply by 1.4.
+
+**Consequence worth remembering:** `baseHz = lines*maxVel/arc` and
+`lines = linesPerDeg*arc`, so the arc cancels — **`baseHz = linesPerDeg *
+maxVel`**. Trigger rate depends only on sweep speed, never on field width. That
+is what bounds exposure bracketing, since the camera will not sync below
+3500 Hz. At 60 deg/s there is only 1.4 stops of headroom; ~245 deg/s gives the
+full 3.4.
+
+### 6b. Getting the line count wrong does more than stretch
+
+Too many lines for the arc means the frame cannot fill inside its pass, so the
+capture agent's grab stays open into the NEXT pass and one TIFF ends up holding
+two different exposures. Stretched geometry, TDI smear, short passes and
+exposure bleed are all the same fault.
+
+### 6c. TDI stages — the "48 is best" memory is superseded
+
+`docs/camera_capture_note.md:212` already records that the 48-stage result
+predates the trigger being fixed and was measured in free-run. 96 is factory;
+48->96 is about +1 stop. **Do not "restore" 48 from memory** — that was done
+here on 2026-08-09 and cost a stop for no reason. Re-test 64/80/96.
+
+Separately: the old gain/stages-bracketing hdr left `tdi.stages` at 96 after a
+set, which softened every subsequent scan until spotted. That code is gone —
+hdr now touches no camera parameter at all.
+
+### 6d. OPEN — triggers lost between the EL2521 and the grabber
+
+**xylod is exonerated by measurement.** Sampling its status stream during a
+3-bracket hdr set (velocity scales 1 / 0.5 / 0.25):
+
+| pass | commanded | sustained? | captured | share |
+|---|---|---|---|---|
+| 0 | 14161.1 Hz | median == max | 14147 Hz | 100% |
+| 1 |  7080.6 Hz | median == max |  1132 Hz | **16%** |
+| 2 |  3540.3 Hz | median == max |  2705 Hz | 76% |
+
+Motion is exactly right too — pass durations 639/1277/2554 ms are a clean
+1x/2x/4x. Reproducible across sets (pass 1: 1435, 1446, 1454, 1454 lines).
+
+Ruled out:
+- **daemon scaling** — source inspected in the built tree; commands
+  `effBase = lineBaseHz * sc` and sustains it (median == max)
+- **a rate floor** — the loss is NON-monotonic; 7080 Hz is far worse than
+  3540 Hz
+- **agent busy writing the previous TIFF** — ~2 s of gap between sweeps, and
+  the log shows the grab arming 5 ms into each settle
+
+Unexplained: why an intermediate rate loses most triggers while both a higher
+and a lower rate do not. Next place to look is the EL2521 itself (does it
+actually emit the commanded frequency after a mid-sequence change?) and the
+grabber's EXSYNC handling — not the daemon.
