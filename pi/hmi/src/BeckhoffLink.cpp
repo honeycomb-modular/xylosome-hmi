@@ -172,7 +172,16 @@ void BeckhoffLink::executeScan(int colorMode,
         // Defaults tightened 2026-06-10 (artist: inter-pass pause too long).
         // Return raised to 240 deg/s output = 2000 rpm motor through the 50:1
         // (2026-06-12, artist: resets very fast). Overridable via QSettings.
-        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 150.0).toDouble()},
+        //
+        // 150 -> 1200 on 2026-08-09. The capture agent still does about a second
+        // of work on its status thread after a FULL frame — collect() copies the
+        // 400 MB frame three times, then filled_lines() and max() scan it again —
+        // and while it does, the next pass's settle is read late and its Snap is
+        // armed after the sweep has started. Measured on 4-pass colour: a pass is
+        // starved exactly when the previous one produced a full frame
+        // (26756 / 12750 / 26745 / 17102). The settle is the only place to give
+        // the host that time without touching the image path.
+        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 1200.0).toDouble()},
         {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),         line},
         {QStringLiteral("profile"),      prof},
