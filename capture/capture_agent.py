@@ -709,7 +709,19 @@ def xylod_client():
                         # the sweep is over, so no further EXSYNC pulse can arrive:
                         # a short grace, then take whatever filled
                         try:
-                            img = grab.collect(400, abort=True)
+                            # 400 ms was a "short grace, then take whatever filled" —
+                            # fine when the host is idle. But the transfer of a
+                            # 250 MB frame is still draining into host memory at
+                            # pass_end, and the thread that services it is the one
+                            # that just wrote the PREVIOUS pass's TIFF. When that
+                            # write overruns the grace, the frame is aborted
+                            # mid-flight and comes back truncated — which is why
+                            # pass 0 (never preceded by a write) is the only pass
+                            # that reliably fills, and why the shortfall is erratic
+                            # rather than fixed. Raised to 4 s: the sweep is over,
+                            # so no further EXSYNC can arrive and a complete frame
+                            # still returns immediately.
+                            img = grab.collect(4000, abort=True)
                             pending[p] = (img, pass_filter.get(p, p))
                             ext_lines[p] = filled_lines(img)
                             print("collected pass %d: %d lines%s"
