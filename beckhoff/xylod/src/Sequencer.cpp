@@ -395,6 +395,10 @@ void Sequencer::cycle(double dt) {
                 "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\",\"tMs\":%lld}",
                 m_pass, kFilterNames[slot], nowMs());
             event(b);
+            m_passLines = 0.0;
+            m_passHzMax = 0.0;
+            LOGI("seq: pass %d begin — scale %.3f, rate %.0f Hz intended",
+                 m_pass, passVelScale(), m_job.lineBaseHz * passVelScale());
             m_st = St::SeqRun;
         }
         break;
@@ -468,6 +472,10 @@ void Sequencer::cycle(double dt) {
             passDone = m_arcS >= arcAbs;
         }
         m_bk.setLineHz(lineHzNow);
+        if (m_st == St::SeqRun) {
+            m_passLines += lineHzNow * dt;
+            if (lineHzNow > m_passHzMax) m_passHzMax = lineHzNow;
+        }
 
         // line-count blink: a snappy pulse every line_blink_div scanned lines
         if (m_st == St::SeqRun && m_cfg.lineBlinkDiv > 0.0) {
@@ -488,6 +496,11 @@ void Sequencer::cycle(double dt) {
             std::snprintf(b, sizeof b, "{\"ev\":\"pass_end\",\"pass\":%d,\"tMs\":%lld}",
                           m_pass, nowMs());
             event(b);
+            // What the daemon BELIEVES it emitted. Compare against the capture
+            // agent's collected count: if these agree and the agent sees fewer,
+            // the pulses are lost past this point (EL2521 or cabling), not here.
+            LOGI("seq: pass %d end — emitted %.0f lines, peak %.0f Hz",
+                 m_pass, m_passLines, m_passHzMax);
 
             if (m_pass + 1 < m_passCount) {
                 enterPass(m_pass + 1);

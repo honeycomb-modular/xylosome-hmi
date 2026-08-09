@@ -166,6 +166,11 @@ private:
     double m_moveAcc = 0.0;        // accel for the current point-to-point move (set by startMove)
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;
+    // Per-pass trigger accounting, for diagnosing lines that leave here but
+    // never reach the sensor. Accumulated unconditionally — m_lineCount is
+    // gated on line_blink_div and cannot be trusted for this.
+    double m_passLines = 0.0;       // integral of lineHz over the current pass
+    double m_passHzMax = 0.0;       // peak lineHz commanded during it
     double m_meanAbsProfile = 1.0;  // mean |profile|, time-indexed passes only
     double m_lineCount  = 0.0;      // accumulated scanned lines this sequence
     int    m_plannedLines = 0;      // lines each pass will deliver, after the rate clamp
