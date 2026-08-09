@@ -17,8 +17,9 @@
 // here rather than asked for, because amplitude and period are what you can
 // actually picture.
 //
-// The pass is a whole number of periods by construction, so the axis ends where
-// it started and the sweep cannot drift.
+// The pass is a whole number of periods by construction, so the sweep cannot
+// drift. It begins (and parks) at pose − amplitude, the bottom of the swing, so
+// that the swing is CENTRED on the pose you framed — see startRun().
 //
 // See docs/superpowers/specs/2026-08-09-capture-art-modes.md §5.
 
@@ -62,6 +63,8 @@ Item {
                                     / Math.max(0.001, root.periodSec)
     readonly property bool tooFast: root.peakVel > root.velCeiling
     readonly property real durationSec: root.swings * root.periodSec
+    // Fixed preview window — see the drawing below for why it must not scale.
+    readonly property real previewWindowSec: 20.0
 
     // ── Run state ───────────────────────────────────────────────────────────────
     property string execState:   "idle"
@@ -152,9 +155,15 @@ Item {
         root.blinkVisible = true
         root.homed        = false
         if (Beckhoff.connected) {
-            // Swings around wherever the axis already is, so the pose you framed
-            // stays the centre of the swing.
-            Beckhoff.executeReversing(Motor.colorMode, Beckhoff.positionDeg,
+            // Start HALF A SWING BELOW the framed pose, so the swing is centred
+            // on it. Integrating v = V·sin(ωt) from rest gives x = A(1 − cos ωt),
+            // which runs 0 → +2A — all to one side. Beginning at pose − A turns
+            // that into pose − A → pose + A, which is what "±amplitude about the
+            // pose you framed" actually means. xylod repositions to arcStartDeg
+            // before the pass, and parks back there at the end, so the axis
+            // finishes at the bottom of the swing rather than at the centre.
+            Beckhoff.executeReversing(Motor.colorMode,
+                                      Beckhoff.positionDeg - root.amplitudeDeg,
                                       root.peakVel, root.durationSec,
                                       root.lines, root.buildSineProfile())
         } else {
@@ -369,29 +378,80 @@ Item {
         }
     }
 
-    // ── Derived readouts ────────────────────────────────────────────────────────
+    // ── The swing, drawn ────────────────────────────────────────────────────────
+    // Position over time, not velocity: this is the shape the axis traces.
+    // Height IS the amplitude and wavelength IS the period, both against a FIXED
+    // 20 s window — which is the point. Scaling the window to the run would make
+    // every setting look identical; against a fixed window a shorter period
+    // visibly steepens, and steeper is faster.
     Hairline { x: Theme.marginX; y: 288; width: Theme.contentW }
 
-    Text {
-        x: Theme.marginX; y: 302
-        text:  "peak " + root.peakVel.toFixed(0) + " \xB0/s"
-               + "  ·  swing takes " + root.fmtDuration(root.durationSec)
-               + "  ·  ends where it started"
-        color: root.tooFast ? Theme.danger : Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-    }
-    Text {
-        x: Theme.marginX; y: 324
-        visible: root.tooFast
-        text:  "too fast for the axis — widen the period or narrow the amplitude "
-               + "(ceiling " + root.velCeiling.toFixed(0) + " \xB0/s)"
-        color: Theme.danger
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    Rectangle {
+        x: Theme.marginX; y: 296; width: Theme.contentW; height: 64
+        color: Theme.panel; radius: 2
+        border.width: 1; border.color: Theme.border
+
+        Canvas {
+            id: wave
+            anchors.fill: parent
+            anchors.margins: 1
+
+            // Canvas does not track bindings — repaint when the shape changes.
+            property real amp:    root.amplitudeDeg
+            property real period: root.periodSec
+            property real dur:    root.durationSec
+            property bool hot:    root.tooFast
+            onAmpChanged:    requestPaint()
+            onPeriodChanged: requestPaint()
+            onDurChanged:    requestPaint()
+            onHotChanged:    requestPaint()
+
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                var w = width, h = height, mid = h / 2
+                var winS = root.previewWindowSec
+                var pad  = 6
+                var ampPx = (mid - pad) * Math.min(1, root.amplitudeDeg / root.ampMax)
+
+                // centre line — the pose you framed
+                ctx.strokeStyle = Theme.border
+                ctx.lineWidth = 1
+                ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke()
+
+                // x(t) = pose − A·cos(ωt): starts at the bottom, swings through
+                // the centre to the top, and back.
+                var endX = w * Math.min(1, root.durationSec / winS)
+                ctx.strokeStyle = root.tooFast ? Theme.danger : Theme.accent
+                ctx.lineWidth = 2
+                ctx.beginPath()
+                for (var px = 0; px <= endX; px++) {
+                    var t = px / w * winS
+                    var y = mid - ampPx * (-Math.cos(2 * Math.PI * t / Math.max(0.001, root.periodSec)))
+                    if (px === 0) ctx.moveTo(px, y); else ctx.lineTo(px, y)
+                }
+                ctx.stroke()
+
+                // where the pass ends, when it ends inside the window
+                if (endX < w - 1) {
+                    ctx.strokeStyle = Theme.colorTextFaint
+                    ctx.lineWidth = 1
+                    ctx.beginPath(); ctx.moveTo(endX, 0); ctx.lineTo(endX, h); ctx.stroke()
+                }
+            }
+        }
+
+        Text {
+            anchors { right: parent.right; rightMargin: 8; top: parent.top; topMargin: 4 }
+            text:  root.durationSec > root.previewWindowSec ? "first 20 s" : "20 s window"
+            color: Theme.colorTextFaint
+            font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+        }
     }
 
     // ── Progress ────────────────────────────────────────────────────────────────
     Rectangle {
-        x: Theme.marginX; y: 366; width: Theme.contentW; height: 36
+        x: Theme.marginX; y: 368; width: Theme.contentW; height: 28
         color: Theme.panel; radius: 2
         border.width: 1; border.color: Theme.border
 
@@ -404,14 +464,25 @@ Item {
     }
 
     Text {
-        x: Theme.marginX; y: 410
+        x: Theme.marginX; y: 404
         text:  root.execState === "idle"
-               ? "swings \xB1" + root.amplitudeDeg.toFixed(0) + "\xB0 about the current pose"
+               ? "peak " + root.peakVel.toFixed(0) + " \xB0/s"
+                 + "  ·  \xB1" + root.amplitudeDeg.toFixed(0) + "\xB0 about the pose"
+                 + "  ·  takes " + root.fmtDuration(root.durationSec)
                : "swinging  ·  " + Math.round(root.progressFrac * 100) + "%"
                  + "  ·  " + Beckhoff.velocityDegS.toFixed(0) + " \xB0/s"
                  + "  ·  " + Beckhoff.positionDeg.toFixed(1) + "\xB0"
-        color: Theme.colorTextDim
+        color: root.tooFast ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
+    }
+
+    Text {
+        x: Theme.marginX; y: 430
+        visible: root.tooFast
+        text:  "too fast for the axis — widen the period or narrow the amplitude "
+               + "(ceiling " + root.velCeiling.toFixed(0) + " \xB0/s)"
+        color: Theme.danger
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
 
     // ── Bottom bar ──────────────────────────────────────────────────────────────
