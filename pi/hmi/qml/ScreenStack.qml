@@ -337,8 +337,21 @@ Item {
     // ── Readouts ────────────────────────────────────────────────────────────────
     Hairline { x: Theme.marginX; y: 288; width: Theme.contentW }
 
+    // Off: every pass traces the identical arc and averaging buys signal.
+    // On: each pass steps a fraction of a line further, so the passes sample
+    // between each other's lines — super-res.
+    TerminalButton {
+        id: ditherBtn
+        controller: stackFocus
+        x: Theme.marginX; y: 300
+        width: 200; height: 40
+        label:  root.dither ? "[dither: on]" : "[dither: off]"
+        active: root.dither
+        onClicked: root.dither = !root.dither
+    }
+
     Text {
-        x: Theme.marginX; y: 302
+        x: 240; y: 302
         text:  "arc " + root.arcDeg.toFixed(0) + "\xB0 from capture.scan"
                + "  ·  one sweep " + root.fmtDuration(root.sweepSec)
                + "  ·  all " + root.passes + " about " + root.fmtDuration(root.totalSec)
