@@ -29,18 +29,16 @@ pragma Singleton
 // out 1.4x too tall, multiply this by 1.4.
 
 import QtQuick
-import QtCore
 
 QtObject {
     id: calib
 
-    property real linesPerDeg: 150.65
-
-    // Persisted so a re-measure survives a restart.
-    property Settings _store: Settings {
-        category: "calib"
-        property alias linesPerDeg: calib.linesPerDeg
-    }
+    // Deliberately a plain constant, NOT persisted. It was briefly backed by a
+    // Settings object whose alias pointed back at this very property — a
+    // circular binding that froze the HMI the moment a page touched Calib.
+    // A calibration measured once a year does not justify that risk; re-measure
+    // by editing this number.
+    readonly property real linesPerDeg: 150.65
 
     // The geometrically correct line count for a sweep of `arcDeg`.
     function linesForArc(arcDeg) {
