@@ -286,11 +286,13 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
         // it because the filter wheel's rotation buys seconds of gap; pinning
         // the filter (which stack and hdr do) collapsed the gap to reposition
         // plus settle, about 0.9 s, and the dead time no longer fitted.
-        // Fixed properly in the agent on 2026-08-09 (async TIFF write + one copy
-        // instead of three), so this no longer has to hide a full second. Kept
-        // above the single-scan 150 ms as margin: the arm still has to land
-        // inside the settle window.
-        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 600.0).toDouble()},
+        // 1200 ms, matching executeScan. Multi-pass under EXSYNC only started
+        // working once the agent stopped blocking its status thread AND the
+        // settle was long enough for the arm to land inside it — 4-pass colour
+        // went from erratic partials to 26745/26756 on all four passes at this
+        // value. hdr and stack are the same path and need the same margin; 600
+        // was left over from an earlier guess and would have under-tested them.
+        {QStringLiteral("settleMs"),      s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 1200.0).toDouble()},
         {QStringLiteral("returnVelDegS"), s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),          line},
         {QStringLiteral("profile"),       prof},
