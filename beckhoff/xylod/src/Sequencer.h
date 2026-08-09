@@ -141,6 +141,7 @@ private:
     bool stepMove(double dt);                 // trapezoid toward m_moveTarget
     void enterPass(int pass);
     double passArcStart() const;              // arcStartDeg shifted by the pass offset
+    double linesPerDeg() const;               // baseHz/maxVel — the geometry ratio
     double passVelScale() const;              // this pass's speed multiplier
     double profileAt(double x) const;         // linear interp; samples may be signed
     long long nowMs() const;

@@ -292,7 +292,11 @@ void EcBackend::fwMoveToSlot(int slot) {
 }
 
 void EcBackend::setLineHz(double hz) {
-    m_lineHzCmd = std::max(0.0, std::min(m_cfg.lineMaxHz, hz));
+    // SIGNED. The EL2521 is in incremental-encoder simulation, so a negative
+    // rate emits the A/B pair in the opposite phase order — reverse quadrature.
+    // That is what lets the sequencer keep the simulation faithful while the
+    // axis travels backwards between passes, instead of going silent.
+    m_lineHzCmd = std::max(-m_cfg.lineMaxHz, std::min(m_cfg.lineMaxHz, hz));
 }
 
 // ── cyclic ───────────────────────────────────────────────────────────────────
@@ -347,7 +351,7 @@ void EcBackend::writeOutputs() {
     if (m_ltRx) {
         m_ltRx->ctrl = 0;
         const double frac = m_lineHzCmd / m_cfg.el2521BaseHz;
-        m_ltRx->freqVal = int16_t(std::max(0.0, std::min(1.0, frac)) * 32767.0);
+        m_ltRx->freqVal = int16_t(std::max(-1.0, std::min(1.0, frac)) * 32767.0);
     }
     if (m_dout) {
         uint8_t b = 0;
