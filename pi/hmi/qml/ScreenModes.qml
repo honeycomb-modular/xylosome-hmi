@@ -28,7 +28,7 @@ Item {
 
     FocusController {
         id: modeFocus
-        targets: [navScan, navTimed, navStatic, navJog, backBtn]
+        targets: [navScan, navTimed, navStatic, navChrono, navJog, backBtn]
         onActivated: function(item) { item.clicked() }
     }
 
@@ -79,9 +79,16 @@ Item {
         onClicked: root.goTo("ScreenStatic.qml")
     }
     NavRow {
-        id: navJog
+        id: navChrono
         controller: modeFocus
         x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride * 3; width: Theme.contentW
+        rowName: "chrono"; rowDesc: "the same frame on an interval — time-lapse"
+        onClicked: root.goTo("ScreenChrono.qml")
+    }
+    NavRow {
+        id: navJog
+        controller: modeFocus
+        x: Theme.marginX; y: Theme.contentTop + 40 + Theme.rowStride * 4; width: Theme.contentW
         rowName: "jog";    rowDesc: "position the axis — nothing is captured"
         onClicked: root.goTo("ScreenJog.qml")
     }
@@ -93,13 +100,14 @@ Item {
     // live list above, so this page states the build status without anyone
     // maintaining it by hand.
     //
-    // Order is by reach, not by taste: the left column needs no xylod change,
-    // the right column is blocked on reversible motion or a flexible pass count.
+    // Order is by reach, not by taste — reading down the columns, the reachable
+    // ones come first: stack/trichrome/ramp/gradient need no xylod change, the
+    // rest are blocked on reversible motion or a flexible pass count.
     // See docs/superpowers/specs/2026-08-09-capture-art-modes.md §5.
-    Hairline { x: Theme.marginX; y: 330; width: Theme.contentW }
+    Hairline { x: Theme.marginX; y: 374; width: Theme.contentW }
 
     Text {
-        x: Theme.marginX; y: 342
+        x: Theme.marginX; y: 386
         text:  "planned"
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
@@ -107,7 +115,6 @@ Item {
 
     Repeater {
         model: [
-            { name: "chrono",    desc: "interval repeats"  },
             { name: "stack",     desc: "pass averaging"    },
             { name: "trichrome", desc: "R/G/B passes"      },
             { name: "ramp",      desc: "velocity over arc" },
@@ -120,8 +127,8 @@ Item {
         ]
 
         delegate: Item {
-            x: Theme.marginX + (index < 5 ? 0 : 462)
-            y: 362 + (index % 5) * 22
+            x: Theme.marginX + Math.floor(index / 3) * 308
+            y: 408 + (index % 3) * 22
 
             readonly property var rowData: modelData
 
