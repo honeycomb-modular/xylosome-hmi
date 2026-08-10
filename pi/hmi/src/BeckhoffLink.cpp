@@ -247,6 +247,40 @@ void BeckhoffLink::executeReversing(int colorMode, double arcStartDeg,
     });
 }
 
+void BeckhoffLink::executeFreerun(int colorMode, double arcStartDeg,
+                                  double peakVelDegS, double durationSec,
+                                  double lineHz, const QVariantList &profile)
+{
+    QJsonArray prof;
+    for (const QVariant &v : profile) prof.append(v.toDouble());
+
+    QSettings s;
+    // Explicit, and deliberately not read from beckhoff/lineMode: this mode is
+    // defined by the decoupling, so it must not inherit whatever capture.ramp
+    // last wrote there.
+    QJsonObject line{
+        {QStringLiteral("mode"),   QStringLiteral("fixed")},
+        {QStringLiteral("baseHz"), lineHz},
+    };
+
+    sendJson({
+        {QStringLiteral("cmd"),          QStringLiteral("execute")},
+        {QStringLiteral("timeProfile"),  true},
+        {QStringLiteral("colorMode"),    colorMode},
+        // Time-indexed: arcEndDeg is ignored, so the sweep's extent comes from
+        // the profile's integral. ScreenFreerun scales peakVelDegS so that
+        // integral equals the FOV the dial shows.
+        {QStringLiteral("arcStartDeg"),  arcStartDeg},
+        {QStringLiteral("arcEndDeg"),    arcStartDeg},
+        {QStringLiteral("maxVelDegS"),   peakVelDegS},
+        {QStringLiteral("durationS"),    durationSec},
+        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMs"), 1200.0).toDouble()},
+        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
+        {QStringLiteral("line"),         line},
+        {QStringLiteral("profile"),      prof},
+    });
+}
+
 void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg,
                                 double arcStartDeg, double arcEndDeg,
                                 double maxVelDegS, double minVelDegS,

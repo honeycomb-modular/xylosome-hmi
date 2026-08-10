@@ -407,3 +407,29 @@ geometric offset: it reported 0 lines when the truth was 447. Per-tile 2-D phase
 correlation was no better (peaks ~0.013, i.e. noise). What worked was locating
 ONE strong known edge sub-line in each frame and differencing. Ask which feature
 to use rather than searching blind.
+
+---
+
+## 8. Freerun — added 2026-08-10
+
+A mode that was not on §2's list. Its subject is the *coupling* between the axis
+and the trigger, which every other mode treats as fixed:
+
+- **speed over TIME, with a real stop.** `timeProfile:true` + `durationS`. The
+  §5a constraints 1 and 2 (monotonic sweep, velocity floor) apply only to the
+  position-indexed path; the time-indexed one added for pendulum has neither, so
+  a standstill mid-pass costs nothing new.
+- **line rate independent of the axis.** `line.mode:"fixed"` at a rate set on
+  the page. §5a's "third creative axis" run open-loop.
+
+So freerun lands in bucket **B** (HMI-only, no daemon change) and is built:
+`ScreenFreerun.qml` + `BeckhoffLink::executeFreerun`.
+
+The one thing it needed and scan does not have: with no arc end to reach, the
+FOV is honoured by *fitting* the profile — peak = arc / (mean|profile| ×
+duration) — which preserves the drawn shape, stops included, and is clamped to
+300 °/s (xylod does not limit velocity itself).
+
+Known daemon wrinkle, worked around rather than fixed: `Sequencer.cpp:268-271`
+solves a `lines` target against `mean|profile|` even in fixed-rate mode, where
+lines are `baseHz × durationS`. Freerun therefore sends `baseHz` and no target.

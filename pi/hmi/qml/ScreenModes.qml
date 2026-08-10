@@ -91,6 +91,7 @@ Item {
             { name: "static",    desc: "lines only — the camera never moves",          page: "ScreenStatic.qml" },
             { name: "chrono",    desc: "the same frame on an interval — time-lapse",   page: "ScreenChrono.qml" },
             { name: "ramp",      desc: "linear speed ramp — lines follow it, or don't", page: "ScreenRamp.qml"   },
+            { name: "freerun",   desc: "speed curve over time — lines run at their own fixed rate", page: "ScreenFreerun.qml" },
             { name: "pendulum",  desc: "swings back and forth while scanning",         page: "ScreenPendulum.qml" },
             { name: "stack",     desc: "N identical sweeps — average, or dither for detail", page: "ScreenStack.qml" },
             { name: "party",     desc: "an irregular dance — seeded, repeatable",      page: "ScreenParty.qml"  },

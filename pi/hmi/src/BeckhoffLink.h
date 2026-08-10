@@ -86,6 +86,21 @@ public:
                                       double maxVelDegS, double durationSec,
                                       int targetLines, const QVariantList &profile,
                                       bool lineForwardOnly = false);
+    // executeFreerun: like executeReversing it sends a TIME-indexed profile, so
+    // a zero sample is a genuine standstill (the position-indexed path floors
+    // velocity at minVelDegS and would never stop). Unlike every other mode the
+    // trigger rate is passed explicitly and pinned to "fixed": the lines keep
+    // coming at lineHz whatever the axis does, including while it is parked.
+    // That decoupling is the mode — the subject stretches where the axis is slow
+    // and piles onto one column where it stops.
+    //
+    // No `lines` target is sent. xylod solves a target against mean|profile|
+    // (Sequencer.cpp:268), which is right for rate-follows-velocity but wrong
+    // for a fixed rate, where lines are simply lineHz x durationSec. Sending the
+    // rate we already computed sidesteps that.
+    Q_INVOKABLE void executeFreerun(int colorMode, double arcStartDeg,
+                                    double peakVelDegS, double durationSec,
+                                    double lineHz, const QVariantList &profile);
     // executeStack: N passes of the same sweep. filterSlot pins one filter for
     // all of them (so the wheel does not walk R/G/B/C), and passOffsetDeg shifts
     // the arc a little further each pass — sub-pixel dither for super-res.

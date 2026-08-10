@@ -1159,3 +1159,76 @@ a baseline after an agent restart before drawing any conclusion.
   returns before the task has stopped and the Start is swallowed. Needs a pause
   between them, in an **elevated** window (the task is invisible unelevated).
 - TDI stages are running at **96**, not the 48 noted elsewhere as default.
+
+---
+
+## 2026-08-10 — capture ▸ freerun, and the agent gets its own dot in the Suite
+
+Branch `art-modes`. Both changes are UI; **xylod is untouched**.
+
+### Suite — capture agent vs camera are now two rows
+
+`suite/qml/StatusPanel.qml` had three connection dots, and the one labelled
+`camera` was really the capture agent's `:5521` socket. So a live agent in front
+of a *silent camera* — the 2026-08-09 loose-Camera-Link case, all readback fields
+`None`, both CL LEDs red — read as "camera connected".
+
+Split into two facts off the one link, no agent-side change:
+
+- **capture agent** — `Camera.connected`, i.e. the `:5521` bus answers →
+  `running` / `not running`, with `host:port`.
+- **camera** — `Camera.connected && Camera.model !== ""`, i.e. the camera itself
+  replied on the serial line → `responding` / `no reply`, with the model.
+
+`CameraLink` keeps the last model across a disconnect, which is why the camera
+row tests `connected` as well.
+
+### capture ▸ freerun — the lines stop following the axis
+
+New mode, `pi/hmi/qml/ScreenFreerun.qml`, listed in `ScreenModes.qml` after ramp.
+Scan's grammar (curve editor over a dial), with two differences that *are* the
+mode:
+
+1. **Time-indexed curve with a real standstill.** Scan's profile is indexed by
+   position and floored at `minVelDegS`, because a position-indexed sweep at
+   v=0 never advances. Freerun sends `timeProfile:true` + `durationS`, where the
+   pass ends on the clock and `v=0` is a genuine stop (`Sequencer.cpp:424-449`).
+   Bottom of the box is the stop line; anything inside the bottom 3% samples as
+   exactly 0, because nodes clamp to ny≤0.99 and could never otherwise reach it.
+2. **Fixed trigger rate.** `line.mode:"fixed"` at a rate the artist sets, so the
+   lines keep coming while the axis crawls and while it is parked. The subject
+   stretches where it is slow and piles onto one column where it stops.
+
+Controls: dial = FOV (as in scan) · green bar = pass **duration** (the curve's
+time axis, log 1–120 s) · curve = **shape only** · rate box = fixed Hz,
+3500–37000, with a tick marking the rate that would keep geometry true.
+
+Because lines = rate × duration, the bar still sets the aspect, exactly as
+scan's bar does. The peak is fitted so ∫v·dt equals the FOV — shape and stops
+preserved, only the scale moves. Readouts state the two ways that can bite:
+`lines` turns red past the grabber's 65000-line frame, and a fit needing more
+than 300 °/s is clamped with "sweep stops N° short of the fov" (xylod clamps
+position and acceleration, but **not** velocity — the ceiling has to hold in the
+HMI).
+
+`BeckhoffLink::executeFreerun` is new: like `executeReversing` but it sends the
+trigger rate **explicitly** rather than reading `beckhoff/lineMode` +
+`lineBaseHz` out of QSettings, so ramp's last coupling choice cannot leak into a
+mode defined by the decoupling.
+
+### Flagged, not fixed — xylod's line-target solve for fixed + timeProfile
+
+`Sequencer.cpp:268-271` solves a `lines` target as
+`lines / (mean|profile| × durationS)`. That is right when the rate follows
+velocity, and wrong for `line.mode:"fixed"`, where lines are simply
+`baseHz × durationS` — the same distinction `m_plannedLines` gets right two
+lines further down (`lineCurve ? mean : 1.0`). A fixed-rate time profile asking
+for N lines would get N/mean. Freerun sidesteps it by sending `baseHz`, so
+nothing is broken today; the one-line fix is to apply `mean` only when
+`lineCurve`.
+
+### Not yet run on the bench
+
+Deployed nowhere yet. Freerun has never driven the servo — the first run wants
+a small FOV and a short duration, and `~/.xsession-errors` read afterwards
+(a green QML build proves nothing).
