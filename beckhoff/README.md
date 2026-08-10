@@ -84,6 +84,13 @@ sudo cp ../systemd/xylod.service /etc/systemd/system/
 sudo systemctl enable --now xylod
 ```
 
+> **This section is first-time bring-up.** For updating an already-running
+> C6920, follow **`COOP.md` §3b** instead — the box has no internet, code goes
+> over the `.2` link as a bundle, and the build must happen in this repo rather
+> than a `/tmp` scratch tree (a `/tmp` build once left a daemon nothing on the
+> machine could rebuild). Note also that `cp ../config/xylod.conf /etc/` above
+> would revert the box's uncommitted bench tuning — see `COOP.md` §4b.
+
 ### 6. HMI without hardware — sim mode
 
 `xylod --sim` runs the identical protocol with a software axis — develop the
