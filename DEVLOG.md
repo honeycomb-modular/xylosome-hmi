@@ -1071,3 +1071,91 @@ near-perfect fixed-rate scan is the timed one).
 `/etc/xylod.conf` `pos_*` comments are wrong — `pos_el2521 = 5 # not fitted`
 sits on a terminal that IS fitted and working; the `pos_el7031` comment puts the
 EL7047 at 4 when the scan shows 6. Nearly misled this session.
+
+---
+
+## 2026-08-09 — black frames + frozen Suite = ONE loose Camera Link contact
+
+A hardware fault that presented as three unrelated-looking software bugs and ate
+most of a session. **Check the grabber LEDs first next time.**
+
+### What happened
+
+Mid-way through scan **644 pass 3**, the camera stopped responding. Everything
+after it was black:
+
+| scan | line rate | collected |
+|---|---|---|
+| 643 p0/p1 | 4030 Hz | 20304 / 20304 ✅ |
+| 644 p0–p2 | 2886 Hz | ~full ✅ |
+| **644 p3** | 2886 Hz | **0** ← onset |
+| 645–649 | 422 – 37000 Hz | **0**, `peak 0/65535` |
+
+Then pressing **LIVE** against the wedged board froze the entire Review Suite.
+Cause was a **loose Camera Link contact** at the camera. Reseated + power-cycled
+→ scan 650 came back with real lines at full 12-bit saturation.
+
+### The diagnosis that actually worked
+
+Restart the capture agent and read its `apply_startup_defaults()` block — it
+doubles as a **camera health probe**:
+
+```
+  startup output     = 12-bit (clm 16, sot 320) -> camera reports clm None
+    clm reply: ''
+    sot reply: ''
+  startup line.rate  = 38000    -> None  (FAILED)
+camera: {'line.rate': None, ..., 'model': None, 'clm': None}
+```
+
+Every field `None` and empty serial replies = the camera is silent on **both**
+its serial control link and its Camera Link output. Combined with **both CL port
+LEDs red** (= no pixel clock, per `capture_agent.py:248,259-263`) that is
+conclusive, and it is hardware. A healthy block reports
+`model HS-80-08K80-00-R`, `line.rate -> 37986.7`, `clm 16, Medium, 4 taps, 12 bits`.
+
+### Ruled out, with evidence — do not re-test these
+
+- **Exposure / gain / TDI stages.** `collected 0 lines` is not a dark image: with
+  zero lines the frame is never written and you see the empty buffer. No exposure
+  setting can produce it.
+- **Line-rate overrun** (the `xylod.conf:64-75` silent-drop trap). Scan 645 ran at
+  **422 Hz** and was equally black; the camera's achieved ssf (37986.7) is above
+  the 37000 clamp anyway.
+- **EL2521 / xylod / motion.** xylod logged `ec: EL2521 encoder-sim, ramp off,
+  base 50000 Hz` at startup and normal `pass N end` events throughout. The agent's
+  `NO LINES - check the EL2521 emit` hint fires on *any* zero-line capture and was
+  a red herring. Note `Sequencer.cpp:499` — that emitted count is **computed, not
+  measured**, so it only proves xylod commanded pulses, never that any arrived.
+
+### DO NOT feed scan 650 into the ~10% shortfall investigation
+
+Scan 650 came in **22112 / 24652 (89.7%)** — which looks exactly like the
+2026-07-26 shortfall, and **is not the same thing**. It was captured by the agent
+instance that started while the camera was dead, so every startup default had
+`(FAILED)` and the camera was running on whatever it powered up with. Earlier the
+same day, healthy scans were at **99.7–100%** (`22137/22200`, `26731/26764`,
+`20304/20304`) — i.e. the shortfall was essentially gone before the fault. Re-take
+a baseline after an agent restart before drawing any conclusion.
+
+### Two real bugs found, neither fixed
+
+1. **Suite LIVE deadlocks the whole app.** `LiveLink` (`127.0.0.1:5520`) does a
+   blocking read **on the GUI thread**. When the agent can't hand over the grabber
+   its LIVE handler closes the socket, and the Suite blocks forever on the
+   half-closed connection. Signature: `Responding: False` with **0 s CPU**, Suite
+   side `Established`, agent side `FinWait1`. Since `NETWORK.md:126` makes LIVE and
+   capture mutually exclusive by design, *any* wedged board turns a LIVE press into
+   a frozen Suite. A failed LIVE should degrade, not deadlock.
+2. **xylod accepts a degenerate job.** Scan 645 executed as
+   `arc -0.0→-0.0 deg, 0 profile samples, peak 100.0 deg/s, line 422 Hz -> 65000
+   lines` and **never logged a single `pass end`**, while the agent sat 39 s and
+   wrote a 1.06 GB black TIFF. A zero-length arc with zero profile samples should
+   be rejected at submission, not run.
+
+### Also noted
+
+- `Stop-ScheduledTask; Start-ScheduledTask` **on one line does not work** — Stop
+  returns before the task has stopped and the Start is swallowed. Needs a pause
+  between them, in an **elevated** window (the task is invisible unelevated).
+- TDI stages are running at **96**, not the 48 noted elsewhere as default.

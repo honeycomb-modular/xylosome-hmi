@@ -144,6 +144,31 @@ the C6920's sudo password (Hoyte) plus a `xylod` restart.
   the working setup. Let Hoyte press LIVE / execute.
 - **Restarting `xylod`** briefly drops every client (Pi HMI, suite, capture
   agent). They reconnect, but ask before doing it.
+- **Never suggest LIVE as a diagnostic while capture is wedged.** The Suite's
+  `LiveLink` blocks on the GUI thread, so a LIVE that can't get the board freezes
+  the *entire* Suite (`Responding: False`, 0 s CPU, agent side `FinWait1`). It
+  turns a bad-images problem into a frozen-Suite problem. Prove the grab path
+  first — one scan with non-zero `collected` lines. Cost a session on 2026-08-09.
+
+## 5b. Black frames — check the LEDs before anything else
+
+`collected pass 0: 0 lines` / `peak 0/65535` is **never exposure** — zero lines
+means the frame was never written, so you are seeing the empty buffer. Order:
+
+1. **Grabber CL port LEDs.** Red = no pixel clock = camera or cabling. Both red
+   on 2026-08-09 was a loose Camera Link contact.
+2. **Restart the agent and read its startup block** (§5 caveats apply). All fields
+   `None` with `clm reply: ''` = camera silent on serial too → power-cycle and
+   reseat, *then* restart the agent so the defaults apply to a live camera.
+   Healthy looks like `model HS-80-08K80-00-R`, `line.rate = 38000 -> 37986.7`.
+3. Only then look at xylod/EL2521. Its `pass N end — emitted N lines` count is
+   **computed, not measured** (`Sequencer.cpp:499`); it proves nothing arrived.
+   The agent's `NO LINES - check the EL2521 emit` hint fires on any zero-line
+   capture and misdirects.
+
+Restarting the agent: `Stop-ScheduledTask` and `Start-ScheduledTask` **on one
+line silently fails** (Stop returns before the task stops). Pause between them,
+in an **elevated** window — the task is invisible from an unelevated session.
 
 ---
 
