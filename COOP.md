@@ -86,6 +86,54 @@ pgrep -c -f xylosome_hmi                 # must be exactly 1 (two-instance trap)
 
 ---
 
+## 3b. Deploy PC → C6920 (it has no internet either)
+
+The C6920 has `origin` configured but **cannot reach GitHub** — its default route
+is `192.168.2.1`, which does not route out. `git pull origin` there just fails.
+Same answer as the Pi, but over the `.2` link and with `scp`, since the key is
+installed (no http-server dance needed):
+
+```bash
+# on the PC — incremental from whatever the box already has
+git bundle create <scratch>/xylo.bundle <boxHead>..<branch>
+scp -i ~/.ssh/id_ed25519 <scratch>/xylo.bundle hoyte@192.168.2.2:/tmp/
+```
+```bash
+# on the box — none of this needs sudo, so the agent can run it
+cd ~/xylosome-hmi && git stash push -u -m "beckhoff-local $(date +%F)"
+git fetch /tmp/xylo.bundle <branch> && git checkout -b <branch> FETCH_HEAD
+cd beckhoff/xylod/build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
+```
+
+### Build in the repo, never in a /tmp scratch tree
+
+On 2026-08-09 a build was done in `/tmp/xylobuild` and installed from there
+(`/usr/bin/install -m755 /tmp/xylobuild/.../xylod /usr/local/bin/xylod`, per
+`journalctl`). The next reboot wiped `/tmp`, leaving the box running a daemon
+**no source on the machine could rebuild** — and `~/xylosome-hmi` was 50 commits
+stale on `main`, so a routine `make install` would have silently reverted it to
+pre-`art-modes` xylod. Resynced onto `art-modes` 2026-08-10.
+
+- The box's checkout is **CRLF**, so `git status` there reports whole-file
+  rewrites that are mostly line-ending noise. Re-check with
+  `git diff --ignore-cr-at-eol --stat` before believing it holds unsaved work.
+- **Verify a sync:** `cmp build/xylod /usr/local/bin/xylod`. Nothing from the
+  build path is baked into the binary, so a rebuild of matching source is
+  byte-identical (proved 2026-08-10, sha256 `4136b989…`).
+
+### Building does NOT deploy
+
+The C6920's form of the §3 trap. `make -j` only fills `build/`; the service runs
+`/usr/local/bin/xylod`. Installing needs **Hoyte's hands** — C6920 sudo has no
+NOPASSWD and no TTY through the agent — and it restarts the daemon, dropping
+every client (§5):
+
+```bash
+cd ~/xylosome-hmi/beckhoff/xylod/build && sudo make install && sudo systemctl restart xylod
+```
+
+---
+
 ## 4. Launching the Review Suite (capture PC)
 
 ```powershell
