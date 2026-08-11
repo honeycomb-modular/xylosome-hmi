@@ -120,6 +120,10 @@ set XYLOD_HOST=192.168.2.2
 cd /d "%~dp0"
 REM Pick up a newer local build if there is one (/XO = only if source is newer).
 if exist "$PSScriptRoot\build-suite\xylosome-suite.exe" robocopy "$PSScriptRoot\build-suite" "%~dp0." xylosome-suite.exe /XO /NJH /NJS /NDL /NFL /NP >nul
+REM Same for the side tools. Refreshing only the exe left a stale hdr_merge.py
+REM here on 2026-08-11: the Suite ran the packaged copy, which still had a bug
+REM already fixed in the repo, and the merge died 8 seconds in.
+if exist "$PSScriptRoot\suite\tools\hdr_merge.py" robocopy "$PSScriptRoot\suite\tools" "%~dp0tools" hdr_merge.py /XO /NJH /NJS /NDL /NFL /NP >nul
 start "" "%~dp0xylosome-suite.exe" --fullscreen
 REM Pi clock + metadata SVG sync (best effort; the Suite runs fine without it)
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0pi-metadata.ps1"
