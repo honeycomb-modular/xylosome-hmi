@@ -106,18 +106,33 @@ Write-Host ("deps -> {0} dll(s) beside the exe" -f (Get-ChildItem $dist -Filter 
 # ── launcher ──────────────────────────────────────────────────────────────────
 # Keeps the rig-specific bits (capture folder, Beckhoff address, the Pi clock
 # push and metadata sync) out of the exe, so the same build works elsewhere.
+#
+# The launcher also refreshes the exe from build-suite when that one is newer.
+# Without it this folder is a snapshot: a rebuild never reaches the Startup
+# shortcut, so logon keeps opening the build from the last time this script ran
+# (which is exactly what happened between 2026-08-09 and 08-11). Only the exe is
+# copied — if a rebuild pulls in a NEW dll, re-run package-suite.ps1.
 @"
 @echo off
 REM Xylosome Suite — self-contained launcher. No msys2 on PATH required.
 set CAPTURE_DIR=D:/capture
 set XYLOD_HOST=192.168.2.2
 cd /d "%~dp0"
+REM Pick up a newer local build if there is one (/XO = only if source is newer).
+if exist "$PSScriptRoot\build-suite\xylosome-suite.exe" robocopy "$PSScriptRoot\build-suite" "%~dp0." xylosome-suite.exe /XO /NJH /NJS /NDL /NFL /NP >nul
 start "" "%~dp0xylosome-suite.exe" --fullscreen
 REM Pi clock + metadata SVG sync (best effort; the Suite runs fine without it)
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0pi-metadata.ps1"
 "@ | Set-Content -Path "$dist\XylosomeSuite.cmd" -Encoding ASCII
 
 Copy-Item "$PSScriptRoot\sync-metadata.ps1" "$dist\pi-metadata.ps1" -Force
+
+# The HDR merge runs as a side process, so the tool has to travel with the app.
+# SessionStore::mergeHdrSet looks for it at tools\hdr_merge.py beside the exe
+# (and in the source tree when running from build-suite).
+New-Item -ItemType Directory -Force -Path "$dist\tools" | Out-Null
+Copy-Item "$PSScriptRoot\suite\tools\hdr_merge.py" "$dist\tools\" -Force
+Write-Host "tools -> hdr_merge.py"
 
 # ── desktop shortcut ──────────────────────────────────────────────────────────
 $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Xylosome Suite.lnk"
