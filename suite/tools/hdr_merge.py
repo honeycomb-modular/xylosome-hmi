@@ -51,10 +51,12 @@ def load_set(paths):
     return out
 
 
-def masked_ncc(a, b, ma, mb, dy):
-    A  = a[max(0, dy):a.shape[0] + min(0, dy)]
-    B  = b[max(0, -dy):b.shape[0] + min(0, -dy)]
-    m  = ma[max(0, dy):ma.shape[0] + min(0, dy)] & mb[max(0, -dy):mb.shape[0] + min(0, -dy)]
+def masked_ncc(a, b, ma, mb, dy, dx=0):
+    A  = a[max(0, dy):a.shape[0] + min(0, dy), max(0, dx):a.shape[1] + min(0, dx)]
+    B  = b[max(0, -dy):b.shape[0] + min(0, -dy), max(0, -dx):b.shape[1] + min(0, -dx)]
+    MA = ma[max(0, dy):ma.shape[0] + min(0, dy), max(0, dx):ma.shape[1] + min(0, dx)]
+    MB = mb[max(0, -dy):mb.shape[0] + min(0, -dy), max(0, -dx):mb.shape[1] + min(0, -dx)]
+    m = MA & MB
     if int(m.sum()) < 20000:
         return None
     x = A[m].astype(np.float32); y = B[m].astype(np.float32)
@@ -65,33 +67,50 @@ def masked_ncc(a, b, ma, mb, dy):
     return float((x * y).mean() / (sx * sy))
 
 
-def probe_dy(ref, mov, y, x, span=8):
-    """Sub-pixel row offset of `mov` relative to `ref` at this tile, or None."""
-    a = ref[y:y+T, x:x+T]; b = mov[y:y+T, x:x+T]
-    ma = a < SAT_GUARD;    mb = b < SAT_GUARD
-    af = a.astype(np.float32); bf = b.astype(np.float32)
-    sc = {}
-    for dy in range(-span, span + 1):
-        c = masked_ncc(af, bf, ma, mb, dy)
-        if c is not None:
-            sc[dy] = c
+def _peak(sc):
+    """Best key in a {shift: score} map, refined to sub-pixel by a parabola."""
     if len(sc) < 3:
         return None
     k = max(sc, key=sc.get)
     if k - 1 not in sc or k + 1 not in sc:
         return float(k)
-    # parabolic interpolation through the peak and its neighbours
     y0, y1, y2 = sc[k - 1], sc[k], sc[k + 1]
     den = (y0 - 2 * y1 + y2)
     return float(k + (0.5 * (y0 - y2) / den if abs(den) > 1e-9 else 0.0))
 
 
-def fit_geometry(bs, ref=0):
-    """Model each bracket as  src_row = scale*y + offset  on the reference grid.
+def probe_shift(ref, mov, y, x, span=8):
+    """Sub-pixel (row, column) offset of `mov` at this tile, or (None, None).
 
-    scale comes from the delivered line counts (same arc, different pulse count),
-    so only the offset is fitted - and the residual then tells us whether that
-    model is actually right."""
+    Searched one axis at a time: the two are near-independent here, and a full
+    2-D search costs an order of magnitude more for the same answer."""
+    a = ref[y:y+T, x:x+T]; b = mov[y:y+T, x:x+T]
+    ma = a < SAT_GUARD;    mb = b < SAT_GUARD
+    af = a.astype(np.float32); bf = b.astype(np.float32)
+
+    sc = {d: c for d in range(-span, span + 1)
+          if (c := masked_ncc(af, bf, ma, mb, d)) is not None}
+    dy = _peak(sc)
+    if dy is None:
+        return None, None
+    kdy = int(round(dy))
+    sc = {d: c for d in range(-span, span + 1)
+          if (c := masked_ncc(af, bf, ma, mb, kdy, d)) is not None}
+    return dy, _peak(sc)
+
+
+def fit_geometry(bs, ref=0):
+    """Model each bracket on the reference grid as
+
+        src_row = scale*y + off          (sweep axis)
+        src_col = x + cx0 + cx1*y        (sensor axis - the scan line itself)
+
+    `scale` comes from the delivered line counts (same arc, different pulse
+    count), so only `off` is fitted. The column term is fitted outright: the
+    brackets shear along the sensor axis, by an amount that grows with the
+    exposure gap - measured 2026-08-11 at ~3 px over the full height for a
+    2-stop bracket, 0 at the top. A constant column shift cannot describe that,
+    which is why the top of a merge looked aligned and the bottom did not."""
     H = min(b["h"] for b in bs)
     W = min(b["w"] for b in bs)
     ys = [int(H * f) - T // 2 for f in np.linspace(0.10, 0.90, 11)]
@@ -100,29 +119,93 @@ def fit_geometry(bs, ref=0):
     print("\ngeometry fit (reference %s):" % bs[ref]["name"])
     for i, b in enumerate(bs):
         if i == ref:
-            geo.append((1.0, 0.0)); print(f"  {b['name']}: reference"); continue
-        scale = (bs[ref]["h"] - 1) / (b["h"] - 1)
+            geo.append((1.0, 0.0, 0.0, 0.0)); print(f"  {b['name']}: reference"); continue
+        # probe_shift returns dy such that MOV row i holds REF row i+dy, so the
+        # source row for reference row y is y-dy, NOT y+dy. Getting that
+        # backwards doubles the misalignment instead of removing it, and an
+        # in-sample residual cannot see it - it only measures how well a line
+        # fits the measurements, not which way they are applied. Verified
+        # synthetically 2026-08-11; verify_fit() below now checks the applied
+        # model out of sample.
+        k = (b["h"] - 1) / (bs[ref]["h"] - 1)     # ref row -> this bracket's row
         obs = []
         for y in ys:
-            v = [probe_dy(bs[ref]["arr"], b["arr"], y, x) for x in xs]
-            v = [q for q in v if q is not None]
-            if v:
-                obs.append((y + T / 2, float(np.median(v))))
+            v = [probe_shift(bs[ref]["arr"], b["arr"], y, x) for x in xs]
+            dys = [q[0] for q in v if q[0] is not None]
+            dxs = [q[1] for q in v if q[1] is not None]
+            if dys:
+                obs.append((y + T / 2, float(np.median(dys)),
+                            float(np.median(dxs)) if dxs else 0.0))
         if not obs:
             sys.exit(f"{b['name']}: could not measure alignment anywhere")
-        # dy(y) = (scale-1)*y + offset  ->  offset = dy - (scale-1)*y
-        offs = [dy - (scale - 1.0) * yc for yc, dy in obs]
-        off = float(np.median(offs))
-        resid = [dy - ((scale - 1.0) * yc + off) for yc, dy in obs]
-        rms = float(np.sqrt(np.mean(np.square(resid))))
-        drift = (scale - 1.0) * H
-        print(f"  {b['name']}: {b['h']} lines vs {bs[ref]['h']} -> scale {scale:.7f} "
-              f"({drift:+.1f} lines of drift), offset {off:+.2f}")
-        print(f"      residual rms {rms:.2f} lines, worst {max(map(abs, resid)):.2f}")
-        if rms > 1.5:
-            print("      [warn] model fits poorly - alignment may be unreliable")
-        geo.append((scale, off))
+
+        # rows: wanted src(y) = k*y + off, measured src(y) = y - dy.
+        # The line counts give a good prior for the slope, but they only bound
+        # the sweep - the delivered pulses are not guaranteed evenly spread - so
+        # the measurements choose the slope and the prior is printed alongside
+        # to show whether they agree.
+        yv = np.array([o[0] for o in obs], float)
+        sv = np.array([o[0] - o[1] for o in obs], float)      # y - dy
+        if len(obs) >= 3:
+            kfit, off = (float(v) for v in np.polyfit(yv, sv, 1))
+        else:
+            kfit, off = k, float(np.median(sv - k * yv))
+        rres = list(sv - (kfit * yv + off))
+        rrms = float(np.sqrt(np.mean(np.square(rres))))
+        k_prior, k = k, kfit
+
+        # columns: src_col = x + cx0 + cx1*y, and measured src offset is -dx
+        yc = np.array([o[0] for o in obs], float)
+        sxv = np.array([-o[2] for o in obs], float)
+        cx1, cx0 = np.polyfit(yc, sxv, 1) if len(obs) >= 3 else (0.0, float(np.median(sxv)))
+        cres = sxv - (cx0 + cx1 * yc)
+        crms = float(np.sqrt(np.mean(np.square(cres))))
+
+        print(f"  {b['name']}: {b['h']} lines vs {bs[ref]['h']} -> scale {k:.7f} "
+              f"({(k - 1.0) * H:+.1f} lines over the height), offset {off:+.2f}")
+        print(f"      line counts alone predicted scale {k_prior:.7f} "
+              f"({(k_prior - 1.0) * H:+.1f} lines)")
+        print(f"      rows: residual rms {rrms:.2f} lines, worst {max(map(abs, rres)):.2f}")
+        print(f"      cols: {cx0:+.2f} px at the top, {cx0 + cx1 * H:+.2f} at the bottom "
+              f"({cx1 * H:+.2f} px of shear); residual rms {crms:.2f} px")
+        if rrms > 1.5:
+            print("      [warn] row model fits poorly - alignment may be unreliable")
+        geo.append((k, off, float(cx0), float(cx1)))
     return geo, W
+
+
+def verify_fit(bs, geo, ref=0):
+    """Apply the fitted model and re-measure. This is the check that catches a
+    model applied the WRONG WAY ROUND, which the in-sample residual cannot."""
+    H = min(b["h"] for b in bs)
+    W = min(b["w"] for b in bs)
+    print("\nverify (residual after applying the fit, want ~0):")
+    worst = 0.0
+    for i, (b, (k, off, c0, c1)) in enumerate(zip(bs, geo)):
+        if i == ref:
+            continue
+        out = []
+        for f in (0.20, 0.50, 0.80):
+            y = int(H * f)
+            x = W // 2 - T // 2
+            sy = int(round(k * y + off))
+            sx = x + int(round(c0 + c1 * y))
+            if sy < 0 or sy + T >= b["h"] or sx < 0 or sx + T >= b["w"]:
+                continue
+            dy, dx = probe_shift(bs[ref]["arr"][y:y+T, x:x+T],
+                                 b["arr"][sy:sy+T, sx:sx+T], 0, 0)
+            if dy is None:
+                continue
+            out.append((dy, dx if dx is not None else 0.0))
+            worst = max(worst, abs(dy), abs(dx if dx is not None else 0.0))
+        txt = "  ".join(f"dy={d:+.1f} dx={x_:+.1f}" for d, x_ in out)
+        print(f"  {b['name']}: {txt}")
+    if worst > 1.5:
+        print(f"  [WARN] up to {worst:.1f} px left after correction - the model is "
+              f"not describing this set")
+    else:
+        print(f"  -> aligned to within {worst:.1f} px")
+    return worst
 
 
 def fit_black(bs, geo):
@@ -165,21 +248,32 @@ def merge(bs, geo, W, P, out_path):
     # slab rather than an error, so the failure surfaced far from its cause.
     # Start the grid at the first reference row every bracket can supply.
     top = 0
-    for (s, o) in geo:
+    for (s, o, _c0, _c1) in geo:
         top = max(top, int(np.ceil(-o / s)) if o < 0 else 0)
-    end = min(int((b["h"] - 2 - o) / s) for b, (s, o) in zip(bs, geo))
+    end = min(int((b["h"] - 2 - o) / s) for b, (s, o, _c0, _c1) in zip(bs, geo))
     end = min(end, bs[0]["h"])
     H = end - top
     if H < 16:
         sys.exit(f"no usable overlap between brackets (top={top}, end={end})")
     if top:
         print(f"  (skipping the first {top} line(s): not present in every bracket)")
+
+    # Column margin: the sensor-axis shear means a bracket's source column can
+    # sit either side of the output column, so the output is inset by the worst
+    # excursion over the whole height. A few px out of 8192.
+    worst = 0.0
+    for (_s, _o, c0, c1) in geo:
+        worst = max(worst, abs(c0), abs(c0 + c1 * (top + H)))
+    M = int(np.ceil(worst)) + 1
+    Wout = W - 2 * M
+
     t_max = max(b["t"] for b in bs)
     t_min = min(b["t"] for b in bs)
     scale = t_max / (SAT - P)          # 1.0 = the slowest bracket's clipping point
-    print(f"\nmerging {len(bs)} brackets -> {W} x {H}")
+    print(f"\nmerging {len(bs)} brackets -> {Wout} x {H}   (inset {M} px per side "
+          f"for the column shear)")
 
-    out = tifffile.memmap(out_path, shape=(H, W), dtype=np.float32,
+    out = tifffile.memmap(out_path, shape=(H, Wout), dtype=np.float32,
                           photometric="minisblack", bigtiff=True)
     all_clipped = rescued = 0
     for y0 in range(0, H, CHUNK):
@@ -187,9 +281,9 @@ def merge(bs, geo, W, P, out_path):
         # Output row y comes from REFERENCE row y+top; `top` is what keeps every
         # bracket's source index non-negative.
         rows = np.arange(y0, y1, dtype=np.float64) + top
-        num = np.zeros((y1 - y0, W), np.float32)
-        den = np.zeros((y1 - y0, W), np.float32)
-        for b, (s, o) in zip(bs, geo):
+        num = np.zeros((y1 - y0, Wout), np.float32)
+        den = np.zeros((y1 - y0, Wout), np.float32)
+        for b, (s, o, c0, c1) in zip(bs, geo):
             src = rows * s + o
             i0 = np.floor(src).astype(np.int64)
             wgt = (src - i0).astype(np.float32)[:, None]
@@ -198,10 +292,18 @@ def merge(bs, geo, W, P, out_path):
             if i0.min() < 0 or i0.max() + 1 >= b["h"]:
                 sys.exit(f"{b['name']}: source rows {i0.min()}..{i0.max()+1} "
                          f"outside 0..{b['h']-1} - geometry fit is wrong")
+            # One column offset per chunk. The shear is a few px over 25k rows,
+            # so within 2048 rows it moves well under a quarter pixel - far below
+            # what we are correcting - and this keeps it to one slice per bracket.
+            cshift = c0 + c1 * float(rows.mean())
+            xi = M + int(np.floor(cshift))
+            xf = np.float32(cshift - np.floor(cshift))
             lo, hi = int(i0.min()), int(i0.max()) + 2
-            slab = b["arr"][lo:hi, :W].astype(np.float32)
-            r0 = slab[i0 - lo]
-            r1 = slab[i0 + 1 - lo]
+            slab = b["arr"][lo:hi, :].astype(np.float32)
+            def col(a, x0):
+                return a[:, x0:x0 + Wout]
+            r0 = col(slab, xi)[i0 - lo] * (1.0 - xf) + col(slab, xi + 1)[i0 - lo] * xf
+            r1 = col(slab, xi)[i0 + 1 - lo] * (1.0 - xf) + col(slab, xi + 1)[i0 + 1 - lo] * xf
             # A pixel is usable only if BOTH source rows are unclipped - blending a
             # clipped row with a good one would invent a plausible mid-grey.
             good = (r0 < SAT_GUARD) & (r1 < SAT_GUARD)
@@ -234,9 +336,10 @@ def check_agreement(bs, geo, P):
     ref = bs[0]
     ry = int(round(geo[0][0] * y + geo[0][1]))
     a = ref["arr"][ry:ry+T, x:x+T].astype(np.float32)
-    for b, (s, o) in list(zip(bs, geo))[1:]:
+    for b, (s, o, c0, c1) in list(zip(bs, geo))[1:]:
         by = int(round(s * y + o))
-        c = b["arr"][by:by+T, x:x+T].astype(np.float32)
+        bx = x + int(round(c0 + c1 * y))
+        c = b["arr"][by:by+T, bx:bx+T].astype(np.float32)
         m = (a < SAT_GUARD) & (c < SAT_GUARD) & (a > P + 300)
         if m.sum() < 5000:
             print(f"  {b['name']}: too little overlap to judge"); continue
@@ -277,6 +380,7 @@ def main():
               f"{1e6*b['t']:7.1f} us  {np.log2(b['t']/t0):+.2f} stop")
 
     geo, W = fit_geometry(bs)
+    verify_fit(bs, geo)
     P = fit_black(bs, geo)
     check_agreement(bs, geo, P)
 
