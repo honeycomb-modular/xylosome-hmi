@@ -348,6 +348,97 @@ def fit_response(bs, geo):
     return te, P
 
 
+def load_flat(path, P0):
+    """Per-column GAIN from a flat-field scan: one sweep of an evenly lit,
+    featureless, defocused surface filling the frame.
+
+    Why it cannot be derived from ordinary scans: the sweep pans horizontally,
+    so a feature's VERTICAL position lands on the same sensor columns in every
+    scan ever taken. Scene structure and sensor structure are therefore
+    perfectly confounded along this axis - no amount of averaging the archive
+    separates them, and a column profile correlates ~0.99 between unrelated
+    scans for that reason alone. Only a frame with no vertical structure breaks
+    the tie.
+
+    Bracket comparison cannot find it either: a per-column gain multiplies every
+    bracket equally, so it cancels out of the ratio that gives the pedestal."""
+    a = tifffile.memmap(path, mode="r")
+    h = a.shape[0]
+    band = np.asarray(a[int(h * 0.2):int(h * 0.8):3, :], np.float32)
+    col = np.median(band, axis=0) - P0
+    if np.median(col) < 500:
+        sys.exit(f"{os.path.basename(path)}: too dark to be a flat field "
+                 f"(median {np.median(col):.0f} counts above black)")
+    g = col / np.median(col)
+    # Smooth only lightly: segment steps are real and must survive.
+    k = 5
+    g = np.convolve(g, np.ones(k) / k, mode="same")
+    g[:k] = g[k]; g[-k:] = g[-k - 1]
+    g = np.clip(g, 0.5, 2.0)
+    print(f"\nflat field from {os.path.basename(path)}: per-column gain "
+          f"{g.min():.3f}..{g.max():.3f}, p5..p95 "
+          f"{np.percentile(g,5):.3f}..{np.percentile(g,95):.3f}")
+    return g.astype(np.float32)
+
+
+def fit_pedestal_profile(bs, geo, P0):
+    """Black level per COLUMN, not one number for the whole line.
+
+    The sensor's dark offset varies across the line - measured 2026-08-11 at a
+    182 count spread on a 1647 count pedestal, which is 8% of a shadow tone.
+    Subtracting a single scalar leaves that pattern in the image as vertical
+    strips, worst in the darks and amplified by the merge, because the fastest
+    bracket divides the residual by the smallest exposure.
+
+    Fitted with the exposure ratio FIXED at the measured one, so each column has
+    a single parameter and a median over thousands of rows pins it. A free
+    per-column slope is ill-conditioned wherever a column spans a narrow range,
+    and produced pedestals of +/-80000 counts when tried."""
+    f, s = bs[0], bs[-1]                 # widest gap: best separated
+    r = s["t"] / f["t"]
+    if r < 1.5:
+        return None
+    W = min(b["w"] for b in bs)
+    H = min(b["h"] for b in bs)
+    chunks = []
+    for frac in (0.20, 0.35, 0.50, 0.65, 0.80):
+        y = int(H * frac)
+        rows = np.arange(y, min(y + 1500, H - 2), 3, dtype=np.float64)
+        fy = np.round(np.polyval(geo[0][0], rows)).astype(np.int64)
+        sy = np.round(np.polyval(geo[-1][0], rows)).astype(np.int64)
+        # column shear between the two, ~a few px; P varies on a far coarser
+        # scale, so one integer shift for the chunk is plenty
+        d = int(round(float(np.polyval(geo[-1][1], rows.mean())
+                            - np.polyval(geo[0][1], rows.mean()))))
+        lo, hi = max(0, -d), min(W, W - d)
+        if fy.min() < 0 or fy.max() >= f["h"] or sy.min() < 0 or sy.max() >= s["h"]:
+            continue
+        A = f["arr"][fy, :][:, lo:hi].astype(np.float32)
+        B = s["arr"][sy, :][:, lo + d:hi + d].astype(np.float32)
+        m = (A < SOFT_LO) & (B < SOFT_LO) & (B > A + 200)
+        res = np.where(m, B - r * A, np.nan)
+        with np.errstate(invalid="ignore"):
+            col = np.nanmedian(res, axis=0)
+        full = np.full(W, np.nan, np.float32)
+        full[lo:hi] = col
+        chunks.append(full)
+    if len(chunks) < 2:
+        return None
+    with np.errstate(invalid="ignore"):
+        prof = np.nanmedian(np.vstack(chunks), axis=0) / (1.0 - r)
+    if not np.isfinite(prof).any():
+        return None
+    prof = np.where(np.isfinite(prof), prof, P0)
+    # light smoothing: keep the segment structure, drop per-column noise
+    k = 9
+    prof = np.convolve(prof, np.ones(k) / k, mode="same")
+    prof[:k] = prof[k]; prof[-k:] = prof[-k - 1]
+    lo5, hi95 = np.percentile(prof, 5), np.percentile(prof, 95)
+    print(f"\nper-column black level: median {np.median(prof):.0f}, "
+          f"p5..p95 {lo5:.0f}..{hi95:.0f} ({hi95 - lo5:.0f} counts of banding removed)")
+    return prof.astype(np.float32)
+
+
 def fit_black(bs, geo):
     """Pedestal P: signal scales with exposure, P does not.
 
@@ -421,7 +512,7 @@ def fit_black(bs, geo):
     return bestP
 
 
-def merge(bs, geo, W, P, out_path):
+def merge(bs, geo, W, P, out_path, flat=None):
     # The output grid has to land inside every bracket at BOTH ends. A negative
     # fitted offset puts the source row below 0 near the top, and a negative
     # numpy slice start wraps to the end of the file — which yields an empty
@@ -456,7 +547,8 @@ def merge(bs, geo, W, P, out_path):
 
     t_max = max(b["t"] for b in bs)
     t_min = min(b["t"] for b in bs)
-    scale = t_max / (SAT - P)          # 1.0 = the slowest bracket's clipping point
+    Pm = float(P) if np.isscalar(P) else float(np.median(P))   # for the scalars below
+    scale = t_max / (SAT - Pm)         # 1.0 = the slowest bracket's clipping point
     print(f"\nmerging {len(bs)} brackets -> {Wout} x {H}   (inset {M} px per side "
           f"for the column shear)")
 
@@ -499,7 +591,18 @@ def merge(bs, geo, W, P, out_path):
                 return w * w * (3.0 - 2.0 * w)      # smoothstep: no visible seam
             wt = np.minimum(soft(r0), soft(r1))
             raw = r0 * (1.0 - wgt) + r1 * wgt
-            num += wt * (raw - P)
+            # Pedestal is a property of the SENSOR column, so it is indexed by
+            # this bracket's own source columns - the shear means each bracket
+            # reads a slightly different part of the line for the same output
+            # column, and that is exactly the sample whose offset applies.
+            ped = P if np.isscalar(P) else P[xi:xi + Wout][None, :]
+            sig = raw - ped
+            # Flat field divides the SIGNAL, never the pedestal: the offset is
+            # added after the pixel's gain, so correcting it by gain would bend
+            # the black level instead of flattening the response.
+            if flat is not None:
+                sig = sig / flat[xi:xi + Wout][None, :]
+            num += wt * sig
             den += wt * np.float32(b["t"])
             # Keep the fastest bracket's own reading. Where every weight has
             # gone to zero it is the only thing left that still has structure,
@@ -507,6 +610,9 @@ def merge(bs, geo, W, P, out_path):
             # last ring of real highlight detail with flat white.
             if b is bs[0]:
                 fastest_raw = raw
+                fastest_ped = ped
+                fastest_flat = (flat[xi:xi + Wout][None, :]
+                                if flat is not None else np.float32(1.0))
         # Three cases, in order of how much is actually known:
         #   weights survive        -> the weighted estimate
         #   none survive, not sat  -> the fastest bracket's own value (shoulder
@@ -517,8 +623,8 @@ def merge(bs, geo, W, P, out_path):
         all_clipped += int(hard.sum())
         salvaged += int((dead & ~hard).sum())
         rad = np.where(dead,
-                       np.where(hard, (SAT - P) / t_min,
-                                (fastest_raw - P) / t_min),
+                       np.where(hard, (SAT - Pm) / t_min,
+                                (fastest_raw - fastest_ped) / fastest_flat / t_min),
                        num / np.maximum(den, 1e-12))
         chunk = (rad * scale).astype(np.float32)
         rescued += int((chunk > 1.0).sum())
@@ -545,14 +651,17 @@ def check_agreement(bs, geo, P):
     ref = bs[0]
     ry = int(round(float(np.polyval(geo[0][0], y))))
     a = ref["arr"][ry:ry+T, x:x+T].astype(np.float32)
+    # P may be a per-column profile; take the slice these tiles actually cover.
+    pa = P if np.isscalar(P) else P[x:x + T][None, :]
     for b, (rp, cp) in list(zip(bs, geo))[1:]:
         by = int(round(float(np.polyval(rp, y))))
         bx = x + int(round(float(np.polyval(cp, y))))
         c = b["arr"][by:by+T, bx:bx+T].astype(np.float32)
-        m = (a < SAT_GUARD) & (c < SAT_GUARD) & (a > P + 300)
+        pc = P if np.isscalar(P) else P[bx:bx + T][None, :]
+        m = (a < SAT_GUARD) & (c < SAT_GUARD) & (a > pa + 300)
         if m.sum() < 5000:
             print(f"  {b['name']}: too little overlap to judge"); continue
-        ratio = ((c[m] - P) / b["t"]) / ((a[m] - P) / ref["t"])
+        ratio = (((c - pc) / b["t"]) / ((a - pa) / ref["t"]))[m]
         print(f"  {ref['name']} vs {b['name']}: {np.median(ratio):.3f} "
               f"(IQR {np.percentile(ratio,25):.3f}-{np.percentile(ratio,75):.3f})")
 
@@ -572,6 +681,15 @@ def main():
     ap.add_argument("--dir", default=r"D:\capture")
     ap.add_argument("--out", default=r"D:\hdr-merge")
     ap.add_argument("--pass", dest="pas", default="p0_C")
+    ap.add_argument("--scalar-black", action="store_true",
+                    help="one black level for the whole line instead of a "
+                         "per-column profile (for comparing the two)")
+    ap.add_argument("--suffix", default="", help="appended to the output name")
+    ap.add_argument("--flat", default="",
+                    help="scan number or path of a FLAT FIELD sweep (evenly lit, "
+                         "featureless, defocused). Corrects the sensor's "
+                         "per-column gain - the vertical banding that no amount "
+                         "of ordinary data can separate from the scene.")
     args = ap.parse_args()
 
     paths = [s if os.path.sep in s else
@@ -596,6 +714,12 @@ def main():
         b["t"] = t
     if P <= 0:
         P = fit_black(bs, geo)
+    # One number per line leaves the sensor's own column-to-column offset in the
+    # image as vertical strips; a profile removes them.
+    if not args.scalar_black:
+        prof = fit_pedestal_profile(bs, geo, P)
+        if prof is not None:
+            P = prof
     check_agreement(bs, geo, P)
 
     os.makedirs(args.out, exist_ok=True)
@@ -605,9 +729,17 @@ def main():
     for p in paths:
         m = re.search(r"scan_(\d+)", os.path.basename(p))
         labels.append(m.group(1) if m else os.path.splitext(os.path.basename(p))[0])
-    stem = "hdr_" + "_".join(labels)
+    stem = "hdr_" + "_".join(labels) + args.suffix
     out_path = os.path.join(args.out, stem + ".tif")
-    out = merge(bs, geo, W, P, out_path)
+    flat = None
+    if args.flat:
+        fp = args.flat if os.path.sep in args.flat else os.path.join(
+            args.dir, f"scan_{args.flat}_{args.pas}.tif")
+        if not os.path.exists(fp):
+            sys.exit(f"flat field not found: {fp}")
+        flat = load_flat(fp, float(P) if np.isscalar(P) else float(np.median(P)))
+
+    out = merge(bs, geo, W, P, out_path, flat)
     preview(out, os.path.join(args.out, stem + "_preview.tif"))
 
 
