@@ -159,9 +159,21 @@ def fit_black(bs, geo):
 
 
 def merge(bs, geo, W, P, out_path):
-    # Output rows must stay inside every bracket, allowing one row for interpolation.
-    H = min(int((b["h"] - 2 - o) / s) for b, (s, o) in zip(bs, geo))
-    H = min(H, bs[0]["h"])
+    # The output grid has to land inside every bracket at BOTH ends. A negative
+    # fitted offset puts the source row below 0 near the top, and a negative
+    # numpy slice start wraps to the end of the file — which yields an empty
+    # slab rather than an error, so the failure surfaced far from its cause.
+    # Start the grid at the first reference row every bracket can supply.
+    top = 0
+    for (s, o) in geo:
+        top = max(top, int(np.ceil(-o / s)) if o < 0 else 0)
+    end = min(int((b["h"] - 2 - o) / s) for b, (s, o) in zip(bs, geo))
+    end = min(end, bs[0]["h"])
+    H = end - top
+    if H < 16:
+        sys.exit(f"no usable overlap between brackets (top={top}, end={end})")
+    if top:
+        print(f"  (skipping the first {top} line(s): not present in every bracket)")
     t_max = max(b["t"] for b in bs)
     t_min = min(b["t"] for b in bs)
     scale = t_max / (SAT - P)          # 1.0 = the slowest bracket's clipping point
@@ -172,13 +184,20 @@ def merge(bs, geo, W, P, out_path):
     all_clipped = rescued = 0
     for y0 in range(0, H, CHUNK):
         y1 = min(y0 + CHUNK, H)
-        rows = np.arange(y0, y1, dtype=np.float64)
+        # Output row y comes from REFERENCE row y+top; `top` is what keeps every
+        # bracket's source index non-negative.
+        rows = np.arange(y0, y1, dtype=np.float64) + top
         num = np.zeros((y1 - y0, W), np.float32)
         den = np.zeros((y1 - y0, W), np.float32)
         for b, (s, o) in zip(bs, geo):
             src = rows * s + o
             i0 = np.floor(src).astype(np.int64)
             wgt = (src - i0).astype(np.float32)[:, None]
+            # Belt and braces: a stray index here would slice from the end of the
+            # file and fail somewhere unrelated, so clamp and say so instead.
+            if i0.min() < 0 or i0.max() + 1 >= b["h"]:
+                sys.exit(f"{b['name']}: source rows {i0.min()}..{i0.max()+1} "
+                         f"outside 0..{b['h']-1} - geometry fit is wrong")
             lo, hi = int(i0.min()), int(i0.max()) + 2
             slab = b["arr"][lo:hi, :W].astype(np.float32)
             r0 = slab[i0 - lo]
