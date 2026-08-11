@@ -40,8 +40,8 @@ Item {
     Settings {
         category: "hdr"
         property alias brackets: root.brackets
-        property alias stopsPer: root.stopsPer
-        property alias speed:    root.speed
+        property alias fastUs:   root.fastUs
+        property alias slowUs:   root.slowUs
         property alias hand1Angle: root.hand1Angle
         property alias hand2Angle: root.hand2Angle
     }
@@ -55,64 +55,91 @@ Item {
     property real hand2Angle:  30
 
     // ── Bracket definition ──────────────────────────────────────────────────────
-    readonly property int bracketMin: 3
-    readonly property int bracketMax: 9
-    property int brackets: 5
+    // The ladder is defined by its ENDS, not by a centre plus a span.
+    //
+    // The old model dialled speed (the centre bracket), a bracket count and a
+    // stop spacing, and grew the ladder symmetrically outwards. Asking for one
+    // more step therefore pushed BOTH ends out at once, so "one step brighter"
+    // could not be expressed at all — it collided with the fast rail as well as
+    // the slow one, and the legal window for `speed` was a few °/s wide with
+    // nothing on screen to say which way to move.
+    //
+    // Exposure per line is 1/rate, and the camera only syncs between
+    // rateFloorHz and rateCeilHz, so EVERY legal exposure lies between
+    // 1/ceil and 1/floor — about 27 to 286 us. Both ends are dialled inside
+    // that fixed track and the count subdivides it. An illegal set cannot be
+    // expressed, and the rails are visible rather than discovered.
+    readonly property real rateFloorHz: 3500.0     // camera will not sync below
+    readonly property real rateCeilHz: 37000.0     // nor above
+    readonly property real usMin: 1.0e6 / root.rateCeilHz     // ~27.0 us
+    readonly property real usMax: 1.0e6 / root.rateFloorHz    // ~285.7 us
 
-    // Stops between brackets. Each stop is a halving of speed.
-    readonly property real stopMin: 0.5
-    readonly property real stopMax: 2.0
-    property real stopsPer: 1.0
+    // Integration time per line, in microseconds, for the two ends.
+    property real fastUs: 27.6      // darkest  — protects the highlights
+    property real slowUs: 221.0     // brightest — reaches into the shadows
+
+    readonly property int bracketMin: 2
+    readonly property int bracketMax: 9
+    property int brackets: 3
 
     readonly property real speedMin:   1.0
     readonly property real speedMax: 300.0
-    property real speed: 60.0
 
     // Derived, not dialled: the optics decide how many lines an arc holds.
     readonly property int lines: Calib.linesForArc(root.arcDeg)
 
-    // The camera will not sync below this; the slowest bracket must clear it.
-    readonly property real rateFloorHz: 3500.0
-    readonly property real rateCeilHz: 37000.0
-
     readonly property real arcDeg: Math.abs(root.hand2Angle - root.hand1Angle)
     readonly property real sweepSec: root.arcDeg / Math.max(0.001, root.fastestVel)
 
-    // Bracket 0 is the speed you set; each next one is `stopsPer` stops slower.
-    // Descending from the fastest bracket, so index mid lands exactly on the
-    // speed the operator set.
+    // Exposure of bracket i: a geometric ladder from fastUs to slowUs.
+    function usFor(i) {
+        if (root.brackets < 2) return root.fastUs
+        return root.fastUs * Math.pow(root.slowUs / root.fastUs,
+                                      i / (root.brackets - 1))
+    }
+    // Velocity that produces that exposure: rate = linesPerDeg * v, so
+    // v = (1e6/us) / linesPerDeg.
+    function velForUs(us) { return (1.0e6 / us) / Calib.linesPerDeg }
+
+    // xylod only accepts per-pass scales <= 1, so the job is handed the FASTEST
+    // bracket as its maxVel and every other pass descends from it.
     function scales() {
         var out = []
-        for (var i = 0; i < root.brackets; i++)
-            out.push(Math.pow(2, -i * root.stopsPer))
+        for (var i = 0; i < root.brackets; i++) out.push(root.fastUs / root.usFor(i))
         return out
     }
-    readonly property real spanStops: (root.brackets - 1) * root.stopsPer
-    // The ladder is CENTRED on the speed you set: that bracket is the exposure
-    // you judged correct, with darker ones above and brighter below. Since
-    // xylod only accepts scales <= 1 (a scale above 1 would mean outrunning the
-    // speed the job was given), the job is handed the FASTEST bracket as its
-    // maxVel and every scale descends from there. Set speed for a good
-    // exposure, not for the darkest frame.
-    readonly property real midIdx: (root.brackets - 1) / 2
-    readonly property real fastestVel: root.speed * Math.pow(2, root.midIdx * root.stopsPer)
-    readonly property bool tooFastVel: root.fastestVel > root.speedMax
-    // arc cancels out of lines*speed/arc — see Calib.qml.
-    readonly property real baseHz: Calib.rateForSpeed(root.fastestVel)
-    readonly property real slowestHz: root.baseHz * Math.pow(2, -root.spanStops)
-    readonly property bool rateTooLow:  root.slowestHz < root.rateFloorHz
-    // How many stops of bracketing this speed actually affords.
+
+    readonly property real spanStops: Math.log(root.slowUs / root.fastUs) / Math.log(2)
+    readonly property real stopsPer:
+        root.brackets > 1 ? root.spanStops / (root.brackets - 1) : 0
+    // The whole range the camera can express — the ladder can never exceed it.
     readonly property real headroomStops:
-        root.baseHz > root.rateFloorHz
-            ? Math.log(Math.min(root.baseHz, root.rateCeilHz) / root.rateFloorHz) / Math.log(2)
-            : 0
-    readonly property bool rateTooHigh: root.baseHz    > root.rateCeilHz
+        Math.log(root.usMax / root.usMin) / Math.log(2)
+    readonly property real fastestVel: root.velForUs(root.fastUs)
+    readonly property real slowestVel: root.velForUs(root.slowUs)
+    readonly property real baseHz:    1.0e6 / root.fastUs
+    readonly property real slowestHz: 1.0e6 / root.slowUs
+    // Kept so the rest of the screen keeps reading true/false, but by
+    // construction these cannot now be reached from the UI.
+    readonly property bool tooFastVel:  root.fastestVel > root.speedMax
+    readonly property bool rateTooLow:  root.slowestHz  < root.rateFloorHz - 1
+    readonly property bool rateTooHigh: root.baseHz     > root.rateCeilHz + 1
+    // At a rail: adding range is no longer possible with speed alone.
+    readonly property bool atShadowRail: root.slowUs >= root.usMax - 0.5
+    readonly property bool atHighlightRail: root.fastUs <= root.usMin + 0.5
+    // Gaps much wider than this leave the merge interpolating across noise.
+    readonly property bool stepTooWide: root.stopsPer > 2.0
     // Each bracket takes longer than the last, so the set is not brackets*sweep.
     readonly property real totalSetSec: {
-        var t = 0, sc = root.scales()
-        for (var i = 0; i < sc.length; i++) t += root.sweepSec / sc[i] + 1.0
+        var t = 0
+        for (var i = 0; i < root.brackets; i++)
+            t += root.arcDeg / Math.max(0.001, root.velForUs(root.usFor(i))) + 1.0
         return t
     }
+    // How much longer the slowest pass runs than the fastest. The brackets walk
+    // relative to each other while the sweep runs — measured at ~21 px across
+    // the sweep for a 3-stop set on 2026-08-11 — and the walk grows with this.
+    readonly property real slowFactor: root.slowUs / root.fastUs
 
     // ── Run state ───────────────────────────────────────────────────────────────
     property string execState:   "idle"
@@ -125,10 +152,10 @@ Item {
     property double setId: 0
     // Which bracket is in flight, straight from the daemon's pass index.
     property int shotIdx: -1
-    // Bracket i runs at fastestVel scaled down — slower means longer integration
-    // per line, which is the exposure ladder.
+    // Bracket i runs slower than the first — longer integration per line, which
+    // is the exposure ladder.
     function velFor(i) {
-        return root.fastestVel * Math.pow(2, -i * root.stopsPer)
+        return root.velForUs(root.usFor(i))
     }
 
     readonly property real overallFrac: {
@@ -157,10 +184,16 @@ Item {
     function fmtHz(hz) {
         return hz >= 1000 ? (hz / 1000).toFixed(1) + "k" : hz.toFixed(0)
     }
+    // Where an exposure sits in the camera's whole range, 0..1. Log scaled,
+    // because exposure is multiplicative — on a linear scale the fast half of
+    // the track would be a sliver.
+    function trackPos(us) {
+        return Math.log(us / root.usMin) / Math.log(root.usMax / root.usMin)
+    }
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
     property var    focusController: hdrFocus
-    property string editTarget: "none"     // none | brackets | step | speed | lines | fov1 | fov2
+    property string editTarget: "none"     // none | fast | slow | brackets | fov1 | fov2
 
     function focusBack() { root.StackView.view.pop() }
 
@@ -168,31 +201,36 @@ Item {
         id: hdrFocus
         index: 0
         // Reading order — left to right, then down a line:
-        //   brackets · stops · speed · lines · field · [settings] · [modes] · chip · [abort] · [home]
-        targets: [brProxy, stepProxy, speedProxy,
+        //   darkest · brightest · brackets · lines · field · [settings] · [modes] · chip · [abort] · [home]
+        targets: [fastProxy, slowProxy, brProxy,
                   fov1Proxy, fov2Proxy, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
         onActivated: function(item) {
-            if (item === brProxy)          root.enterEditing("brackets")
-            else if (item === stepProxy)   root.enterEditing("step")
-            else if (item === speedProxy)  root.enterEditing("speed")
+            if (item === fastProxy)        root.enterEditing("fast")
+            else if (item === slowProxy)   root.enterEditing("slow")
+            else if (item === brProxy)     root.enterEditing("brackets")
             else if (item === fov1Proxy)   root.enterEditing("fov1")
             else if (item === fov2Proxy)   root.enterEditing("fov2")
             else if (item.clicked)         item.clicked()
         }
         onAdjust: function(delta) {
-            if (root.editTarget === "brackets")
+            // The ends step in twelfths of a stop: exposure is multiplicative,
+            // so a fixed number of microseconds would crawl at one end of the
+            // track and leap at the other. Each end is clamped to the camera's
+            // range AND to the other end, so the ladder can never invert.
+            if (root.editTarget === "fast")
+                root.fastUs = Math.max(root.usMin,
+                              Math.min(root.slowUs,
+                                       root.fastUs * Math.pow(2, delta / 12)))
+            else if (root.editTarget === "slow")
+                root.slowUs = Math.max(root.fastUs,
+                              Math.min(root.usMax,
+                                       root.slowUs * Math.pow(2, delta / 12)))
+            else if (root.editTarget === "brackets")
                 root.brackets = Math.max(root.bracketMin,
                                 Math.min(root.bracketMax, root.brackets + delta))
-            else if (root.editTarget === "step")
-                root.stopsPer = Math.max(root.stopMin,
-                                Math.min(root.stopMax,
-                                         Math.round((root.stopsPer + delta * 0.5) * 2) / 2))
-            else if (root.editTarget === "speed")
-                root.speed = Math.max(root.speedMin,
-                             Math.min(root.speedMax, root.speed + delta * 2))
             else if (root.editTarget === "fov1")
                 root.hand1Angle = Math.max(root.axisMinDeg,
                                   Math.min(root.axisMaxDeg, root.hand1Angle + delta))
@@ -230,7 +268,7 @@ Item {
     // xylod itself never looks inside it.
     function tagFor(i) {
         return "hdr:" + root.setId + ":" + (i + 1) + "/" + root.brackets
-             + ":" + (i * root.stopsPer).toFixed(2)
+             + ":" + (Math.log(root.usFor(i) / root.fastUs) / Math.log(2)).toFixed(2)
     }
     // Costs a board open per bracket and lands each as its own Suite session.
     // Both are worth it over a set where the middle frame is a slice.
@@ -352,19 +390,100 @@ Item {
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
 
-    // ── Brackets ────────────────────────────────────────────────────────────────
+    // ── Darkest end ─────────────────────────────────────────────────────────────
+    // Both ends are drawn against the SAME fixed track (usMin..usMax, log
+    // scaled), so the fill shows where in the camera's whole range this end
+    // sits — and a full bar means the rail, not merely a big number.
     Text {
         x: Theme.marginX; y: 84
-        text: "brackets"; color: Theme.colorTextDim
+        text: "darkest  ·  holds highlights  ·  " + root.fastestVel.toFixed(0) + " °/s"
+        color: root.atHighlightRail ? Theme.accent : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
         x: Theme.marginX; y: 100; width: 440; height: 46
 
-        Item { id: brProxy; anchors.fill: parent }
+        Item { id: fastProxy; anchors.fill: parent }
 
         // Must be declared alongside its target: FocusIndicator reads target.x/y
         // raw, so it only lines up when the two share a parent.
+        FocusIndicator {
+            inset: true
+            target: (hdrFocus.current === fastProxy && !hdrFocus.editing) ? fastProxy : null
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.panel; radius: 2
+            border.width: root.editTarget === "fast" ? 2 : 1
+            border.color: root.editTarget === "fast" ? Theme.accent : Theme.border
+            Rectangle {
+                x: 1; y: 1; height: parent.height - 2
+                width: (parent.width - 2) * root.trackPos(root.fastUs)
+                color: Theme.accent; opacity: 0.16
+            }
+            Text {
+                anchors.centerIn: parent
+                text:  root.fastUs.toFixed(1) + " \xB5s  ·  "
+                       + root.fmtHz(root.baseHz) + " Hz"
+                color: Theme.colorText
+                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
+            }
+        }
+    }
+
+    // ── Brightest end ───────────────────────────────────────────────────────────
+    Text {
+        x: 502; y: 84
+        text: root.atShadowRail
+              ? "brightest  ·  AT THE CAMERA'S SYNC FLOOR"
+              : "brightest  ·  reaches shadows  ·  " + root.slowestVel.toFixed(0) + " °/s"
+        color: root.atShadowRail ? Theme.accent : Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+    Item {
+        x: 502; y: 100; width: 440; height: 46
+
+        Item { id: slowProxy; anchors.fill: parent }
+
+        FocusIndicator {
+            inset: true
+            target: (hdrFocus.current === slowProxy && !hdrFocus.editing) ? slowProxy : null
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.panel; radius: 2
+            border.width: root.editTarget === "slow" ? 2 : 1
+            border.color: root.editTarget === "slow" ? Theme.accent : Theme.border
+            Rectangle {
+                x: 1; y: 1; height: parent.height - 2
+                width: (parent.width - 2) * root.trackPos(root.slowUs)
+                color: Theme.accent; opacity: 0.16
+            }
+            Text {
+                anchors.centerIn: parent
+                text:  root.slowUs.toFixed(1) + " \xB5s  ·  "
+                       + root.fmtHz(root.slowestHz) + " Hz"
+                color: Theme.colorText
+                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
+            }
+        }
+    }
+
+    // ── Brackets / lines ────────────────────────────────────────────────────────
+    Text {
+        x: Theme.marginX; y: 154
+        text: "brackets  ·  " + root.stopsPer.toFixed(2) + " stops apart"
+              + (root.stepTooWide ? "  — WIDE, the merge fills the gap with noise" : "")
+        color: root.stepTooWide ? Theme.danger : Theme.colorTextDim
+        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
+    }
+    Item {
+        x: Theme.marginX; y: 170; width: 440; height: 46
+
+        Item { id: brProxy; anchors.fill: parent }
+
         FocusIndicator {
             inset: true
             target: (hdrFocus.current === brProxy && !hdrFocus.editing) ? brProxy : null
@@ -384,83 +503,6 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text:  root.brackets + " \xD7"
-                color: Theme.colorText
-                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
-            }
-        }
-    }
-
-    // ── Step ────────────────────────────────────────────────────────────────────
-    Text {
-        x: 502; y: 84
-        text: "stops between"
-        color: Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-    }
-    Item {
-        x: 502; y: 100; width: 440; height: 46
-
-        Item { id: stepProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (hdrFocus.current === stepProxy && !hdrFocus.editing) ? stepProxy : null
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            color: Theme.panel; radius: 2
-            border.width: root.editTarget === "step" ? 2 : 1
-            border.color: root.editTarget === "step" ? Theme.accent : Theme.border
-            Rectangle {
-                x: 1; y: 1; height: parent.height - 2
-                width: (parent.width - 2) * (root.stopsPer - root.stopMin)
-                       / (root.stopMax - root.stopMin)
-                color: Theme.accent; opacity: 0.16
-            }
-            Text {
-                anchors.centerIn: parent
-                text:  root.stopsPer.toFixed(1) + " stop"
-                       + (root.stopsPer === 1.0 ? "" : "s")
-                color: Theme.colorText
-                font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
-            }
-        }
-    }
-
-    // ── Speed / lines ───────────────────────────────────────────────────────────
-    Text {
-        x: Theme.marginX; y: 154
-        text: "speed (centre bracket)  ·  fastest "
-              + root.fastestVel.toFixed(0) + " °/s"
-        color: (root.tooFastVel || root.spanStops > root.headroomStops)
-               ? Theme.danger : Theme.colorTextDim
-        font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
-    }
-    Item {
-        x: Theme.marginX; y: 170; width: 440; height: 46
-
-        Item { id: speedProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (hdrFocus.current === speedProxy && !hdrFocus.editing) ? speedProxy : null
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            color: Theme.panel; radius: 2
-            border.width: root.editTarget === "speed" ? 2 : 1
-            border.color: root.editTarget === "speed" ? Theme.accent : Theme.border
-            Rectangle {
-                x: 1; y: 1; height: parent.height - 2
-                width: (parent.width - 2) * (root.speed - root.speedMin)
-                       / (root.speedMax - root.speedMin)
-                color: Theme.accent; opacity: 0.16
-            }
-            Text {
-                anchors.centerIn: parent
-                text:  root.speed.toFixed(0) + " \xB0/s"
                 color: Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoM }
             }
@@ -575,19 +617,16 @@ Item {
         color: Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
+    // What the ends cost. The span is bounded by the camera's sync range, so
+    // say how much of it is in use rather than only refusing an illegal set.
     Text {
         x: Theme.marginX; y: 320
-        text:  "rate " + root.fmtHz(root.baseHz) + " Hz down to "
-               + root.fmtHz(root.slowestHz) + " Hz"
-               + (root.rateTooLow
-                  ? "  ·  below the camera's " + root.fmtHz(root.rateFloorHz)
-                    + " Hz floor — raise the speed, or use fewer/smaller stops"
-                  : root.rateTooHigh
-                  ? "  ·  first bracket is over the " + root.fmtHz(root.rateCeilHz)
-                    + " Hz ceiling — xylod will slow the sweep to keep the count"
-                  : "  ·  inside the camera's sync range")
-        color: root.rateTooLow ? Theme.danger
-             : root.rateTooHigh ? Theme.accent : Theme.colorTextFaint
+        text:  "span " + root.spanStops.toFixed(2) + " of "
+               + root.headroomStops.toFixed(2) + " stops the camera can reach"
+               + (root.atShadowRail
+                  ? "  ·  brighter needs gain or more TDI stages, not less speed"
+                  : "")
+        color: root.atShadowRail ? Theme.accent : Theme.colorTextFaint
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
 
@@ -615,12 +654,17 @@ Item {
         }
     }
 
+    // The trade-offs, in the order they bite: time, then how far the brackets
+    // drift apart (the slow pass runs slowFactor times longer, and the walk
+    // between brackets grows with it), then the field.
     Text {
         x: Theme.marginX; y: 376
-        text:  "span " + root.spanStops.toFixed(1) + " stops"
+        text:  "about " + root.fmtDuration(root.totalSetSec)
+               + "  \xB7  slowest pass runs " + root.slowFactor.toFixed(1)
+               + "\xD7 longer than the first"
                + "  \xB7  " + root.arcDeg.toFixed(0) + "\xB0 field"
-               + "  \xB7  about " + root.fmtDuration(root.totalSetSec)
-        color: root.rateTooLow ? Theme.danger : Theme.colorTextDim
+               + "  \xB7  " + root.fmtLines(root.lines) + " lines"
+        color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
 
