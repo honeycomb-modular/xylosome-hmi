@@ -12,6 +12,7 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
+#include <QProcess>
 #include <QThread>
 #include <QVector>
 
@@ -46,6 +47,14 @@ struct SessionRecord {
     QVector<PassRecord> passes;
     // Metadata Infuser SVG (Pi export) + its placement over the image —
     // normalized to image size; the export bakes this into the meta layer.
+    // Bracket set membership, parsed from the job tag xylod echoes on
+    // pass_start (hdr:<setId>:<n>/<total>:<ev>). HDR fires one execute per
+    // bracket, so each bracket is its own session and this is the only thing
+    // that says they are one set. Empty hdrSet = an ordinary scan.
+    QString hdrSet;
+    int     hdrIndex = 0;        // 1-based position in the set
+    int     hdrCount = 0;        // brackets in the set
+    double  hdrEv    = 0;        // stops brighter than the darkest bracket
     QString metaSvg;             // path (rel to captureDir, or abs if archive)
     double  metaX = 0.04;        // left edge, fraction of image width
     double  metaY = 0.78;        // top edge, fraction of image height
@@ -87,6 +96,10 @@ public:
         MetaYRole,
         MetaWRole,
         MetaWhiteRole,
+        HdrSetRole,          // set id, "" when not part of a bracket set
+        HdrLabelRole,        // "+1 EV" — the chip text, "" when not in a set
+        HdrIndexRole,        // 1-based bracket number
+        HdrCountRole,        // brackets in the set
     };
 
     explicit SessionStore(XylodLink *link, QObject *parent = nullptr);
@@ -129,15 +142,31 @@ public:
     Q_INVOKABLE QVariantList scanArchive(const QString &dir) const;
     Q_INVOKABLE int importArchive(const QString &dir);
 
+    // ── HDR bracket sets ──────────────────────────────────────────────────────
+    // Rows of the set this row belongs to, in bracket order (empty if it is not
+    // in a set) — so the UI can show the set without duplicating the grouping.
+    Q_INVOKABLE QVariantList hdrSetRows(int row) const;
+    // Runs suite/tools/hdr_merge.py over the set's TIFFs and writes a 32-bit
+    // float result next to the capture folder. Merging is left to the tool
+    // rather than reimplemented here: it is where the pedestal, the clipping
+    // limit and the per-bracket resample were worked out and verified.
+    Q_INVOKABLE void mergeHdrSet(int row);
+    Q_PROPERTY(bool hdrMergeBusy READ hdrMergeBusy NOTIFY hdrMergeBusyChanged)
+    bool hdrMergeBusy() const { return m_merge != nullptr; }
+
 signals:
     void captureDirChanged();
     void countChanged();
     void unpairedFilesChanged();
     void diskChanged();
     void reclaimed(double gb, int sessions);     // after any permanent delete
+    void hdrMergeBusyChanged();
+    void hdrMergeStarted(int brackets, const QString &outPath);
+    void hdrMergeFinished(bool ok, const QString &message);
 
 private slots:
-    void onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs);
+    void onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs,
+                       const QString &tag);
     void onPassEnded(int pass, qint64 tMs, qint64 wallMs);
     void onSequenceDone(int passes);
     void onFaulted(const QString &text);
@@ -173,6 +202,8 @@ private:
     QString m_captureDir;
     QVector<SessionRecord> m_sessions;
     QVector<QPair<QString, qint64>> m_unpaired;   // absPath, mtimeMs
+    QProcess *m_merge = nullptr;                  // running HDR merge, if any
+    QString m_mergeOut;
     int m_nextSeq = 1;
     double m_freeGB = -1;
     int m_sessionsRemaining = -1;

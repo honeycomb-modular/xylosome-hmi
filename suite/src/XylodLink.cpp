@@ -131,7 +131,8 @@ void XylodLink::handleMessage(const QJsonObject &m) {
             m_filterName = f;
             emit passIndexChanged();
         }
-        emit passStarted(p, f, qint64(m.value(QStringLiteral("tMs")).toDouble()), wallMs);
+        emit passStarted(p, f, qint64(m.value(QStringLiteral("tMs")).toDouble()), wallMs,
+                         m.value(QStringLiteral("tag")).toString());
     }
     else if (ev == QLatin1String("pass_end")) {
         emit passEnded(m.value(QStringLiteral("pass")).toInt(),

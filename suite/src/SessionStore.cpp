@@ -97,6 +97,10 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { MetaYRole, "metaY" },
         { MetaWRole, "metaW" },
         { MetaWhiteRole, "metaWhite" },
+        { HdrSetRole, "hdrSet" },
+        { HdrLabelRole, "hdrLabel" },
+        { HdrIndexRole, "hdrIndex" },
+        { HdrCountRole, "hdrCount" },
     };
 }
 
@@ -128,6 +132,18 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
     case MetaYRole:     return s.metaY;
     case MetaWRole:     return s.metaW;
     case MetaWhiteRole: return s.metaWhite;
+    case HdrSetRole:    return s.hdrSet;
+    case HdrIndexRole:  return s.hdrIndex;
+    case HdrCountRole:  return s.hdrCount;
+    case HdrLabelRole: {
+        if (s.hdrSet.isEmpty())
+            return QString();
+        // Whole stops are the common case and read better without decimals.
+        const double ev = s.hdrEv;
+        const QString n = qFuzzyCompare(ev, qRound(ev)) ? QString::number(qRound(ev))
+                                                        : QString::number(ev, 'f', 1);
+        return (ev > 0 ? QStringLiteral("+") : QString()) + n + QStringLiteral(" EV");
+    }
     case UuidRole:      return s.uuid;
     case StateRole:     return s.state;
     case RatingRole:    return s.rating;
@@ -433,6 +449,10 @@ void SessionStore::loadExisting()
         s.rating        = o.value(QStringLiteral("rating")).toInt();
         s.rejected      = o.value(QStringLiteral("rejected")).toBool();
         s.note          = o.value(QStringLiteral("note")).toString();
+        s.hdrSet        = o.value(QStringLiteral("hdrSet")).toString();
+        s.hdrIndex      = o.value(QStringLiteral("hdrIndex")).toInt();
+        s.hdrCount      = o.value(QStringLiteral("hdrCount")).toInt();
+        s.hdrEv         = o.value(QStringLiteral("hdrEv")).toDouble();
         s.metaSvg       = o.value(QStringLiteral("metaSvg")).toString();
         if (o.contains(QStringLiteral("metaX"))) {
             s.metaX = o.value(QStringLiteral("metaX")).toDouble();
@@ -533,6 +553,15 @@ void SessionStore::save(const SessionRecord &s) const
         { QStringLiteral("note"),          s.note },
         { QStringLiteral("passes"),        passes },
     };
+    // Optional keys, deliberately NOT a schema bump: loadExisting() drops any
+    // sidecar whose schema is not 1, so raising it would make every existing
+    // session vanish from an older build. Absent = not a bracket set.
+    if (!s.hdrSet.isEmpty()) {
+        o.insert(QStringLiteral("hdrSet"), s.hdrSet);
+        o.insert(QStringLiteral("hdrIndex"), s.hdrIndex);
+        o.insert(QStringLiteral("hdrCount"), s.hdrCount);
+        o.insert(QStringLiteral("hdrEv"), s.hdrEv);
+    }
     if (!s.metaSvg.isEmpty()) {
         o.insert(QStringLiteral("metaSvg"), s.metaSvg);
         o.insert(QStringLiteral("metaX"), s.metaX);
@@ -578,11 +607,31 @@ void SessionStore::beginSession(qint64 wallMs)
     qInfo() << "[sessions] session" << s.seq << "started";
 }
 
-void SessionStore::onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs)
+// Parse the job tag xylod echoes back on pass_start. The format is a client
+// convention (PROTOCOL.md ▸ execute ▸ tag): hdr:<setId>:<n>/<total>:<ev>.
+// Anything that does not match is ignored rather than guessed at — an untagged
+// scan, or a tag from some later mode, is simply not a bracket set.
+static void parseHdrTag(const QString &tag, SessionRecord *s)
+{
+    static const QRegularExpression rx(
+        QStringLiteral(R"(^hdr:([\w.+-]+):(\d+)/(\d+):([-+]?[\d.]+)$)"));
+    const auto m = rx.match(tag);
+    if (!m.hasMatch())
+        return;
+    s->hdrSet   = m.captured(1);
+    s->hdrIndex = m.captured(2).toInt();
+    s->hdrCount = m.captured(3).toInt();
+    s->hdrEv    = m.captured(4).toDouble();
+}
+
+void SessionStore::onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs,
+                                 const QString &tag)
 {
     if (pass == 0 || !liveSession())
         beginSession(wallMs);
     SessionRecord *s = liveSession();
+    if (!tag.isEmpty() && s->hdrSet.isEmpty())
+        parseHdrTag(tag, s);
     PassRecord p;
     p.index = pass;
     p.filter = filter;
@@ -835,6 +884,130 @@ int SessionStore::importArchive(const QString &dir)
         refreshDisk();
     }
     return imported;
+}
+
+// ── HDR bracket sets ─────────────────────────────────────────────────────────
+
+QVariantList SessionStore::hdrSetRows(int row) const
+{
+    QVariantList out;
+    if (row < 0 || row >= m_sessions.size() || m_sessions[row].hdrSet.isEmpty())
+        return out;
+    const QString set = m_sessions[row].hdrSet;
+    QVector<QPair<int, int>> found;          // bracket number, row
+    for (int i = 0; i < m_sessions.size(); ++i)
+        if (m_sessions[i].hdrSet == set)
+            found << qMakePair(m_sessions[i].hdrIndex, i);
+    std::sort(found.begin(), found.end());
+    for (const auto &f : found)
+        out << f.second;
+    return out;
+}
+
+// Packaged next to the exe, or in the source tree when running from build-suite.
+// Looked up rather than assumed, because the working directory differs between
+// the two and a wrong guess only shows up at the moment you press merge.
+static QString mergeToolPath()
+{
+    const QString exe = QCoreApplication::applicationDirPath();
+    for (const QString &t : { exe + QStringLiteral("/tools/hdr_merge.py"),
+                              exe + QStringLiteral("/../suite/tools/hdr_merge.py") })
+        if (QFile::exists(t))
+            return QFileInfo(t).absoluteFilePath();
+    return {};
+}
+
+void SessionStore::mergeHdrSet(int row)
+{
+    if (m_merge) {
+        emit hdrMergeFinished(false, QStringLiteral("a merge is already running"));
+        return;
+    }
+    const QVariantList rows = hdrSetRows(row);
+    if (rows.size() < 2) {
+        emit hdrMergeFinished(false, QStringLiteral("not a bracket set"));
+        return;
+    }
+    // One image per bracket — a bracket is a single-pass execute by construction.
+    QStringList files;
+    for (const QVariant &r : rows) {
+        const SessionRecord &s = m_sessions[r.toInt()];
+        QString f;
+        for (const PassRecord &p : s.passes)
+            if (!p.file.isEmpty()) { f = passAbsPath(p); break; }
+        if (f.isEmpty()) {
+            emit hdrMergeFinished(false, QStringLiteral("bracket %1 has no image yet")
+                                             .arg(s.hdrIndex));
+            return;
+        }
+        files << QDir::toNativeSeparators(f);
+    }
+    const int want = m_sessions[rows.first().toInt()].hdrCount;
+    if (want > 0 && files.size() != want) {
+        emit hdrMergeFinished(false, QStringLiteral("set is incomplete — %1 of %2 brackets")
+                                         .arg(files.size()).arg(want));
+        return;
+    }
+    const QString tool = mergeToolPath();
+    if (tool.isEmpty()) {
+        emit hdrMergeFinished(false, QStringLiteral("hdr_merge.py not found beside the app"));
+        return;
+    }
+    // Beside the capture folder, never inside it: that folder is the agent's
+    // output and this model's own scan target, so an 800 MB float TIFF landing
+    // there would be picked up and paired as though it were a scan.
+    const QString outDir = QDir::cleanPath(
+        QDir(m_captureDir).absoluteFilePath(QStringLiteral("../hdr-merge")));
+
+    m_mergeOut.clear();
+    m_merge = new QProcess(this);
+    m_merge->setProgram(QStringLiteral("python"));
+    m_merge->setArguments(QStringList{ tool } + files
+                          + QStringList{ QStringLiteral("--out"),
+                                         QDir::toNativeSeparators(outDir) });
+    m_merge->setProcessChannelMode(QProcess::MergedChannels);
+
+    connect(m_merge, &QProcess::readyReadStandardOutput, this, [this] {
+        m_mergeOut += QString::fromLocal8Bit(m_merge->readAllStandardOutput());
+    });
+    // Cleanup runs from exactly one of these two paths: a process that fails to
+    // start never emits finished().
+    const auto done = [this](bool ok, const QString &msg) {
+        if (!m_merge)
+            return;
+        m_merge->deleteLater();
+        m_merge = nullptr;
+        emit hdrMergeBusyChanged();
+        emit hdrMergeFinished(ok, msg);
+    };
+    connect(m_merge, &QProcess::errorOccurred, this, [this, done](QProcess::ProcessError e) {
+        done(false, e == QProcess::FailedToStart
+                        ? QStringLiteral("could not run python — is it on PATH?")
+                        : QStringLiteral("merge process error"));
+    });
+    connect(m_merge, &QProcess::finished, this,
+            [this, done](int code, QProcess::ExitStatus st) {
+        m_mergeOut += QString::fromLocal8Bit(m_merge->readAllStandardOutput());
+        if (st != QProcess::NormalExit || code != 0) {
+            const QStringList lines = m_mergeOut.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            done(false, lines.isEmpty() ? QStringLiteral("merge failed")
+                                        : lines.last().trimmed());
+            return;
+        }
+        // The tool prints the path it wrote; trusting that beats recomputing its
+        // naming rule here and quietly disagreeing with it.
+        QString wrote;
+        for (const QString &l : m_mergeOut.split(QLatin1Char('\n')))
+            if (l.startsWith(QLatin1String("wrote ")))
+                wrote = l.mid(6).section(QStringLiteral("  ("), 0, 0).trimmed();
+        qInfo().noquote() << "[hdr]" << m_mergeOut.trimmed();
+        done(true, wrote.isEmpty() ? QStringLiteral("merge complete") : wrote);
+    });
+
+    emit hdrMergeStarted(files.size(), outDir);
+    emit hdrMergeBusyChanged();
+    qInfo() << "[hdr] merging" << files.size() << "brackets ->" << outDir;
+    m_merge->start();
 }
 
 // ── metadata SVG pairing (Pi MetadataRecorder export) ────────────────────────

@@ -72,7 +72,10 @@ signals:
 
     // sequence events — tMs = daemon monotonic clock, wallMs = suite wall
     // clock at arrival (file⇄pass pairing anchor, phase 2)
-    void passStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs);
+    // tag: opaque label the daemon echoes back from the job (empty for most
+    // scans). HDR uses it to say "these separate scans are one bracket set".
+    void passStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs,
+                     const QString &tag);
     void passEnded(int pass, qint64 tMs, qint64 wallMs);
     void sequenceDone(int passes);
     void faulted(const QString &text);

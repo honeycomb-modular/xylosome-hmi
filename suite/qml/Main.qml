@@ -162,6 +162,21 @@ ApplicationWindow {
     }
     Timer { id: reclaimTimer; interval: 5000; onTriggered: root.reclaimText = "" }
 
+    // HDR merge runs as a side process and takes minutes on a full-size set, so
+    // it reports through the same transient line rather than a modal.
+    Connections {
+        target: Sessions
+        function onHdrMergeStarted(brackets, outPath) {
+            root.reclaimText = qsTr("merging %1 brackets → %2").arg(brackets).arg(outPath)
+            reclaimTimer.stop()          // no timeout while it is still running
+        }
+        function onHdrMergeFinished(ok, message) {
+            root.reclaimText = (ok ? qsTr("HDR merge wrote %1") : qsTr("HDR merge failed — %1"))
+                .arg(message)
+            reclaimTimer.restart()
+        }
+    }
+
     // Index of the pass shown in the image field for the current session
     readonly property int shownPass: {
         const it = strip.currentItem
@@ -252,6 +267,18 @@ ApplicationWindow {
                 text: qsTr("Note…\tN")
                 enabled: strip.currentItem !== null
                 onTriggered: noteField.beginEdit()
+            }
+            MenuSeparator {}
+            // Enabled only on a scan that xylod told us belongs to a bracket
+            // set — there is no guessing from the files here.
+            MenuItem {
+                text: Sessions.hdrMergeBusy
+                      ? qsTr("Merging HDR set…")
+                      : qsTr("Merge HDR set → 32-bit TIFF")
+                enabled: !Sessions.hdrMergeBusy
+                         && strip.currentItem !== null
+                         && strip.currentItem.sHdrSet !== ""
+                onTriggered: Sessions.mergeHdrSet(strip.currentIndex)
             }
             MenuSeparator {}
             MenuItem {
@@ -850,7 +877,17 @@ ApplicationWindow {
                     required property double metaY
                     required property double metaW
                     required property bool metaWhite
+                    // HDR bracket set: each bracket is its own session, so these
+                    // are what say this scan is one of a set (empty otherwise).
+                    required property string hdrSet
+                    required property string hdrLabel
+                    required property int hdrIndex
+                    required property int hdrCount
                     // surfaced for the rest of the UI via strip.currentItem
+                    readonly property string sHdrSet: hdrSet
+                    readonly property string sHdrLabel: hdrLabel
+                    readonly property int sHdrIndex: hdrIndex
+                    readonly property int sHdrCount: hdrCount
                     readonly property int sSeq: seq
                     readonly property int sFileSeq: fileSeq
                     readonly property string sState: sessionState
@@ -937,6 +974,15 @@ ApplicationWindow {
                             color: root.ink
                             visible: cell.ListView.isCurrentItem
                             opacity: cell.rejected ? 0.5 : 1
+                        }
+                        // Bracket membership, in the same place the filter chips
+                        // sit for a colour scan: the set is the thing you are
+                        // looking for in the strip, not the individual exposure.
+                        Label {
+                            visible: cell.hdrSet !== ""
+                            text: cell.hdrIndex + "/" + cell.hdrCount + "  " + cell.hdrLabel
+                            color: cell.ListView.isCurrentItem ? root.ink : root.inkFaint
+                            font.pixelSize: 9
                         }
                         Label {
                             visible: cell.rating > 0
