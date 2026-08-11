@@ -119,6 +119,10 @@ Item {
     property bool   blinkVisible: true
     property real   passFrac:     0.0
     property bool   homed:        false
+    // Identifies one bracket SET. Each bracket is its own execute and therefore
+    // its own Suite session, so without this the Review Suite has no way to know
+    // the scans belong together — it sees N ordinary scans. Stamped once per run.
+    property double setId: 0
     // Which bracket is in flight, straight from the daemon's pass index.
     property int shotIdx: -1
     // Bracket i runs at fastestVel scaled down — slower means longer integration
@@ -219,6 +223,15 @@ Item {
     // path that has never failed, so each bracket gets its own — board opened
     // and closed fresh, exactly like the scan mode that works.
     //
+    // Label carried with the job and echoed back by xylod on pass_start:
+    //   hdr:<setId>:<n>/<total>:<ev>
+    // Bracket 0 is the darkest, so bracket i is i*stopsPer stops brighter. The
+    // Suite parses this to group the set and label each bracket by exposure;
+    // xylod itself never looks inside it.
+    function tagFor(i) {
+        return "hdr:" + root.setId + ":" + (i + 1) + "/" + root.brackets
+             + ":" + (i * root.stopsPer).toFixed(2)
+    }
     // Costs a board open per bracket and lands each as its own Suite session.
     // Both are worth it over a set where the middle frame is a slice.
     function fireBracket(i) {
@@ -236,7 +249,7 @@ Item {
             var lead = Calib.leadDeg(root.velFor(i))
             Beckhoff.executeScan(1, root.hand1Angle + lead, root.hand2Angle + lead,
                                  root.velFor(i), 1.0,
-                                 root.lines, root.flatProfile())
+                                 root.lines, root.flatProfile(), root.tagFor(i))
         } else {
             simTimer.start()
         }
@@ -245,6 +258,7 @@ Item {
         root.execState    = "running"
         root.blinkVisible = true
         root.homed        = false
+        root.setId        = Date.now()   // one id for the whole set
         root.fireBracket(0)
     }
     function nextBracket() {

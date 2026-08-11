@@ -124,6 +124,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
         j.filterSlot    = req.value("filterSlot", -1);
         j.timeProfile   = req.value("timeProfile", false);
         j.lineForwardOnly = req.value("lineForwardOnly", false);
+        j.tag           = req.value("tag", std::string());
         if (req.contains("passVelScale") && req["passVelScale"].is_array())
             j.passVelScale = req["passVelScale"].get<std::vector<double>>();
         if (req.contains("profile") && req["profile"].is_array())

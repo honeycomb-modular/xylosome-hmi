@@ -390,10 +390,31 @@ void Sequencer::cycle(double dt) {
                      : (m_job.colorMode == 1)  ? 3
                                                : m_pass;
             slot = std::max(0, std::min(3, slot));   // must match enterPass()
-            char b[128];
-            std::snprintf(b, sizeof b,
-                "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\",\"tMs\":%lld}",
-                m_pass, kFilterNames[slot], nowMs());
+            // The tag is client-supplied and goes straight into the JSON this
+            // builds, so it is filtered to characters that cannot break out of
+            // the string and capped to the buffer. No tag = the event stays
+            // byte-identical to what every existing client already parses.
+            char tag[64];
+            size_t tn = 0;
+            for (char c : m_job.tag) {
+                if (tn + 1 >= sizeof tag) break;
+                const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                             || (c >= '0' && c <= '9')
+                             || c == ':' || c == '/' || c == '.'
+                             || c == '+' || c == '-' || c == '_';
+                if (ok) tag[tn++] = c;
+            }
+            tag[tn] = '\0';
+            char b[256];
+            if (tn)
+                std::snprintf(b, sizeof b,
+                    "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\","
+                    "\"tMs\":%lld,\"tag\":\"%s\"}",
+                    m_pass, kFilterNames[slot], nowMs(), tag);
+            else
+                std::snprintf(b, sizeof b,
+                    "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\",\"tMs\":%lld}",
+                    m_pass, kFilterNames[slot], nowMs());
             event(b);
             m_passLines = 0.0;
             m_passHzMax = 0.0;

@@ -145,7 +145,8 @@ void BeckhoffLink::executeScan(int colorMode,
                                double arcStartDeg, double arcEndDeg,
                                double maxVelDegS, double minVelDegS,
                                int targetLines,
-                               const QVariantList &profile)
+                               const QVariantList &profile,
+                               const QString &tag)
 {
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
@@ -162,7 +163,7 @@ void BeckhoffLink::executeScan(int colorMode,
     // and came out ~6x short of the drawn aspect.
     if (targetLines > 0) line[QStringLiteral("lines")] = targetLines;
 
-    sendJson({
+    QJsonObject msg{
         {QStringLiteral("cmd"),          QStringLiteral("execute")},
         {QStringLiteral("colorMode"),    colorMode},
         {QStringLiteral("arcStartDeg"),  arcStartDeg},
@@ -185,7 +186,12 @@ void BeckhoffLink::executeScan(int colorMode,
         {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
         {QStringLiteral("line"),         line},
         {QStringLiteral("profile"),      prof},
-    });
+    };
+    // Only sent when there is one, so an untagged scan is byte-for-byte the
+    // message it always was.
+    if (!tag.isEmpty())
+        msg.insert(QStringLiteral("tag"), tag);
+    sendJson(msg);
 }
 
 void BeckhoffLink::executeStatic(int colorMode, double holdDeg,

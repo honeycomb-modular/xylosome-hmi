@@ -57,6 +57,13 @@ struct ScanJob {
     // -1 keeps the per-pass filter walk (R/G/B/C). >= 0 pins one slot for every
     // pass, so an N-pass stack does not drag the wheel round between passes.
     int    filterSlot    = -1;
+    // ── opaque job label ─────────────────────────────────────────────────────
+    // Echoed back verbatim on pass_start and never interpreted here. It exists
+    // so a client that issues several separate executes (HDR fires one per
+    // bracket) can tell the capture side they are one set — the daemon has no
+    // opinion about what a "set" is. Empty = the events are exactly as before.
+    std::string tag;
+
     // Per-pass multiplier on maxVelDegS. Empty = every pass at full speed.
     //
     // This is exposure bracketing without touching the camera. Exposure per line

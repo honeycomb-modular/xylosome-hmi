@@ -58,6 +58,22 @@ Every command may carry an optional `"id"` (int) which is echoed in the ack.
 | `passOffsetDeg` | `0.0` | shifts the whole arc by `pass * passOffsetDeg`. Sub-pixel dither: the same sweep nudged a fraction of a pixel each pass. |
 | `filterSlot` | `-1` | `-1` walks the filters per pass (R/G/B/C). `0–3` pins one slot for every pass, so an N-pass stack does not drag the wheel round between passes. Out-of-range pass indices clamp to the last slot. |
 
+#### Optional: `tag` — opaque job label
+
+| field | default | meaning |
+|---|---|---|
+| `tag` | `""` | Arbitrary short string, echoed verbatim on every `pass_start` of this job and **never interpreted by the daemon**. It exists so a client that issues several *separate* executes can tell the capture side they belong together. |
+
+The HMI's HDR mode fires one single-pass `execute` per bracket (multi-pass under
+EXSYNC starves the pass after a full frame), so each bracket lands as its own
+scan and its own Review Suite session. The tag is the only thing tying them
+together; without it the Suite sees N unrelated scans. Its format is a client
+convention — currently `hdr:<setId>:<n>/<total>:<ev>`.
+
+The daemon filters the tag to `[A-Za-z0-9:/.+-_]` and 63 chars before embedding
+it (it goes straight into the event JSON). With no tag the `pass_start` event is
+byte-identical to what it has always been, so older clients are unaffected.
+
 #### Optional: `timeProfile` — reversible motion
 
 ```json
@@ -100,7 +116,7 @@ sequence; progress arrives via events + status pushes.
 | ev | payload | meaning |
 |---|---|---|
 | `welcome` | `{"ev":"welcome","version":"x.y","sim":false}` | connection established |
-| `pass_start` | `{"ev":"pass_start","pass":0,"filter":"R","tMs":123456}` | pass began (motion start) |
+| `pass_start` | `{"ev":"pass_start","pass":0,"filter":"R","tMs":123456}` | pass began (motion start). Carries `"tag":"..."` as well when the job was given one — see `execute` ▸ `tag`. |
 | `pass_end` | `{"ev":"pass_end","pass":0,"tMs":126456}` | pass reached arc end |
 | `seq_done` | `{"ev":"seq_done","passes":4}` | full sequence finished, axis homed back |
 | `homed` | `{"ev":"homed"}` | homing complete |

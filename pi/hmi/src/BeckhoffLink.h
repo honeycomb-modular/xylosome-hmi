@@ -66,11 +66,17 @@ public:
     // targetLines = the aspect bar's line count (ScreenScan.linesCount): the
     // sensor fixes one axis at 8k, so the line total IS the image aspect. xylod
     // turns it into the trigger rate, since only it knows the rate clamp.
+    // tag: opaque label carried with the job. xylod does not interpret it, it
+    // only echoes it back on pass_start, which is how the Review Suite learns
+    // that N separately-executed scans are one set. HDR needs this because each
+    // bracket is its own single-pass execute (see ScreenHdr.qml), so nothing in
+    // the resulting files or events would otherwise say they belong together.
     Q_INVOKABLE void executeScan(int colorMode,
                                  double arcStartDeg, double arcEndDeg,
                                  double maxVelDegS, double minVelDegS,
                                  int targetLines,
-                                 const QVariantList &profile);
+                                 const QVariantList &profile,
+                                 const QString &tag = {});
     // executeStatic: no sweep at all. The flange holds where it already is and
     // the camera scans lines for a set time, so the image is bounded by the
     // clock, not by an arc — there is no curve and no velocity to send.
