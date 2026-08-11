@@ -27,6 +27,31 @@ import tifffile
 
 SAT = 65520          # 4095 << 4: full scale for 12-bit left-justified data
 SAT_GUARD = 64000    # stay off the shoulder, where response goes non-linear
+# A pixel used to be in or out at SAT_GUARD. That hard switch is what made a
+# merge look scruffy: the brackets disagree by a few percent, so wherever the
+# count of contributing brackets changed the estimate stepped by that much - and
+# because the threshold is crossed pixel by pixel through noise, the boundary is
+# speckled rather than clean. Fading the contribution out instead spreads that
+# step over a range of brightness, where it is invisible.
+SOFT_LO = 52000      # full weight below this
+SOFT_HI = SAT_GUARD  # zero weight above this
+MIN_NCC = 0.35       # below this a tile has not really matched anything
+
+
+def robust_polyfit(x, y, deg, iters=3):
+    """Least squares, then re-fit without the points the fit disowns. One tile
+    that locked onto the wrong feature would otherwise tilt the whole model."""
+    keep = np.ones(len(x), bool)
+    p = np.polyfit(x, y, deg)
+    for _ in range(iters):
+        r = y - np.polyval(p, x)
+        mad = float(np.median(np.abs(r - np.median(r)))) + 1e-9
+        k = np.abs(r - np.median(r)) < 3.0 * mad
+        if int(k.sum()) < deg + 2:
+            break
+        keep = k
+        p = np.polyfit(x[keep], y[keep], deg)
+    return p, keep
 CHUNK = 2048         # output rows per pass over the files
 T = 1024             # probe tile size
 
@@ -79,24 +104,62 @@ def _peak(sc):
     return float(k + (0.5 * (y0 - y2) / den if abs(den) > 1e-9 else 0.0))
 
 
-def probe_shift(ref, mov, y, x, span=8):
+def probe_shift(ref, mov, y, x, span=96):
     """Sub-pixel (row, column) offset of `mov` at this tile, or (None, None).
 
-    Searched one axis at a time: the two are near-independent here, and a full
-    2-D search costs an order of magnitude more for the same answer."""
+    Coarse-to-fine, and the span is WIDE. It used to be +/-8, which silently
+    clipped: on a set whose brackets sat ~10 px apart every tile reported
+    exactly +8.00 and the geometry was then fitted to that flat lie. A peak
+    landing on the boundary is now retried with a wider span instead.
+
+    One axis at a time - they are near-independent here, and a full 2-D search
+    costs an order of magnitude more for the same answer."""
     a = ref[y:y+T, x:x+T]; b = mov[y:y+T, x:x+T]
     ma = a < SAT_GUARD;    mb = b < SAT_GUARD
     af = a.astype(np.float32); bf = b.astype(np.float32)
+    # coarse pass on a centre crop: same peak, a quarter of the work
+    q = T // 4
+    ac, bc = af[q:T-q, q:T-q], bf[q:T-q, q:T-q]
+    mac, mbc = ma[q:T-q, q:T-q], mb[q:T-q, q:T-q]
 
-    sc = {d: c for d in range(-span, span + 1)
-          if (c := masked_ncc(af, bf, ma, mb, d)) is not None}
-    dy = _peak(sc)
+    def scan(fixed_dy, along_x):
+        s = span
+        while True:
+            step = max(1, s // 12)
+            sc = {}
+            for d in range(-s, s + 1, step):
+                c = (masked_ncc(ac, bc, mac, mbc, fixed_dy, d) if along_x
+                     else masked_ncc(ac, bc, mac, mbc, d, 0))
+                if c is not None:
+                    sc[d] = c
+            if not sc:
+                return None
+            k = max(sc, key=sc.get)
+            if abs(k) < s or s >= 512:          # peak is inside the window
+                break
+            s *= 2                               # it was not - widen and retry
+        fine = {}
+        for d in range(k - step, k + step + 1):
+            c = (masked_ncc(af, bf, ma, mb, fixed_dy, d) if along_x
+                 else masked_ncc(af, bf, ma, mb, d, 0))
+            if c is not None:
+                fine[d] = c
+        return _peak(fine)
+
+    # A tile with no real structure in common still produces a peak somewhere.
+    # Refuse to report one unless the match is actually good, or the fit ends up
+    # drawn through noise.
+    if masked_ncc(af, bf, ma, mb, 0, 0) is None:
+        return None, None
+    dy = scan(0, False)
     if dy is None:
         return None, None
     kdy = int(round(dy))
-    sc = {d: c for d in range(-span, span + 1)
-          if (c := masked_ncc(af, bf, ma, mb, kdy, d)) is not None}
-    return dy, _peak(sc)
+    dx = scan(kdy, True)
+    best = masked_ncc(af, bf, ma, mb, kdy, int(round(dx)) if dx is not None else 0)
+    if best is None or best < MIN_NCC:
+        return None, None
+    return dy, dx
 
 
 def fit_geometry(bs, ref=0):
@@ -119,7 +182,8 @@ def fit_geometry(bs, ref=0):
     print("\ngeometry fit (reference %s):" % bs[ref]["name"])
     for i, b in enumerate(bs):
         if i == ref:
-            geo.append((1.0, 0.0, 0.0, 0.0)); print(f"  {b['name']}: reference"); continue
+            geo.append((np.array([1.0, 0.0]), np.array([0.0, 0.0])))
+            print(f"  {b['name']}: reference"); continue
         # probe_shift returns dy such that MOV row i holds REF row i+dy, so the
         # source row for reference row y is y-dy, NOT y+dy. Getting that
         # backwards doubles the misalignment instead of removing it, and an
@@ -146,31 +210,42 @@ def fit_geometry(bs, ref=0):
         # to show whether they agree.
         yv = np.array([o[0] for o in obs], float)
         sv = np.array([o[0] - o[1] for o in obs], float)      # y - dy
+        # Quadratic when there is enough to support it: the drift is not a
+        # straight line - on 0814-0816 a linear fit left 8 px, because the sweep
+        # does not accumulate its error evenly. Degree 1 is kept as the fallback.
+        deg = 2 if len(obs) >= 6 else 1
         if len(obs) >= 3:
-            kfit, off = (float(v) for v in np.polyfit(yv, sv, 1))
+            rp, rkeep = robust_polyfit(yv, sv, deg)
         else:
-            kfit, off = k, float(np.median(sv - k * yv))
-        rres = list(sv - (kfit * yv + off))
+            rp, rkeep = np.array([k, 0.0]), np.ones(len(obs), bool)
+        rres = list(sv[rkeep] - np.polyval(rp, yv[rkeep]))
         rrms = float(np.sqrt(np.mean(np.square(rres))))
-        k_prior, k = k, kfit
+        dropped = int((~rkeep).sum())
+        k_prior = k
+        k = float(np.polyval(np.polyder(rp), float(np.mean(yv))))   # local slope
 
         # columns: src_col = x + cx0 + cx1*y, and measured src offset is -dx
         yc = np.array([o[0] for o in obs], float)
         sxv = np.array([-o[2] for o in obs], float)
-        cx1, cx0 = np.polyfit(yc, sxv, 1) if len(obs) >= 3 else (0.0, float(np.median(sxv)))
-        cres = sxv - (cx0 + cx1 * yc)
+        if len(obs) >= 3:
+            cp, ckeep = robust_polyfit(yc, sxv, deg)
+        else:
+            cp, ckeep = np.array([0.0, float(np.median(sxv))]), np.ones(len(obs), bool)
+        cres = sxv[ckeep] - np.polyval(cp, yc[ckeep])
         crms = float(np.sqrt(np.mean(np.square(cres))))
 
-        print(f"  {b['name']}: {b['h']} lines vs {bs[ref]['h']} -> scale {k:.7f} "
-              f"({(k - 1.0) * H:+.1f} lines over the height), offset {off:+.2f}")
-        print(f"      line counts alone predicted scale {k_prior:.7f} "
-              f"({(k_prior - 1.0) * H:+.1f} lines)")
-        print(f"      rows: residual rms {rrms:.2f} lines, worst {max(map(abs, rres)):.2f}")
-        print(f"      cols: {cx0:+.2f} px at the top, {cx0 + cx1 * H:+.2f} at the bottom "
-              f"({cx1 * H:+.2f} px of shear); residual rms {crms:.2f} px")
+        drift_top = float(np.polyval(rp, 0.0)) - 0.0
+        drift_bot = float(np.polyval(rp, H)) - H
+        print(f"  {b['name']}: {b['h']} lines vs {bs[ref]['h']}  (degree {deg} fit, "
+              f"{len(obs)} usable tiles, {dropped} rejected)")
+        print(f"      rows: {drift_top:+.1f} px at the top, {drift_bot:+.1f} at the bottom; "
+              f"residual rms {rrms:.2f}, worst {max(map(abs, rres)):.2f}")
+        print(f"      line counts alone predicted {(k_prior - 1.0) * H:+.1f} px of drift")
+        print(f"      cols: {float(np.polyval(cp, 0.0)):+.2f} px at the top, "
+              f"{float(np.polyval(cp, H)):+.2f} at the bottom; residual rms {crms:.2f} px")
         if rrms > 1.5:
             print("      [warn] row model fits poorly - alignment may be unreliable")
-        geo.append((k, off, float(cx0), float(cx1)))
+        geo.append((rp, cp))
     return geo, W
 
 
@@ -181,15 +256,15 @@ def verify_fit(bs, geo, ref=0):
     W = min(b["w"] for b in bs)
     print("\nverify (residual after applying the fit, want ~0):")
     worst = 0.0
-    for i, (b, (k, off, c0, c1)) in enumerate(zip(bs, geo)):
+    for i, (b, (rp, cp)) in enumerate(zip(bs, geo)):
         if i == ref:
             continue
         out = []
         for f in (0.20, 0.50, 0.80):
             y = int(H * f)
             x = W // 2 - T // 2
-            sy = int(round(k * y + off))
-            sx = x + int(round(c0 + c1 * y))
+            sy = int(round(float(np.polyval(rp, y))))
+            sx = x + int(round(float(np.polyval(cp, y))))
             if sy < 0 or sy + T >= b["h"] or sx < 0 or sx + T >= b["w"]:
                 continue
             dy, dx = probe_shift(bs[ref]["arr"][y:y+T, x:x+T],
@@ -208,37 +283,142 @@ def verify_fit(bs, geo, ref=0):
     return worst
 
 
-def fit_black(bs, geo):
-    """Pedestal P: signal scales with exposure, P does not. For a pair with
-    exposure ratio r,  (slow-P) = r*(fast-P)  =>  P = (slow - r*fast)/(1-r)."""
+def fit_response(bs, geo):
+    """Measure each bracket's exposure RELATIVE to the fastest, from the images.
+
+    The obvious ratio is 1/line.rate, and for most sets it is right. But under
+    EXSYNC the camera's line.rate is only its readout setting - the EL2521's
+    trigger does the pacing - so the two can disagree, and on 0814-0816 they did
+    badly enough to leave the brackets 54% apart on radiance. For a linear
+    sensor a pair satisfies  b = r*a + P*(1-r), so a straight line through the
+    pair gives BOTH the true ratio and the pedestal. Fitted on binned medians so
+    a few misregistered edges cannot drag it.
+
+    Returns (relative exposures, P). Exposures are chained from the fastest."""
     H = min(b["h"] for b in bs)
     W = min(b["w"] for b in bs)
-    ests = []
-    print("\nblack level:")
+    print("\nresponse fit (exposure ratio measured from the images):")
+    te = [1.0]
+    ps = []
     for i in range(len(bs) - 1):
         f, s = bs[i], bs[i + 1]
-        r = s["t"] / f["t"]
-        vals = []
+        av, bv = [], []
         for frac in (0.20, 0.35, 0.50, 0.65, 0.80):
             y = int(H * frac) - T // 2
             x = W // 2 - T // 2
-            fy = int(round(geo[i][0] * y + geo[i][1]))
-            sy = int(round(geo[i + 1][0] * y + geo[i + 1][1]))
-            a = f["arr"][fy:fy+T, x:x+T].astype(np.float32)
-            b = s["arr"][sy:sy+T, x:x+T].astype(np.float32)
-            m = (a < SAT_GUARD) & (b < SAT_GUARD) & (b > a + 200)   # real signal only
-            if m.sum() > 5000:
-                vals.append(np.median((b[m] - r * a[m]) / (1.0 - r)))
-        if vals:
-            p = float(np.median(vals))
-            ests.append(p)
-            print(f"  {f['name']} vs {s['name']} (ratio {r:.3f}): P = {p:7.1f}  "
-                  f"(tiles {min(vals):.0f}..{max(vals):.0f})")
-    if not ests:
+            fy = int(round(float(np.polyval(geo[i][0], y))))
+            sy = int(round(float(np.polyval(geo[i + 1][0], y))))
+            fx = x + int(round(float(np.polyval(geo[i][1], y))))
+            sx = x + int(round(float(np.polyval(geo[i + 1][1], y))))
+            a = f["arr"][fy:fy+T, fx:fx+T].astype(np.float32)[::3, ::3]
+            b = s["arr"][sy:sy+T, sx:sx+T].astype(np.float32)[::3, ::3]
+            m = (a < SOFT_LO) & (b < SOFT_LO)      # linear region of BOTH
+            if m.sum() > 2000:
+                av.append(a[m]); bv.append(b[m])
+        if not av:
+            print(f"  {f['name']} -> {s['name']}: no linear overlap, using line.rate")
+            te.append(te[-1] * (s["t"] / f["t"]))
+            continue
+        a = np.concatenate(av); b = np.concatenate(bv)
+        # binned medians, so bright detail does not dominate the line
+        lo, hi = np.percentile(a, 2), np.percentile(a, 98)
+        edges = np.linspace(lo, hi, 21)
+        xs, ys = [], []
+        for j in range(len(edges) - 1):
+            m = (a >= edges[j]) & (a < edges[j + 1])
+            if int(m.sum()) > 200:
+                xs.append(np.median(a[m])); ys.append(np.median(b[m]))
+        if len(xs) < 4:
+            print(f"  {f['name']} -> {s['name']}: too few bins, using line.rate")
+            te.append(te[-1] * (s["t"] / f["t"]))
+            continue
+        m_, c_ = (float(v) for v in np.polyfit(np.array(xs), np.array(ys), 1))
+        nominal = s["t"] / f["t"]
+        te.append(te[-1] * m_)
+        if abs(1.0 - m_) > 1e-6:
+            ps.append(c_ / (1.0 - m_))
+        flag = "" if abs(m_ / nominal - 1) < 0.05 else "   <- line.rate disagrees"
+        print(f"  {f['name']} -> {s['name']}: measured x{m_:.3f} "
+              f"({np.log2(m_):+.2f} stop), line.rate said x{nominal:.3f} "
+              f"({np.log2(nominal):+.2f}){flag}")
+    P = float(np.median(ps)) if ps else 0.0
+    print(f"  relative exposures: " + ", ".join(f"{b['name'][5:9]}={t:.3f}"
+                                                for b, t in zip(bs, te)))
+    print(f"  black level from the same fit: P = {P:.0f}")
+    return te, P
+
+
+def fit_black(bs, geo):
+    """Pedestal P: signal scales with exposure, P does not.
+
+    The algebraic estimate per pair - (slow - r*fast)/(1-r) - is exact in theory
+    and noisy in practice: on a heavily clipped set the two pairs disagreed by
+    855 counts, and the median of them satisfied neither. Since what P is FOR is
+    making the brackets agree on radiance, pick the P that does that: scan it
+    and minimise the disagreement it leaves behind. Same quantity, chosen by the
+    thing it has to deliver."""
+    H = min(b["h"] for b in bs)
+    W = min(b["w"] for b in bs)
+    print("\nblack level:")
+
+    # Gather paired samples once, corrected by the fitted geometry.
+    sets = []
+    for i in range(len(bs) - 1):
+        f, s = bs[i], bs[i + 1]
+        r = s["t"] / f["t"]
+        av, bv = [], []
+        for frac in (0.20, 0.35, 0.50, 0.65, 0.80):
+            y = int(H * frac) - T // 2
+            x = W // 2 - T // 2
+            fy = int(round(float(np.polyval(geo[i][0], y))))
+            sy = int(round(float(np.polyval(geo[i + 1][0], y))))
+            fx = x + int(round(float(np.polyval(geo[i][1], y))))
+            sx = x + int(round(float(np.polyval(geo[i + 1][1], y))))
+            a = f["arr"][fy:fy+T, fx:fx+T].astype(np.float32)[::3, ::3]
+            b = s["arr"][sy:sy+T, sx:sx+T].astype(np.float32)[::3, ::3]
+            m = (a < SAT_GUARD) & (b < SAT_GUARD) & (b > a + 200)
+            if m.sum() > 2000:
+                av.append(a[m]); bv.append(b[m])
+        if av:
+            sets.append((f["name"], s["name"], r,
+                         np.concatenate(av), np.concatenate(bv)))
+    if not sets:
         sys.exit("could not fit a black level - no usable overlap")
-    P = float(np.median(ests))
-    print(f"  -> using P = {P:.1f}   (pair spread {max(ests)-min(ests):.1f} counts)")
-    return P
+
+    def disagreement(P):
+        errs = []
+        for _fn, _sn, r, a, b in sets:
+            ok = (a > P + 300) & (b > P + 300)
+            if int(ok.sum()) < 500:
+                return None
+            ratio = ((b[ok] - P) / r) / (a[ok] - P)
+            errs.append(abs(float(np.median(np.log(ratio)))))
+        return float(np.mean(errs)) if errs else None
+
+    best, bestP = None, None
+    for P in np.arange(0.0, 3000.0, 25.0):
+        d = disagreement(float(P))
+        if d is not None and (best is None or d < best):
+            best, bestP = d, float(P)
+    if bestP is None:
+        sys.exit("could not fit a black level - no usable overlap")
+    for P in np.arange(max(0.0, bestP - 30), bestP + 30, 2.0):   # refine
+        d = disagreement(float(P))
+        if d is not None and d < best:
+            best, bestP = d, float(P)
+
+    for fn, sn, r, a, b in sets:
+        # the algebraic estimate, for comparison
+        alg = float(np.median((b - r * a) / (1.0 - r)))
+        ok = (a > bestP + 300) & (b > bestP + 300)
+        res = float(np.median(((b[ok] - bestP) / r) / (a[ok] - bestP))) if ok.sum() else float("nan")
+        print(f"  {fn} vs {sn} (ratio {r:.3f}): algebraic P = {alg:7.1f}, "
+              f"ratio at chosen P = {res:.3f}")
+    print(f"  -> using P = {bestP:.0f}   (residual disagreement {100*best:.2f}%)")
+    if best > 0.02:
+        print("  [warn] brackets still disagree by >2% - suspect clipping or a "
+              "scene that changed between passes")
+    return bestP
 
 
 def merge(bs, geo, W, P, out_path):
@@ -247,23 +427,30 @@ def merge(bs, geo, W, P, out_path):
     # numpy slice start wraps to the end of the file — which yields an empty
     # slab rather than an error, so the failure surfaced far from its cause.
     # Start the grid at the first reference row every bracket can supply.
-    top = 0
-    for (s, o, _c0, _c1) in geo:
-        top = max(top, int(np.ceil(-o / s)) if o < 0 else 0)
-    end = min(int((b["h"] - 2 - o) / s) for b, (s, o, _c0, _c1) in zip(bs, geo))
-    end = min(end, bs[0]["h"])
+    # Which reference rows can EVERY bracket supply? Evaluated rather than
+    # solved, because the row map may be a curve: a negative source row wraps to
+    # the end of the file in numpy and fails somewhere unrelated.
+    href = bs[0]["h"]
+    ys = np.arange(href, dtype=np.float64)
+    valid = np.ones(href, bool)
+    for b, (rp, _cp) in zip(bs, geo):
+        sy = np.polyval(rp, ys)
+        valid &= (sy >= 0) & (sy <= b["h"] - 2)
+    idx = np.flatnonzero(valid)
+    if idx.size < 16:
+        sys.exit("no usable overlap between brackets")
+    top, end = int(idx[0]), int(idx[-1]) + 1
     H = end - top
-    if H < 16:
-        sys.exit(f"no usable overlap between brackets (top={top}, end={end})")
-    if top:
-        print(f"  (skipping the first {top} line(s): not present in every bracket)")
+    if top or end < href:
+        print(f"  (using reference rows {top}..{end}: the rest is not present in "
+              f"every bracket)")
 
     # Column margin: the sensor-axis shear means a bracket's source column can
     # sit either side of the output column, so the output is inset by the worst
-    # excursion over the whole height. A few px out of 8192.
+    # excursion over the range actually used. A few px out of 8192.
     worst = 0.0
-    for (_s, _o, c0, c1) in geo:
-        worst = max(worst, abs(c0), abs(c0 + c1 * (top + H)))
+    for (_rp, cp) in geo:
+        worst = max(worst, float(np.max(np.abs(np.polyval(cp, ys[top:end])))))
     M = int(np.ceil(worst)) + 1
     Wout = W - 2 * M
 
@@ -275,7 +462,7 @@ def merge(bs, geo, W, P, out_path):
 
     out = tifffile.memmap(out_path, shape=(H, Wout), dtype=np.float32,
                           photometric="minisblack", bigtiff=True)
-    all_clipped = rescued = 0
+    all_clipped = rescued = salvaged = 0
     for y0 in range(0, H, CHUNK):
         y1 = min(y0 + CHUNK, H)
         # Output row y comes from REFERENCE row y+top; `top` is what keeps every
@@ -283,8 +470,8 @@ def merge(bs, geo, W, P, out_path):
         rows = np.arange(y0, y1, dtype=np.float64) + top
         num = np.zeros((y1 - y0, Wout), np.float32)
         den = np.zeros((y1 - y0, Wout), np.float32)
-        for b, (s, o, c0, c1) in zip(bs, geo):
-            src = rows * s + o
+        for b, (rp, cp) in zip(bs, geo):
+            src = np.polyval(rp, rows)
             i0 = np.floor(src).astype(np.int64)
             wgt = (src - i0).astype(np.float32)[:, None]
             # Belt and braces: a stray index here would slice from the end of the
@@ -295,7 +482,7 @@ def merge(bs, geo, W, P, out_path):
             # One column offset per chunk. The shear is a few px over 25k rows,
             # so within 2048 rows it moves well under a quarter pixel - far below
             # what we are correcting - and this keeps it to one slice per bracket.
-            cshift = c0 + c1 * float(rows.mean())
+            cshift = float(np.polyval(cp, rows.mean()))
             xi = M + int(np.floor(cshift))
             xf = np.float32(cshift - np.floor(cshift))
             lo, hi = int(i0.min()), int(i0.max()) + 2
@@ -304,15 +491,35 @@ def merge(bs, geo, W, P, out_path):
                 return a[:, x0:x0 + Wout]
             r0 = col(slab, xi)[i0 - lo] * (1.0 - xf) + col(slab, xi + 1)[i0 - lo] * xf
             r1 = col(slab, xi)[i0 + 1 - lo] * (1.0 - xf) + col(slab, xi + 1)[i0 + 1 - lo] * xf
-            # A pixel is usable only if BOTH source rows are unclipped - blending a
+            # Weight fades to zero as either source row approaches saturation,
+            # and a row that is already clipped contributes nothing - blending a
             # clipped row with a good one would invent a plausible mid-grey.
-            good = (r0 < SAT_GUARD) & (r1 < SAT_GUARD)
+            def soft(v):
+                w = np.clip((SOFT_HI - v) / (SOFT_HI - SOFT_LO), 0.0, 1.0)
+                return w * w * (3.0 - 2.0 * w)      # smoothstep: no visible seam
+            wt = np.minimum(soft(r0), soft(r1))
             raw = r0 * (1.0 - wgt) + r1 * wgt
-            num += np.where(good, raw - P, 0.0)
-            den += np.where(good, np.float32(b["t"]), np.float32(0.0))
+            num += wt * (raw - P)
+            den += wt * np.float32(b["t"])
+            # Keep the fastest bracket's own reading. Where every weight has
+            # gone to zero it is the only thing left that still has structure,
+            # and flooring those pixels to a constant instead was replacing the
+            # last ring of real highlight detail with flat white.
+            if b is bs[0]:
+                fastest_raw = raw
+        # Three cases, in order of how much is actually known:
+        #   weights survive        -> the weighted estimate
+        #   none survive, not sat  -> the fastest bracket's own value (shoulder
+        #                             data: compressed, but real structure)
+        #   saturated even there   -> a floor; nothing in the set knows more
         dead = den <= 0
-        all_clipped += int(dead.sum())
-        rad = np.where(dead, (SAT - P) / t_min, num / np.maximum(den, 1e-12))
+        hard = dead & (fastest_raw >= SAT)
+        all_clipped += int(hard.sum())
+        salvaged += int((dead & ~hard).sum())
+        rad = np.where(dead,
+                       np.where(hard, (SAT - P) / t_min,
+                                (fastest_raw - P) / t_min),
+                       num / np.maximum(den, 1e-12))
         chunk = (rad * scale).astype(np.float32)
         rescued += int((chunk > 1.0).sum())
         out[y0:y1] = chunk
@@ -321,7 +528,9 @@ def merge(bs, geo, W, P, out_path):
     px = H * W
     print(f"\nwrote {out_path}  ({os.path.getsize(out_path)/1e6:.0f} MB, 32-bit float)")
     print(f"  above slowest-bracket clipping : {rescued:,} px ({100.0*rescued/px:.2f}%)")
-    print(f"  clipped in every bracket       : {all_clipped:,} px ({100.0*all_clipped/px:.4f}%)")
+    print(f"  held by the fastest bracket    : {salvaged:,} px ({100.0*salvaged/px:.4f}%)"
+          f"  <- shoulder detail, would have been flat white")
+    print(f"  saturated in every bracket     : {all_clipped:,} px ({100.0*all_clipped/px:.4f}%)")
     return out
 
 
@@ -334,11 +543,11 @@ def check_agreement(bs, geo, P):
     y = int(H * 0.35) - T // 2
     x = W // 2 - T // 2
     ref = bs[0]
-    ry = int(round(geo[0][0] * y + geo[0][1]))
+    ry = int(round(float(np.polyval(geo[0][0], y))))
     a = ref["arr"][ry:ry+T, x:x+T].astype(np.float32)
-    for b, (s, o, c0, c1) in list(zip(bs, geo))[1:]:
-        by = int(round(s * y + o))
-        bx = x + int(round(c0 + c1 * y))
+    for b, (rp, cp) in list(zip(bs, geo))[1:]:
+        by = int(round(float(np.polyval(rp, y))))
+        bx = x + int(round(float(np.polyval(cp, y))))
         c = b["arr"][by:by+T, bx:bx+T].astype(np.float32)
         m = (a < SAT_GUARD) & (c < SAT_GUARD) & (a > P + 300)
         if m.sum() < 5000:
@@ -381,7 +590,12 @@ def main():
 
     geo, W = fit_geometry(bs)
     verify_fit(bs, geo)
-    P = fit_black(bs, geo)
+    # Measured exposures replace 1/line.rate everywhere below.
+    te, P = fit_response(bs, geo)
+    for b, t in zip(bs, te):
+        b["t"] = t
+    if P <= 0:
+        P = fit_black(bs, geo)
     check_agreement(bs, geo, P)
 
     os.makedirs(args.out, exist_ok=True)
