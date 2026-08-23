@@ -35,7 +35,7 @@ powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c   # High Performance: C
 powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
 powercfg /change monitor-timeout-ac 0
-powercfg /h off   # no hibernation, and so no Fast Startup: the cart's `shutdown /s /f` is a FULL shutdown
+powercfg /h off   # no hibernation, so Fast Startup can never return: the cart's `shutdown /s /f` stays a FULL power-off
 
 Write-Host "== Verify no artificial core/RAM limits (blank below = good) ==" -ForegroundColor Cyan
 bcdedit /enum '{current}' | Select-String "numproc|truncatememory|removememory"

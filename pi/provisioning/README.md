@@ -75,8 +75,11 @@ Beckhoff shutdown → Pi and capture PC both go down cleanly with it.
     forces apps closed so a dirty Suite/agent can't stall the cart power-down.
   - **Full shutdown, not hibernate:** with Windows Fast Startup on, `shutdown /s`
     is a *hybrid* shutdown (kernel session hibernated to `hiberfil.sys`), which
-    can carry a stale Xtium/camera driver state across the power cycle. Disable it
-    once on the capture PC (admin): `powercfg /h off`.
+    would carry stale Xtium/camera driver state across the power cycle. On this
+    capture PC Fast Startup is **already off** (`HiberbootEnabled=0`, verified
+    2026-08-23), so `/s` is a true cold power-off. To make that permanent —
+    hibernation off, Fast Startup unable to return, hiberfil reclaimed — run once
+    as admin: `powercfg /h off`. Check with `powercfg /a`.
 - **C6920 BIOS:** "Restore on AC Power Loss" = **Power On** (so mains-on = boot).
 - **Touch calibration** (if reflashed): `~/.config/labwc/rc.xml` touch
   `mapToOutput="HDMI-A-1"` + udev `LIBINPUT_CALIBRATION_MATRIX` (see SESSION_NOTES).
