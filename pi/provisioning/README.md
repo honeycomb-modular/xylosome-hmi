@@ -38,7 +38,7 @@ sudo install -m644 pi/provisioning/beckhoff/poweroff-pi.service /etc/systemd/sys
 sudo systemctl daemon-reload && sudo systemctl enable poweroff-pi.service
 ```
 
-…and this powers off the **Windows capture PC** (`shutdown /s /t 0` over SSH):
+…and this powers off the **Windows capture PC** (`shutdown /s /f /t 0` over SSH):
 
 ```bash
 sudo install -m755 pi/provisioning/beckhoff/poweroff-capture.sh   /usr/local/bin/poweroff-capture.sh
@@ -70,8 +70,13 @@ Beckhoff shutdown → Pi and capture PC both go down cleanly with it.
      ```
   4. Verify from the Beckhoff (should print the PC's name, no password):
      `sudo ssh -i /root/.ssh/id_capture hoyte@192.168.2.50 hostname`
-  - Capture PC is `192.168.2.50` on the cart subnet; `shutdown /s /t 0` works for
-    the standard user (holds the shutdown privilege) and returns immediately.
+  - Capture PC is `192.168.2.50` on the cart subnet; `shutdown /s /f /t 0` works for
+    the standard user (holds the shutdown privilege) and returns immediately. `/f`
+    forces apps closed so a dirty Suite/agent can't stall the cart power-down.
+  - **Full shutdown, not hibernate:** with Windows Fast Startup on, `shutdown /s`
+    is a *hybrid* shutdown (kernel session hibernated to `hiberfil.sys`), which
+    can carry a stale Xtium/camera driver state across the power cycle. Disable it
+    once on the capture PC (admin): `powercfg /h off`.
 - **C6920 BIOS:** "Restore on AC Power Loss" = **Power On** (so mains-on = boot).
 - **Touch calibration** (if reflashed): `~/.config/labwc/rc.xml` touch
   `mapToOutput="HDMI-A-1"` + udev `LIBINPUT_CALIBRATION_MATRIX` (see SESSION_NOTES).
