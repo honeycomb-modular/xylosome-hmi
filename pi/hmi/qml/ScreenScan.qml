@@ -493,7 +493,16 @@ Item {
     // ── Derived properties ────────────────────────────────────────────────────
     readonly property int plotH: canvasH - plotPadT - plotPadB   // 219 px
 
-    readonly property int linesCount: Math.max(1, Math.round(boxW / canvasH * 9310))
+    // Derived from the ARC, not from boxW. The green bar is a screen element
+    // clamped to canvasW-45 px, and that clamp IS 180 deg — onBoxWChanged maps
+    // it back as hand2 = hand1 + boxW*180/(canvasW-45), so the two are a strict
+    // bijection only while the bar has room. Taking the count from the bar made
+    // lines-per-degree collapse past 180 deg: a 310 deg pass froze at 31551
+    // lines instead of 54326 and came back squeezed 1.72x (scan 1713, measured
+    // 1.7198 against 1.7222 predicted). Below 180 deg this is arithmetically
+    // identical to the old form, since boxW = round(arc*(canvasW-45)/180).
+    readonly property int linesCount: Math.max(1, Math.round(
+        arcDegrees * (canvasW - 45) / 180 / canvasH * 9310))
 
     function formatLines(n) {
         return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")
