@@ -493,7 +493,7 @@ Item {
     // ── Derived properties ────────────────────────────────────────────────────
     readonly property int plotH: canvasH - plotPadT - plotPadB   // 219 px
 
-    readonly property int linesCount: Math.max(1, Math.round(boxW / canvasH * 8000))
+    readonly property int linesCount: Math.max(1, Math.round(boxW / canvasH * 9310))
 
     function formatLines(n) {
         return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")

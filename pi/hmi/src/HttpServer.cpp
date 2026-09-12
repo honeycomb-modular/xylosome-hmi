@@ -295,7 +295,7 @@ const SEQ = {
     }
 
     // Info column — bottom right inside box
-    var linesCount=Math.max(1,Math.round(bw/ch*8000));
+    var linesCount=Math.max(1,Math.round(bw/ch*9310));
     ctx.save();
     ctx.fillStyle='#606060'; ctx.font='16px monospace'; ctx.textAlign='right'; ctx.globalAlpha=1;
     ctx.fillText('lines: '+this.formatLines(linesCount),      bw-8,ch-10);
