@@ -55,17 +55,24 @@ over the `.10` link instead:
 
 ```bash
 # on the PC
-git bundle create <scratch>/xylosome.bundle main
+git bundle create <scratch>/xylosome.bundle <branch>
 python -m http.server 8099 --bind 192.168.10.1     # note the PID
 ```
 ```bash
 # on the Pi
 curl -fSL -o /tmp/xylo.bundle http://192.168.10.1:8099/xylosome.bundle
 cd ~/xylosome-hmi && git stash push -u -m "pi-local $(date +%F)"
-git pull /tmp/xylo.bundle main
+git pull /tmp/xylo.bundle <branch>
 cd pi/hmi && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
 ```
 
+- **Not `main`.** The Pi tracks whatever branch the work is on — `art-modes` as of
+  2026-09-12. Check first (`git -C ~/xylosome-hmi rev-parse --abbrev-ref HEAD`); this
+  block said `main` for a long time, and that is a different lineage.
+- **`scp` reaches the Pi too** — the key is installed there exactly as on the C6920,
+  so the http-server dance above is optional. Same shape as §3b: bundle a range, `scp`
+  it to `/tmp/`, `git fetch` it on the box. Used throughout 2026-09-12 for single-file
+  HMI changes.
 - Build is **Unix Makefiles, not Ninja** — `deploy.sh`'s `-G Ninja` fails here.
 - The Pi carries divergent local work; **always stash before pulling.**
 - Kill only the bundle server's **PID** when done — never a broad `python` kill
@@ -81,8 +88,17 @@ This is the #1 reason a "deployed" fix appears not to work.
 ps -o pid,lstart,cmd -C xylosome_hmi     # started BEFORE the binary mtime? -> stale
 date -r ~/xylosome-hmi/pi/hmi/build/xylosome_hmi
 sudo systemctl reboot                    # Pi is back in ~15 s
-pgrep -c -f xylosome_hmi                 # must be exactly 1 (two-instance trap)
+pgrep -c xylosome_hmi                    # must be exactly 1 (two-instance trap)
 ```
+
+- **`pgrep -c xylosome_hmi`, never `pgrep -c -f`.** With `-f` the pattern also
+  matches the *shell running the command* (the `ssh … "…xylosome_hmi…"` line), so
+  it reads 2 and looks exactly like the two-instance trap when only one instance
+  exists. `ps -o pid,ppid,cmd -C xylosome_hmi` matches by exe name and settles it.
+- **Never `pkill -f xylosome_hmi`.** Same self-match, but it kills the shell that
+  invoked it — the SSH session dies mid-script with exit 255 and whatever followed
+  the `pkill` never runs. Use `pkill xylosome_hmi` (no `-f`). Both traps hit
+  2026-09-12.
 
 ---
 

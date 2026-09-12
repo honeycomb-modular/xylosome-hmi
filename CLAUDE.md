@@ -32,8 +32,11 @@ Before touching any code, read:
 - `pi/hmi/METADATA_INFUSER.md` — metadata infuser spec and implementation notes
 - `docs/concept/xylosome_ui_concept.docx` — full screen spec and pendant interaction model
 
-**Active (and only) Pi is the Pi 5 `xylosome-pi` at 192.168.10.3 — labwc/Wayland,
-Ninja. Reach it: `ssh -o PubkeyAuthentication=no hoyte@192.168.10.3` (password auth).
+**Active (and only) Pi is the Pi 5 `xylosome-pi` at 192.168.10.3 — labwc/Wayland.
+Reach it with the key: `ssh -i ~/.ssh/id_ed25519 hoyte@192.168.10.3`. The key is
+installed; password auth is NOT needed (and cannot work through the agent — no TTY,
+see COOP.md §2). The HMI builds with **Unix Makefiles, not Ninja** — COOP.md §3 is
+right; this line said the opposite until 2026-09-12.
 It also carries 192.168.2.3 to talk to the Beckhoff (192.168.2.2:5510).
 The old Pi 4 at 192.168.10.2 has NOT been part of xylosome for a long time —
 ignore every "Pi 4 = active dev unit" note below as stale.**
