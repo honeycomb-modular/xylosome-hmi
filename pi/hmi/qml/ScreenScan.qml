@@ -472,6 +472,21 @@ Item {
         if (w > 0 && w !== root.boxW) root.boxW = w
     }
 
+    // Restore path: the bar follows the arc, never the reverse. boxW clamps at
+    // canvasW-45 px and that clamp IS 180 deg, so a restored bar carries no
+    // information about any arc wider than that. Letting it drive hand2 on
+    // startup silently truncated every wider program — a 310 deg scan came back
+    // as 180 deg after each reboot, because boxW restored pinned at 915 and
+    // onBoxWChanged rewrote hand2 to hand1+180. The hands are what Settings
+    // persists, so they are the authority; _dialDriving stops the feedback loop.
+    function boxWFromArc() {
+        root._dialDriving = true
+        root.boxW = Math.max(root.boxMinW, Math.min(root.canvasW - 45,
+                              Math.round(root.arcDegrees * (root.canvasW - 45) / 180)))
+        root._dialDriving = false
+        Motor.seqBoxW = root.boxW
+    }
+
     function syncSequencePlaying(playing) {
         // Web-control sim sync is OFFLINE-ONLY. When the Beckhoff drives the
         // motion, this path must never start the local playhead timer — it
@@ -1460,7 +1475,7 @@ Item {
     StackView.onStatusChanged: {
         if (StackView.status === StackView.Active) {
             root._suppressDirty = true
-            root.syncBoxW(Motor.seqBoxW)
+            root.boxWFromArc()
             root.syncNodes(Motor.nodes)
             root._suppressDirty = false
             root._settingsDirty = false
@@ -1468,7 +1483,7 @@ Item {
     }
 
     Component.onCompleted: {
-        root.hand2Angle = root.hand1Angle + root.boxW * 180.0 / (root.canvasW - 45)
+        root.boxWFromArc()
         root.scheduleRepaint()
     }
     onHand1AngleChanged: if (!root._suppressDirty) root._settingsDirty = true
