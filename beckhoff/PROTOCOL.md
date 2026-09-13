@@ -116,7 +116,7 @@ sequence; progress arrives via events + status pushes.
 | ev | payload | meaning |
 |---|---|---|
 | `welcome` | `{"ev":"welcome","version":"x.y","sim":false}` | connection established |
-| `pass_start` | `{"ev":"pass_start","pass":0,"filter":"R","tMs":123456}` | pass began (motion start). Carries `"tag":"..."` as well when the job was given one — see `execute` ▸ `tag`. |
+| `pass_start` | `{"ev":"pass_start","pass":0,"filter":"R","tMs":123456}` | pass began. For a sweep this is AFTER the run-up (`runup_ms`): the axis backs off the arc start, reaches the opening speed, holds it, and the pass opens as it crosses the arc start — so the state reads `settle` while it is already moving. The run-out (drain at the closing speed, then braking) comes after `pass_end`, reported as `moving`. Carries `"tag":"..."` as well when the job was given one — see `execute` ▸ `tag`. |
 | `pass_end` | `{"ev":"pass_end","pass":0,"tMs":126456}` | pass reached arc end |
 | `seq_done` | `{"ev":"seq_done","passes":4}` | full sequence finished, axis homed back |
 | `homed` | `{"ev":"homed"}` | homing complete |

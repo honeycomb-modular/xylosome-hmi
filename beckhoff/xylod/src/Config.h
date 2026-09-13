@@ -48,6 +48,8 @@ struct Config {
     double lineLagMs    = 27.1;              // delay the trigger by the axis's lag behind the
                                              // CSP setpoint, so the rate tracks where the
                                              // subject IS, not where it was commanded. 0 = off.
+    double runupMs      = 150.0;             // steady speed held BEFORE a sweep's pass opens,
+                                             // after ramping up at acc_limit_degs2. 0 = off.
 
     // ── digital I/O bit map ──────────────────────────────────────────────────
     int diHome = 0, diEndMin = 1, diEndMax = 2, diEstop = 3, diFwIndex = 4;

@@ -9,9 +9,11 @@
 //     filter wheel → channel
 //     move axis → arcStart (returnVel)
 //     settle
+//     run-up: ramp to the opening speed and hold it (sweeps only, runup_ms)
 //     pass_index pulse + pass_active high, pass_start event
 //     integrate speed profile → CSP setpoints; EL2521 follows velocity
 //     pass_active low, pass_end event
+//     brake from the closing speed (sweeps only)
 //   move axis → arcStart, seq_done
 //
 // What the artist draws is what executes: the profile arrives pre-sampled
@@ -138,7 +140,7 @@ public:
 
 private:
     enum class St { Idle, Homing, Moving, Jogging, FilterMove, SeqFilter, SeqReposition,
-                    SeqSettle, SeqRun, SeqPaused, Estop, Fault };
+                    SeqSettle, SeqRunup, SeqRun, SeqPaused, SeqBrake, Estop, Fault };
 
     void event(const std::string &json);
     void publish();
@@ -151,6 +153,9 @@ private:
     double passVelScale() const;              // this pass's speed multiplier
     double profileAt(double x) const;         // linear interp; samples may be signed
     double delayLine(double hz);              // trigger rate, delayed by line_lag_ms
+    void planRunup();                         // run-up / run-out for this pass
+    void openPass();                          // pass_start: pass_active, index pulse, event
+    void finishPass();                        // after pass_end: next pass or seq_done
     long long nowMs() const;
 
     const Config &m_cfg;
@@ -187,6 +192,13 @@ private:
     std::deque<double> m_lineDelay;
     int    m_drainLeft = -1;        // cycles of queued trigger left after the sweep; -1 = sweeping
     double m_lagSum = 0.0;          // following error / velocity, summed over the pass
+    // Run-up and run-out (runup_ms). Magnitudes; the arc's sign gives direction.
+    double m_runupDist = 0.0;       // travel before the arc start, deg; 0 = none this pass
+    double m_runupV0   = 0.0;       // speed the pass opens at, deg/s
+    double m_runupVel  = 0.0;       // speed so far in the run-up
+    double m_runupS    = 0.0;       // travel so far in the run-up
+    bool   m_runoutOk  = false;     // room past the arc end to keep speed and brake
+    double m_exitVel   = 0.0;       // signed speed the sweep ended at, held through the drain
     int    m_lagN   = 0;
     double m_lineCount  = 0.0;      // accumulated scanned lines this sequence
     int    m_plannedLines = 0;      // lines each pass will deliver, after the rate clamp

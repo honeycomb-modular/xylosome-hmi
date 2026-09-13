@@ -24,8 +24,10 @@ const char *Sequencer::stName(St s) const {
         case St::SeqFilter:     return "filter";
         case St::SeqReposition: return "moving";
         case St::SeqSettle:     return "settle";
+        case St::SeqRunup:      return "settle";    // moving, but no pass open yet
         case St::SeqRun:        return "running";
         case St::SeqPaused:     return "paused";
+        case St::SeqBrake:      return "moving";
         case St::Estop:         return "estop";
         case St::Fault:         return "fault";
     }
@@ -55,6 +57,117 @@ double Sequencer::delayLine(double hz) {
     const double out = m_lineDelay.front();
     m_lineDelay.pop_front();
     return out;
+}
+
+// A sweep used to start from standstill AT the arc start with the trigger
+// already running, and stop dead at the arc end with the delayed trigger still
+// draining. The delay line assumes the axis trails the command by a steady
+// line_lag_ms, which is only true at steady speed - so both ends of every sweep
+// were clocked against where the axis should have been, not where it was. Here
+// the pass is given room to reach speed before it opens and to keep it until
+// the last queued line has gone out. Sweeps only: a static hold never moves,
+// and a time-indexed pass starts and ends where its profile says.
+void Sequencer::planRunup() {
+    m_runupDist = 0.0; m_runupV0 = 0.0; m_runoutOk = false;
+    if (m_job.staticHold || m_job.timeProfile || m_cfg.runupMs <= 0.0) return;
+    const double arc = m_job.arcEndDeg - m_job.arcStartDeg;
+    const double dir = arc > 0 ? 1.0 : -1.0;
+    const double sc  = passVelScale();
+    const double acc = std::max(1.0, m_cfg.accLimitDegS2);
+    const auto speedAt = [&](double x) {
+        return std::max(m_job.minVelDegS * sc, profileAt(x) * m_job.maxVelDegS * sc);
+    };
+
+    // Walk the ramp exactly as SeqRunup will, so the run-up ends on a cycle
+    // boundary and the pass opens AT the arc start. Planned in closed form it
+    // overshot by up to a cycle of travel, and those lines were never emitted.
+    const double v0 = speedAt(0.0);
+    const double dt = m_cfg.cycleUs * 1e-6;
+    double dist = 0.0;
+    for (double v = 0.0; v < v0; ) {
+        v = std::min(v0, v + acc * dt);
+        dist += v * dt;
+    }
+    dist += v0 * dt * std::ceil(m_cfg.runupMs * 1e-3 / dt);
+    const double start = passArcStart();
+    const double roomBefore = dir > 0 ? start - m_cfg.softMinDeg : m_cfg.softMaxDeg - start;
+    if (dist > roomBefore) {
+        LOGW("seq: run-up needs %.1f deg before %.1f but the soft limit leaves %.1f "
+             "— shortened, the start of the pass may lag", dist, start, roomBefore);
+        dist = std::max(0.0, roomBefore);
+    }
+    m_runupDist = dist;
+    m_runupV0   = v0;
+
+    // Past the end: the drain (line_lag_ms at the closing speed), then braking.
+    const double v1  = speedAt(1.0);
+    const double end = start + arc;
+    const double roomAfter = dir > 0 ? m_cfg.softMaxDeg - end : end - m_cfg.softMinDeg;
+    const double need = v1 * m_cfg.lineLagMs * 1e-3 + v1 * v1 / (2.0 * acc);
+    m_runoutOk = need <= roomAfter;
+    if (!m_runoutOk)
+        LOGW("seq: run-out needs %.1f deg past %.1f but the soft limit leaves %.1f "
+             "— stopping at the arc end as before", need, end, roomAfter);
+}
+
+void Sequencer::openPass() {
+    m_arcS = 0.0;
+    m_dwellS = 0.0;
+    m_bk.setPassActive(true);
+    m_bk.setPassIndex(true);
+    m_indexPulseLeft = 0.050;
+    int slot = (m_job.filterSlot >= 0) ? m_job.filterSlot
+             : (m_job.colorMode == 1)  ? 3
+                                       : m_pass;
+    slot = std::max(0, std::min(3, slot));   // must match enterPass()
+    // The tag is client-supplied and goes straight into the JSON this
+    // builds, so it is filtered to characters that cannot break out of
+    // the string and capped to the buffer. No tag = the event stays
+    // byte-identical to what every existing client already parses.
+    char tag[64];
+    size_t tn = 0;
+    for (char c : m_job.tag) {
+        if (tn + 1 >= sizeof tag) break;
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                     || (c >= '0' && c <= '9')
+                     || c == ':' || c == '/' || c == '.'
+                     || c == '+' || c == '-' || c == '_';
+        if (ok) tag[tn++] = c;
+    }
+    tag[tn] = '\0';
+    char b[256];
+    if (tn)
+        std::snprintf(b, sizeof b,
+            "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\","
+            "\"tMs\":%lld,\"tag\":\"%s\"}",
+            m_pass, kFilterNames[slot], nowMs(), tag);
+    else
+        std::snprintf(b, sizeof b,
+            "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\",\"tMs\":%lld}",
+            m_pass, kFilterNames[slot], nowMs());
+    event(b);
+    m_passLines = 0.0;
+    m_passHzMax = 0.0;
+    m_lineDelay.clear();
+    m_drainLeft = -1;
+    m_lagSum = 0.0;
+    m_lagN   = 0;
+    LOGI("seq: pass %d begin — scale %.3f, rate %.0f Hz intended",
+         m_pass, passVelScale(), m_job.lineBaseHz * passVelScale());
+    m_st = St::SeqRun;
+}
+
+void Sequencer::finishPass() {
+    if (m_pass + 1 < m_passCount) {
+        enterPass(m_pass + 1);
+    } else {
+        startMove(m_job.arcStartDeg, m_job.returnVelDegS);
+        m_st = St::Moving;
+        m_pass = -1;
+        char e[64];
+        std::snprintf(e, sizeof e, "{\"ev\":\"seq_done\",\"passes\":%d}", m_passCount);
+        event(e);
+    }
 }
 
 void Sequencer::startMove(double target, double vel, double accel) {
@@ -172,8 +285,9 @@ void Sequencer::cycle(double dt) {
                 // same events a natural end emits means the capture agent
                 // needs no special case for an abort.
                 const bool inSeq = (m_st == St::SeqFilter || m_st == St::SeqReposition
-                                 || m_st == St::SeqSettle || m_st == St::SeqRun
-                                 || m_st == St::SeqPaused);
+                                 || m_st == St::SeqSettle || m_st == St::SeqRunup
+                                 || m_st == St::SeqRun || m_st == St::SeqPaused
+                                 || m_st == St::SeqBrake);
                 if (inSeq) {
                     char b[96];
                     if (m_pass >= 0 && (m_st == St::SeqRun || m_st == St::SeqPaused)) {
@@ -399,7 +513,9 @@ void Sequencer::cycle(double dt) {
 
     case St::SeqFilter:
         if (!m_bk.fwBusy()) {
-            startMove(passArcStart(), m_job.returnVelDegS);
+            planRunup();
+            const double dir = (m_job.arcEndDeg > m_job.arcStartDeg) ? 1.0 : -1.0;
+            startMove(passArcStart() - dir * m_runupDist, m_job.returnVelDegS);
             m_st = St::SeqReposition;
         }
         break;
@@ -414,52 +530,45 @@ void Sequencer::cycle(double dt) {
     case St::SeqSettle:
         m_settleLeft -= dt;
         if (m_settleLeft <= 0.0) {
-            m_arcS = 0.0;
-            m_dwellS = 0.0;
-            m_bk.setPassActive(true);
-            m_bk.setPassIndex(true);
-            m_indexPulseLeft = 0.050;
-            int slot = (m_job.filterSlot >= 0) ? m_job.filterSlot
-                     : (m_job.colorMode == 1)  ? 3
-                                               : m_pass;
-            slot = std::max(0, std::min(3, slot));   // must match enterPass()
-            // The tag is client-supplied and goes straight into the JSON this
-            // builds, so it is filtered to characters that cannot break out of
-            // the string and capped to the buffer. No tag = the event stays
-            // byte-identical to what every existing client already parses.
-            char tag[64];
-            size_t tn = 0;
-            for (char c : m_job.tag) {
-                if (tn + 1 >= sizeof tag) break;
-                const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-                             || (c >= '0' && c <= '9')
-                             || c == ':' || c == '/' || c == '.'
-                             || c == '+' || c == '-' || c == '_';
-                if (ok) tag[tn++] = c;
+            if (m_runupDist > 0.0) {
+                m_runupVel = 0.0;
+                m_runupS   = 0.0;
+                m_st = St::SeqRunup;
+            } else {
+                openPass();
             }
-            tag[tn] = '\0';
-            char b[256];
-            if (tn)
-                std::snprintf(b, sizeof b,
-                    "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\","
-                    "\"tMs\":%lld,\"tag\":\"%s\"}",
-                    m_pass, kFilterNames[slot], nowMs(), tag);
-            else
-                std::snprintf(b, sizeof b,
-                    "{\"ev\":\"pass_start\",\"pass\":%d,\"filter\":\"%s\",\"tMs\":%lld}",
-                    m_pass, kFilterNames[slot], nowMs());
-            event(b);
-            m_passLines = 0.0;
-            m_passHzMax = 0.0;
-            m_lineDelay.clear();
-            m_drainLeft = -1;
-            m_lagSum = 0.0;
-            m_lagN   = 0;
-            LOGI("seq: pass %d begin — scale %.3f, rate %.0f Hz intended",
-                 m_pass, passVelScale(), m_job.lineBaseHz * passVelScale());
-            m_st = St::SeqRun;
         }
         break;
+
+    case St::SeqRunup: {
+        // Accelerate to the opening speed, then hold it. The pass opens on the
+        // cycle the run-up distance is used up, and whatever it overshot by is
+        // carried into the arc, so position and speed are both continuous.
+        const double dir = (m_job.arcEndDeg > m_job.arcStartDeg) ? 1.0 : -1.0;
+        m_runupVel = std::min(m_runupV0, m_runupVel + std::max(1.0, m_cfg.accLimitDegS2) * dt);
+        m_runupS  += m_runupVel * dt;
+        const double over = std::max(0.0, m_runupS - m_runupDist);
+        if (m_runupS >= m_runupDist - 1e-9) {
+            LOGI("seq: run-up %.1f deg, opening at %.1f deg/s (axis %.1f deg/s)",
+                 m_runupDist, m_runupVel, std::fabs(m_bk.axisVelDegS()));
+            openPass();
+            m_arcS = over;
+            m_setpoint = passArcStart() + dir * over;
+        } else {
+            m_setpoint = passArcStart() - dir * (m_runupDist - m_runupS);
+        }
+        break;
+    }
+
+    case St::SeqBrake: {
+        const double dv = m_cfg.accLimitDegS2 * dt;
+        m_exitVel = (m_exitVel > 0) ? std::max(0.0, m_exitVel - dv)
+                                    : std::min(0.0, m_exitVel + dv);
+        m_setpoint += m_exitVel * dt;
+        m_setpoint = std::min(m_cfg.softMaxDeg, std::max(m_cfg.softMinDeg, m_setpoint));
+        if (m_exitVel == 0.0) finishPass();
+        break;
+    }
 
     case St::SeqPaused:
     case St::SeqRun: {
@@ -473,8 +582,14 @@ void Sequencer::cycle(double dt) {
         double vSigned    = 0.0;   // commanded output velocity, for the lag measurement
 
         if (m_drainLeft >= 0) {
-            // The sweep is over but the delayed trigger is not: hold the end pose
-            // (already snapped) and let the queued rates play out below.
+            // The sweep is over but the delayed trigger is not. The queued rates
+            // describe the axis still travelling at the closing speed, so keep
+            // it travelling (run-out) rather than holding the end pose - which
+            // made the last line_lag_ms of lines land on an axis braking hard.
+            if (m_runoutOk) {
+                m_setpoint += m_exitVel * dt;
+                m_setpoint = std::min(m_cfg.softMaxDeg, std::max(m_cfg.softMinDeg, m_setpoint));
+            }
         } else if (m_job.staticHold) {
             // Hold the pose and run the trigger flat; the pass ends on the clock.
             // Paused time does not count, so a pause lengthens the wall-clock
@@ -568,8 +683,12 @@ void Sequencer::cycle(double dt) {
             // Snap to the exact arc end so rounding cannot leave the pass short.
             // Neither a static hold nor a reversing sweep HAS an arc end, and
             // snapping one there would be a jump to somewhere it never was.
-            if (!m_job.staticHold && !m_job.timeProfile)
+            // Nor does a sweep with a run-out: it carries on past the end, and
+            // the snap - up to a cycle of travel - showed up as a step in the
+            // last lines the drain delivers.
+            if (!m_job.staticHold && !m_job.timeProfile && !m_runoutOk)
                 m_setpoint = passArcStart() + (m_job.arcEndDeg - m_job.arcStartDeg);
+            m_exitVel = m_runoutOk ? vSigned : 0.0;
             m_drainLeft = m_job.staticHold ? 0 : int(m_lineDelay.size());
             if (m_drainLeft == 0) passDone = true;
         }
@@ -591,16 +710,8 @@ void Sequencer::cycle(double dt) {
                  m_pass, m_passLines, m_passHzMax,
                  m_lagN ? 1000.0 * m_lagSum / m_lagN : 0.0, m_cfg.lineLagMs);
 
-            if (m_pass + 1 < m_passCount) {
-                enterPass(m_pass + 1);
-            } else {
-                startMove(m_job.arcStartDeg, m_job.returnVelDegS);
-                m_st = St::Moving;
-                m_pass = -1;
-                char e[64];
-                std::snprintf(e, sizeof e, "{\"ev\":\"seq_done\",\"passes\":%d}", m_passCount);
-                event(e);
-            }
+            if (m_exitVel != 0.0) m_st = St::SeqBrake;
+            else                  finishPass();
         }
         break;
     }

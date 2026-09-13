@@ -46,7 +46,7 @@ bool Config::load(const std::string &path) {
     d("fw_slot_r", fwSlotOffset[0]);   d("fw_slot_g", fwSlotOffset[1]);
     d("fw_slot_b", fwSlotOffset[2]);   d("fw_slot_c", fwSlotOffset[3]);
     d("el2521_base_hz", el2521BaseHz); d("line_max_hz", lineMaxHz);
-    d("line_lag_ms", lineLagMs);
+    d("line_lag_ms", lineLagMs);        d("runup_ms", runupMs);
     i("di_home", diHome);              i("di_end_min", diEndMin);
     i("di_end_max", diEndMax);         i("di_estop", diEstop);
     i("di_fw_index", diFwIndex);
