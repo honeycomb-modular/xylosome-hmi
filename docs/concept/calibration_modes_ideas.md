@@ -179,7 +179,25 @@ Candidates, most likely first:
 2. Free-run line rate in that mode
 3. Structural ringing from jerk
 
-- [ ] Same target at 3–4 constant speeds (all sharp → dynamic cause)
+**Observation 2026-09-13 (Hoyte): timed scan is sharper than curve scan.**
+That is the constant-vs-varying test already done by accident. Code confirms
+the two modes differ only in the profile:
+- `ScreenTimed.qml` sends a flat 1.0 profile with min = max velocity.
+- `ScreenScan.qml` sends the artist's curve.
+- In both, xylod paces the trigger from the **commanded** velocity
+  (`Sequencer.cpp`, `lineHzNow = effBase * v / effMax`), never from the drive's
+  `actualPos` / `actualVel`, which it already receives (`EcBackend.h:79`).
+- The axis lags the command by ~27 ms (`Calib.qml` `triggerLeadSec`, measured).
+  At constant speed that lag is a fixed offset, so it's harmless. On a curve,
+  trigger rate and real image speed disagree by roughly `accel × 0.027 / v`, and
+  48 stages multiply that. Example: 100 °/s changing at 500 °/s² → ~13% → ~6 px
+  of smear.
+- Points to candidate 1. Fix options, least invasive first: (a) delay
+  `lineHzNow` by `triggerLeadSec`, (b) pace from `actualVel`, (c) encoder-locked
+  trigger (EL5101 echo).
+
+- [x] ~~Same target at 3–4 constant speeds~~ — effectively done: constant-speed timed scan is sharp → dynamic cause
+- [ ] Confirm on one curve scan: blur bands should sit where the curve is steepest, not where it's slowest
 - [ ] Velocity ramp — does blur track |accel| or v?
 - [ ] Stages 32 → 16 → 8 (blur roughly halving confirms stage mismatch; costs a stop each step)
 - [ ] Log Beckhoff actual-vs-commanded following error, correlate with blur bands
