@@ -28,17 +28,47 @@ pragma Singleton
 // Re-measure by scanning something round: lines scale linearly, so if it comes
 // out 1.4x too tall, multiply this by 1.4.
 
+import QtCore
 import QtQuick
 
 QtObject {
     id: calib
 
-    // Deliberately a plain constant, NOT persisted. It was briefly backed by a
+    // The doorframe measurement, as a plain constant. It was briefly backed by a
     // Settings object whose alias pointed back at this very property — a
     // circular binding that froze the HMI the moment a page touched Calib.
-    // A calibration measured once a year does not justify that risk; re-measure
-    // by editing this number.
-    readonly property real linesPerDeg: 150.65
+    readonly property real measuredLinesPerDeg: 150.65
+
+    // ── TDI sync override (settings ▸ calibration ▸ tdi.sync) ──────────────────
+    // TDI is only sharp when the subject image advances one pixel per trigger,
+    // and the stage count multiplies any error: at 48 stages it must be right to
+    // ~2%. The right value depends on the subject's distance from the axis, so
+    // one constant cannot serve every scene — the modes had already drifted
+    // apart (this file 150.65, curve scan 175.3 via C = 9310, timed 150).
+    // When enabled, EVERY mode uses syncLinesPerDeg; disabled, each keeps its
+    // own number exactly as before. Found by sweeping it on a constant-speed
+    // scan and scoring sharpness.
+    //
+    // Settings is held privately and only ever READ by the bindings below and
+    // WRITTEN by the setters — no alias, so no path back into itself.
+    property Settings _store: Settings {
+        category: "calib"
+        property bool syncEnabled: false
+        property real syncLinesPerDeg: 175.3
+    }
+    readonly property bool syncEnabled:     calib._store.syncEnabled
+    readonly property real syncLinesPerDeg: calib._store.syncLinesPerDeg
+    function setSyncEnabled(on)    { calib._store.syncEnabled = on }
+    function setSyncLinesPerDeg(v) { calib._store.syncLinesPerDeg = v }
+
+    // A mode's own lines-per-degree, unless the sync override is on.
+    function linesPerDegOr(own) {
+        return calib._store.syncEnabled ? calib._store.syncLinesPerDeg : own
+    }
+
+    readonly property real linesPerDeg: calib._store.syncEnabled
+                                        ? calib._store.syncLinesPerDeg
+                                        : calib.measuredLinesPerDeg
 
     // The geometrically correct line count for a sweep of `arcDeg`.
     function linesForArc(arcDeg) {

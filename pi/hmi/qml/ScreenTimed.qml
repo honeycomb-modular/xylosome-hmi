@@ -45,7 +45,7 @@ Item {
 
     // "lines scanned" is an estimate until the capture pipeline defines a real
     // slow-scan line rate — scaled from the FOV arc by a nominal constant.
-    readonly property int  linesPerDeg: 150
+    readonly property real linesPerDeg: Calib.linesPerDegOr(150)   // tdi.sync override wins
     readonly property int  plannedLines: Math.round(root.arcDeg * root.linesPerDeg)
 
     // ── Run state ───────────────────────────────────────────────────────────────

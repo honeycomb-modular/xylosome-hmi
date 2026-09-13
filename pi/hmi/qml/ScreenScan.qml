@@ -516,8 +516,12 @@ Item {
     // lines instead of 54326 and came back squeezed 1.72x (scan 1713, measured
     // 1.7198 against 1.7222 predicted). Below 180 deg this is arithmetically
     // identical to the old form, since boxW = round(arc*(canvasW-45)/180).
+    //
+    // (canvasW-45)/180/canvasH * 9310 = 175.28 lines/deg — the 2026-09-12 square
+    // target. Calib's tdi.sync override replaces it when enabled. The web
+    // readout in HttpServer.cpp mirrors only the 9310 form.
     readonly property int linesCount: Math.max(1, Math.round(
-        arcDegrees * (canvasW - 45) / 180 / canvasH * 9310))
+        arcDegrees * Calib.linesPerDegOr((canvasW - 45) / 180 / canvasH * 9310)))
 
     function formatLines(n) {
         return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")
