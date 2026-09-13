@@ -282,3 +282,38 @@ Rule: trigger rate = lines/deg × actual speed, lines/deg from `Calib`.
   Until then use `[lines: forward]`.
 - [ ] Agent `read_state()` crashes on an empty SYNC Frequency reply
   (`float('')`) — seen when the camera was stuck in sem 3 + scd 2. One-line guard.
+
+---
+
+## 7. Banding lines across the whole frame — IN PROGRESS (2026-09-13, top priority)
+
+Symptom (Hoyte): thin lines across the whole panorama, always in the same place,
+clearest in sky. In the scan they run along the scan axis = fixed SENSOR COLUMNS.
+
+Measured (`capture/sensor_bands_measure.py` on scans 1694, 1723, 1785, 1786 —
+four different scenes, all 16 stages / 0 dB; today's scans 1787–1841 were
+deleted in the Suite so could not be used):
+- Column-scale pattern correlates 0.72–0.75 between different scenes →
+  sensor-fixed, ~1.2–1.7% rms.
+- Mostly NARROW DARK lines, a few px wide, always darker (never brighter),
+  densest in columns ~2000–4100. Deepest: columns 2404–2415, ≈ −8%, identical
+  in all four scans. Other sharp steps at 5115 (+3.4%), 6656 (−4%).
+- NO steps at the 4-tap boundaries (2048/4096/6144) → not tap mismatch.
+- Plot: `docs/concept/sensor_bands_profile.png` (top: whole sensor, blue lines =
+  tap boundaries; bottom: columns 2300–2520, one colour per scan).
+- Diagnosis: dust/particles on the sensor window (thin dark shadows), plus a
+  smaller general PRNU underneath.
+
+Decision pending (Hoyte) — the question last asked:
+- [ ] **Option 1 — clean the sensor window** (manual p.113: lens off, compressed
+  air; if needed ESD-safe wiper + alcohol, slowly, across the short width; no
+  cotton swabs). Then one scan with sky → re-run the measure script.
+- [ ] **Option 2 — camera flat-field correction** for what remains: `ccf` (FPN,
+  lens capped), `ccp` (PRNU, even defocused white target), save `wfc`/`wpc`,
+  enable `epc 1 1`. At working setup: 48 stages, −6 dB, forward (scd 0), and
+  redo if aperture changes. COM3 is owned by the capture agent → needs a small
+  calibration pass-through in the agent (one elevated restart) OR stop the agent
+  and use CamExpert.
+- [ ] Option 3 (fallback) — software per-column gain from a flat scan, applied at save.
+- [ ] Unknown: whether pixel coefficients (`epc`) are already enabled — the
+  agent's `read_state()` doesn't expose that gcp line.
