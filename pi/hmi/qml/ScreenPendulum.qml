@@ -37,7 +37,6 @@ Item {
         property alias amplitudeDeg: root.amplitudeDeg
         property alias periodSec:    root.periodSec
         property alias swings:       root.swings
-        property alias lines:        root.lines
         property alias fwdOnly:      root.fwdOnly
     }
 
@@ -55,8 +54,12 @@ Item {
     property int swings: 6
 
     readonly property int linesMin: 256
-    readonly property int linesMax: 65000
-    property int lines: 22200
+    readonly property int linesMax: Calib.frameMaxLines
+    // Automatic, never dialled: the count that keeps TDI synced for this swing —
+    // see Calib.linesForTravel. A free count only matched the calibration by
+    // accident, and at 48 stages being 5% off is already 2.4 px of smear.
+    readonly property int lines: Calib.linesForTravel(root.buildSineProfile(), root.peakVel,
+                                                      root.durationSec, root.fwdOnly)
 
     // scan's ceiling — safe headroom under the motor's ~360 °/s
     readonly property real velCeiling: 300.0
@@ -74,6 +77,12 @@ Item {
     readonly property real peakAcc: 4 * Math.PI * Math.PI * root.amplitudeDeg
                                     / Math.max(0.001, root.periodSec * root.periodSec)
     readonly property bool tooHard: root.peakAcc > root.accCeiling
+
+    // Either of these would silently break sync, so they block execute too.
+    readonly property bool rateTooHigh:  Calib.rateTooHigh(root.peakVel)
+    readonly property bool tooManyLines: root.lines > root.linesMax
+    readonly property bool blocked: root.tooFast || root.tooHard
+                                    || root.rateTooHigh || root.tooManyLines
 
     // The pose the swing is centred on, captured at execute. The pass starts and
     // parks at centreDeg - amplitude, so without restoring this every run would
@@ -112,7 +121,7 @@ Item {
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
     property var    focusController: pendFocus
-    property string editTarget: "none"     // none | amp | period | swings | lines
+    property string editTarget: "none"     // none | amp | period | swings
 
     function focusBack() { root.StackView.view.pop() }
 
@@ -120,8 +129,8 @@ Item {
         id: pendFocus
         index: 0
         // Reading order — left to right, then down a line:
-        //   amplitude · period · swings · lines · [settings] · [modes] · chip · [abort] · [home]
-        targets: [ampProxy, periodProxy, swingsProxy, linesProxy, fwdBtn, settingsBtn, modesBtn]
+        //   amplitude · period · swings · [lines] · [settings] · [modes] · chip · [abort] · [home]
+        targets: [ampProxy, periodProxy, swingsProxy, fwdBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -129,7 +138,6 @@ Item {
             if (item === ampProxy)         root.enterEditing("amp")
             else if (item === periodProxy) root.enterEditing("period")
             else if (item === swingsProxy) root.enterEditing("swings")
-            else if (item === linesProxy)  root.enterEditing("lines")
             else if (item.clicked)         item.clicked()
         }
         onAdjust: function(delta) {
@@ -143,8 +151,6 @@ Item {
             else if (root.editTarget === "swings")
                 root.swings = Math.max(root.swingsMin,
                               Math.min(root.swingsMax, root.swings + delta))
-            else if (root.editTarget === "lines")
-                root.lines = root.linesOfFrac(root.fracOfLines(root.lines) + delta * 0.015)
         }
         onConfirmed: root.exitEditing()
         onCanceled:  root.exitEditing()
@@ -196,6 +202,9 @@ Item {
             // pose you framed" actually means. xylod repositions to arcStartDeg
             // before the pass, and parks back there at the end, so the axis
             // finishes at the bottom of the swing rather than at the centre.
+            // Rate follows speed or the automatic line count means nothing — the
+            // mode is a saved setting another page may have left on "fixed".
+            Beckhoff.setLineMode("curve")
             Beckhoff.executeReversing(Motor.colorMode,
                                       root.centreDeg - root.amplitudeDeg,
                                       root.peakVel, root.durationSec,
@@ -392,24 +401,17 @@ Item {
     // ── Lines ───────────────────────────────────────────────────────────────────
     Text {
         x: 502; y: 190
-        text: "lines"; color: Theme.colorTextDim
+        text: "lines (auto \u00B7 " + Calib.linesPerDeg.toFixed(1) + "/\u00B0)"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
         x: 502; y: 210; width: 440; height: 58
 
-        Item { id: linesProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (pendFocus.current === linesProxy && !pendFocus.editing) ? linesProxy : null
-        }
-
         Rectangle {
             anchors.fill: parent
             color: Theme.panel; radius: 2
-            border.width: root.editTarget === "lines" ? 2 : 1
-            border.color: root.editTarget === "lines" ? Theme.accent : Theme.border
+            border.width: 1
+            border.color: root.tooManyLines ? Theme.danger : Theme.border
 
             Rectangle {
                 x: 1; y: 1; height: parent.height - 2
@@ -519,7 +521,7 @@ Item {
                : "swinging  ·  " + Math.round(root.progressFrac * 100) + "%"
                  + "  ·  " + Beckhoff.velocityDegS.toFixed(0) + " \xB0/s"
                  + "  ·  " + Beckhoff.positionDeg.toFixed(1) + "\xB0"
-        color: (root.tooFast || root.tooHard) ? Theme.danger : Theme.colorTextDim
+        color: root.blocked ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontBody }
     }
 
@@ -538,8 +540,14 @@ Item {
 
     Text {
         x: Theme.marginX + 250; y: 437
-        visible: root.tooFast || root.tooHard
-        text:  root.tooFast
+        visible: root.blocked
+        text:  root.tooManyLines
+               ? "too many lines for one frame (" + root.fmtLines(root.linesMax)
+                 + ") — fewer swings, less amplitude, or [lines: forward]"
+             : root.rateTooHigh
+               ? "trigger would pass " + Calib.lineMaxHz.toFixed(0) + " Hz and lose sync — "
+                 + "widen the period or narrow the amplitude"
+             : root.tooFast
                ? "too fast — widen the period or narrow the amplitude (ceiling "
                  + root.velCeiling.toFixed(0) + " \xB0/s, this asks "
                  + root.peakVel.toFixed(0) + ")"
@@ -627,7 +635,7 @@ Item {
                     (root.execState === "paused" && root.blinkVisible)) ? "#6B2020" : Theme.panel
         onClicked: {
             if (root.execState === "idle") {
-                if (root.tooFast || root.tooHard) return   // the axis cannot follow this swing
+                if (root.blocked) return   // the axis cannot follow it, or it would lose sync
                 root.startRun()
             } else if (root.execState === "running") {
                 if (Beckhoff.connected) Beckhoff.pause()
@@ -643,6 +651,5 @@ Item {
 
     Component.onCompleted: {
         pendFocus.editing = false
-        root.lines = Math.max(root.linesMin, Math.min(root.linesMax, root.lines))
     }
 }

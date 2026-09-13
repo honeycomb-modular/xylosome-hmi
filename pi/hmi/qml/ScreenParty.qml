@@ -33,7 +33,6 @@ Item {
         property alias energyDegS:  root.energyDegS
         property alias durationSec: root.durationSec
         property alias seed:        root.seed
-        property alias lines:       root.lines
         property alias fwdOnly:     root.fwdOnly
     }
 
@@ -49,8 +48,7 @@ Item {
     property int seed: 1337
 
     readonly property int linesMin: 256
-    readonly property int linesMax: 65000
-    property int lines: 22200
+    readonly property int linesMax: Calib.frameMaxLines
 
     readonly property real velCeiling: 300.0
     readonly property real accCeiling: 1500.0   // mirrors acc_limit_degs2
@@ -112,6 +110,17 @@ Item {
     readonly property bool tooFast: root.energyDegS > root.velCeiling
     readonly property bool tooHard: root.peakAcc > root.accCeiling
 
+    // Automatic, never dialled: the count that keeps TDI synced for this dance —
+    // see Calib.linesForTravel. Built off the cached profile, the same samples
+    // the execute sends.
+    readonly property int lines: Calib.linesForTravel(root.profile, root.energyDegS,
+                                                      root.durationSec, root.fwdOnly)
+    // Either of these would silently break sync, so they block execute too.
+    readonly property bool rateTooHigh:  Calib.rateTooHigh(root.energyDegS)
+    readonly property bool tooManyLines: root.lines > root.linesMax
+    readonly property bool blocked: root.tooFast || root.tooHard
+                                    || root.rateTooHigh || root.tooManyLines
+
     onSeedChanged:        root.rebuildProfile()
     onEnergyDegSChanged:  root.rebuildProfile()
     onDurationSecChanged: root.rebuildProfile()
@@ -161,7 +170,7 @@ Item {
 
     // ── Touch-free focus ────────────────────────────────────────────────────────
     property var    focusController: partyFocus
-    property string editTarget: "none"     // none | energy | dur | lines
+    property string editTarget: "none"     // none | energy | dur
 
     function focusBack() { root.StackView.view.pop() }
 
@@ -169,15 +178,14 @@ Item {
         id: partyFocus
         index: 0
         // Reading order — left to right, then down a line:
-        //   energy · duration · lines · [reroll] · [settings] · [modes] · chip · [abort] · [home]
-        targets: [energyProxy, durProxy, linesProxy, rerollBtn, fwdBtn, settingsBtn, modesBtn]
+        //   energy · duration · [reroll] · [lines] · [settings] · [modes] · chip · [abort] · [home]
+        targets: [energyProxy, durProxy, rerollBtn, fwdBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
         onActivated: function(item) {
             if (item === energyProxy)     root.enterEditing("energy")
             else if (item === durProxy)   root.enterEditing("dur")
-            else if (item === linesProxy) root.enterEditing("lines")
             else if (item.clicked)        item.clicked()
         }
         onAdjust: function(delta) {
@@ -187,8 +195,6 @@ Item {
             else if (root.editTarget === "dur")
                 root.durationSec = Math.max(root.durMin,
                                    Math.min(root.durMax, root.durationSec + delta))
-            else if (root.editTarget === "lines")
-                root.lines = root.linesOfFrac(root.fracOfLines(root.lines) + delta * 0.015)
         }
         onConfirmed: root.exitEditing()
         onCanceled:  root.exitEditing()
@@ -217,6 +223,9 @@ Item {
         if (Beckhoff.connected) {
             // The dance is zero-mean, so it wanders either side of the pose and
             // comes back — no need to offset the start the way pendulum does.
+            // Rate follows speed or the automatic line count means nothing — the
+            // mode is a saved setting another page may have left on "fixed".
+            Beckhoff.setLineMode("curve")
             Beckhoff.executeReversing(Motor.colorMode, root.centreDeg,
                                       root.energyDegS, root.durationSec,
                                       root.lines, root.profile, root.fwdOnly)
@@ -370,24 +379,17 @@ Item {
     // ── Lines ───────────────────────────────────────────────────────────────────
     Text {
         x: Theme.marginX; y: 174
-        text: "lines"; color: Theme.colorTextDim
+        text: "lines (auto \u00B7 " + Calib.linesPerDeg.toFixed(1) + "/\u00B0)"; color: Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Item {
         x: Theme.marginX; y: 192; width: Theme.contentW; height: 52
 
-        Item { id: linesProxy; anchors.fill: parent }
-
-        FocusIndicator {
-            inset: true
-            target: (partyFocus.current === linesProxy && !partyFocus.editing) ? linesProxy : null
-        }
-
         Rectangle {
             anchors.fill: parent
             color: Theme.panel; radius: 2
-            border.width: root.editTarget === "lines" ? 2 : 1
-            border.color: root.editTarget === "lines" ? Theme.accent : Theme.border
+            border.width: 1
+            border.color: root.tooManyLines ? Theme.danger : Theme.border
             Rectangle {
                 x: 1; y: 1; height: parent.height - 2
                 width: (parent.width - 2) * root.fracOfLines(root.lines)
@@ -474,13 +476,18 @@ Item {
         text:  "seed " + root.seed
                + "  \xB7  strays \xB1" + root.excursionDeg().toFixed(1) + "\xB0"
                + "  \xB7  peak " + root.peakAcc.toFixed(0) + " \xB0/s\xB2"
-        color: (root.tooFast || root.tooHard) ? Theme.danger : Theme.colorTextDim
+        color: root.blocked ? Theme.danger : Theme.colorTextDim
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     Text {
         x: 470; y: 372
-        visible: root.tooFast || root.tooHard
-        text:  root.tooFast
+        visible: root.blocked
+        text:  root.tooManyLines
+               ? "too many lines for one frame (" + root.fmtLines(root.linesMax)
+                 + ") — shorter, calmer, or [lines: forward]"
+             : root.rateTooHigh
+               ? "trigger would pass " + Calib.lineMaxHz.toFixed(0) + " Hz and lose sync — drop the energy"
+             : root.tooFast
                ? "too fast — drop the energy (ceiling "
                  + root.velCeiling.toFixed(0) + " \xB0/s)"
                : "turnarounds too sharp for the drive — drop the energy or "
@@ -590,7 +597,7 @@ Item {
                     (root.execState === "paused" && root.blinkVisible)) ? "#6B2020" : Theme.panel
         onClicked: {
             if (root.execState === "idle") {
-                if (root.tooFast || root.tooHard) return
+                if (root.blocked) return
                 root.startRun()
             } else if (root.execState === "running") {
                 if (Beckhoff.connected) Beckhoff.pause()
@@ -606,7 +613,6 @@ Item {
 
     Component.onCompleted: {
         partyFocus.editing = false
-        root.lines = Math.max(root.linesMin, Math.min(root.linesMax, root.lines))
         root.rebuildProfile()
     }
 }

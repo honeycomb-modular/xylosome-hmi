@@ -162,6 +162,7 @@ Item {
             // offsetDeg is 0 unless dither is on, in which case each pass steps
             // a fraction of a line further along.
             // Filter 3 (Clear) pinned so the wheel stays put across passes.
+            Beckhoff.setLineMode("curve")   // saved setting — ramp may have left "fixed"
             Beckhoff.executeStack(root.passes, 3, root.offsetDeg,
                                   scanCfg.hand1Angle, scanCfg.hand2Angle,
                                   root.speed, 1.0,

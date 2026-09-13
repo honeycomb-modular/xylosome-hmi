@@ -79,6 +79,30 @@ QtObject {
     function linesForArc(arcDeg) {
         return Math.max(1, Math.round(calib.linesPerDeg * Math.abs(arcDeg)))
     }
+    // The TDI-synced line count for a TIME-indexed, reversing pass (pendulum,
+    // party). There is no arc to multiply, so it is derived the way xylod paces
+    // one: rate = baseHz * |v| / peak, with baseHz solved as
+    // lines / (mean|profile| * duration) — forward-only counts positive samples
+    // only (Sequencer.cpp). Lines per degree then come out as exactly
+    // lines / (peak * mean * duration); asking for linesPerDeg times that makes
+    // them equal the calibration. Uses the SAME sample mean xylod uses, not the
+    // analytic one: at 16 samples a cycle mean|sin| is already 1.3% off 2/pi.
+    function linesForTravel(profile, peakVelDegS, durationSec, forwardOnly) {
+        if (!profile || profile.length < 2) return 1
+        var s = 0
+        for (var i = 0; i < profile.length; i++)
+            s += forwardOnly ? Math.max(0, profile[i]) : Math.abs(profile[i])
+        return Math.max(1, Math.round(calib.linesPerDeg * Math.abs(peakVelDegS)
+                                      * (s / profile.length) * durationSec))
+    }
+    // xylod's line_max_hz. A synced trigger peaks at linesPerDeg * peak speed; a
+    // reversing pass cannot slow down to fit (there is no single peak to cap), so
+    // xylod clamps the RATE instead and the pass silently loses sync.
+    readonly property real lineMaxHz: 37000
+    // The capture agent's LINE_MAX — one frame cannot hold more.
+    readonly property int frameMaxLines: 65000
+    function rateTooHigh(peakVelDegS) { return calib.linesPerDeg * Math.abs(peakVelDegS) > calib.lineMaxHz }
+
     // The trigger rate that sweep runs at — independent of the arc.
     function rateForSpeed(degPerSec) {
         return calib.linesPerDeg * degPerSec

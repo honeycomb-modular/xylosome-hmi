@@ -1313,6 +1313,9 @@ Item {
                 if (Beckhoff.connected) {
                     // real motion — xylod runs the sequence; its pass_start /
                     // pass_end / status events drive playhead + Recorder
+                    // The curve's line count assumes rate follows speed. Line
+                    // mode is a saved setting ramp may have left on "fixed".
+                    Beckhoff.setLineMode("curve")
                     Beckhoff.executeScan(Motor.colorMode,
                                          root.hand1Angle, root.hand2Angle,
                                          root.maxSpeed, root.minVelDegS(),

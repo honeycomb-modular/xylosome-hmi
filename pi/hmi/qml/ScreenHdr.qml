@@ -285,6 +285,7 @@ Item {
             // apart — measured 447 and 675 lines on a 3-bracket set. Both ends
             // move together, so the arc length and line count are unchanged.
             var lead = Calib.leadDeg(root.velFor(i))
+            Beckhoff.setLineMode("curve")   // saved setting — ramp may have left "fixed"
             Beckhoff.executeScan(1, root.hand1Angle + lead, root.hand2Angle + lead,
                                  root.velFor(i), 1.0,
                                  root.lines, root.flatProfile(), root.tagFor(i))

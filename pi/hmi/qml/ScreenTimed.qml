@@ -195,6 +195,7 @@ Item {
             // plannedLines is now sent, not just displayed: with max=min=velDegS
             // the rate works out to plannedLines/durationSec, so the "N lines"
             // readout above is what the trigger actually delivers.
+            Beckhoff.setLineMode("curve")   // saved setting — ramp may have left "fixed"
             Beckhoff.executeScan(1, root.hand1Angle, root.hand2Angle,
                                  root.velDegS, root.velDegS,
                                  root.plannedLines, root.buildFlatProfile())
