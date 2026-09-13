@@ -5,16 +5,29 @@ the notes under each item are the reasoning behind it.*
 
 ---
 
-## 0. Answer first — firmware questions (one `gcp` dump answers both)
+## 0. Answer first — firmware questions
 
 These change the shape of section 1, so do them before building the exposure panel.
 
-- [ ] **Does the HS-80 allow exposure time shorter than the line period?**
-  - If yes: a clean exposure axis independent of velocity — changes the shape of
-    the exposure panel, and helps the varying-speed sharpness problem too.
-  - If no: velocity / stages / gain is the complete set.
-- [ ] **Does a narrower cross-scan ROI raise max line rate?**
-  - If yes, narrowing FOV extends the fast end of the velocity range.
+- [x] **Does the HS-80 allow exposure time shorter than the line period?** — **No.**
+  - Answered 2026-09-13 from `docs/dalsa/Piranha_HS_Series_Camera_Manual.pdf`
+    §4.3.5, Table 10. The Piranha HS has only two exposure modes, and neither
+    has programmable exposure time: **mode 3** (external EXSYNC — what scans use)
+    and **mode 7** (internal `ssf` — LIVE / free-run). Both are "maximum exposure
+    time with no charge reset", so exposure always equals the line period.
+  - So **velocity / stages / gain is the complete set.** The exposure panel has
+    three axes, and exposure time cannot help the varying-speed sharpness problem.
+- [x] **Does a narrower cross-scan ROI raise max line rate?** — **No.**
+  - Manual §4.5.1: `roi` only picks the pixels used for statistics and
+    calibration commands (`ccg`, `gla`, `ccf`, …). It does not crop readout.
+  - Manual §4.3.5 (`ssf`): max line rate is set by **binning, `sot` throughput,
+    Camera Link mode (`clm`) and stage count**. So cross-scan FOV is a crop
+    only — in the grabber or at capture — and never extends the velocity range.
+  - What *does* raise the ceiling: `clm 21` (8-bit, 8 taps, 68.6 kHz) vs the
+    current `clm 16` (12-bit, 4 taps, 38.3 kHz), or horizontal binning (`sbh`,
+    halves resolution). Both are real trades, not free.
+- [ ] Optional: confirm both on the camera itself with one `gcp` — only through
+  the capture agent's existing path, never by restarting it (`COOP.md` §5).
 
 ---
 
@@ -30,7 +43,7 @@ never gets configured in three places that drift apart. Everything displayed in
 | Velocity | 1 stop per halving | Time, linearly. Nothing else, if subject is rigid + static |
 | TDI stages | 1 stop per doubling | Sharpness (stage count multiplies tracking mismatch). Needs flat subject — depth parallaxes across stages |
 | Gain | 1 stop per doubling | Shadow noise, ~halved SNR per stop |
-| Exposure time | ? | Free, if firmware exposes it — see §0 |
+| ~~Exposure time~~ | — | Not available on the HS-80 (§0): exposure = line period |
 
 - [ ] Build the shared exposure panel, reachable from every mode's parameter screen
 - [ ] Show predicted EV delta
@@ -42,7 +55,7 @@ never gets configured in three places that drift apart. Everything displayed in
   - Deficit is computed by the machine; the route is chosen by hand, per subject.
 
 ### Parameters live in the HMI
-- [ ] Camera: TDI stage count · analog gain · black level · bit depth · TDI direction · exposure time (if available)
+- [ ] Camera: TDI stage count · analog gain · black level · bit depth · TDI direction
 - [ ] Motion: velocity · accel · jerk
 - [ ] FOV: cross-scan ROI (pixel window along the line) · along-scan start/end
   - Aperture and ND stay **off** the screen — not machine-settable. Accepted
@@ -52,7 +65,7 @@ never gets configured in three places that drift apart. Everything displayed in
 ### FOV
 Two axes, both settable, **neither in the EV sum** — cropping doesn't change
 per-pixel brightness.
-- [ ] Cross-scan = sensor ROI (verify whether narrowing raises max line rate — §0)
+- [ ] Cross-scan = crop window along the line (grabber/capture crop — the camera's `roi` doesn't crop and doesn't raise line rate, §0)
 - [ ] Along-scan = pass start/end (multiplies pass duration alongside velocity)
 
 ### Live mode as synthetic preview
@@ -101,12 +114,20 @@ and optics.
 
 Squeezed = numerator too small = too many lines per unit of image travel.
 
-- [ ] Scan a square/grid target of known size, perpendicular to scan axis,
+- [x] Scan a square/grid target of known size, perpendicular to scan axis,
   constant velocity, rigid and flat
-- [ ] Measure the result in pixels both ways (cross-scan is the reference — it can't be wrong)
-- [ ] Apply ratio as correction (squeezed 8% → encoder counts per EXSYNC × 1.08)
-- [ ] Re-scan and confirm 1.00
+- [x] Measure the result in pixels both ways (cross-scan is the reference — it can't be wrong)
+- [x] Apply ratio as correction
+- [x] Re-scan and confirm 1.00
+  - **Done 2026-09-12** (`bd6494d`, plus `77849a2` / `60fe3e9` for arcs over 180°).
+    The correction went into the HMI line-count constant rather than encoder
+    counts per EXSYNC: `C` 8000 → 9310 in `pi/hmi/qml/ScreenScan.qml` (mirrored
+    in `pi/hmi/src/HttpServer.cpp`). Square target, 110° arc: +16.89% → −0.43%,
+    inside the target's ~0.5% repeatability. If the target is ever rigidly
+    fixed, ~9270 is the number to close the gap.
 - [ ] Store as **per-setup calibration** (per lens / working distance), not a global constant
+  - Today `C = 9310` is a hard-coded literal in two files — valid only for the
+    lens and working distance used on 2026-09-12.
 - [ ] HMI shows which calibration is loaded, so a pass never runs against another setup's number
 - [ ] If the trigger divider is integer-only: take nearest step, correct the
   residual in software as one scale factor at capture
