@@ -49,12 +49,17 @@ QtObject {
     // own number exactly as before. Found by sweeping it on a constant-speed
     // scan and scoring sharpness.
     //
+    // Defaults are the verified 2026-09-13 result: 149.5 lines/deg, on. Swept
+    // 112.5-187.5 (peak 149.5, 68% 147.5-149.8), then confirmed on a real 48-stage
+    // curve scan — the bin between the cars scored 0.23 at 175.3 and 0.52 here
+    // (docs/concept/calibration_modes_ideas.md). A saved value on the Pi wins.
+    //
     // Settings is held privately and only ever READ by the bindings below and
     // WRITTEN by the setters — no alias, so no path back into itself.
     property Settings _store: Settings {
         category: "calib"
-        property bool syncEnabled: false
-        property real syncLinesPerDeg: 175.3
+        property bool syncEnabled: true
+        property real syncLinesPerDeg: 149.5
     }
     readonly property bool syncEnabled:     calib._store.syncEnabled
     readonly property real syncLinesPerDeg: calib._store.syncLinesPerDeg

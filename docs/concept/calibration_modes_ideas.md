@@ -236,6 +236,20 @@ so stretch isn't read as blur. Scripts: `capture/tdi_sync_sweep.py` /
   high for this scene (≈8 px of smear at 48 stages).
 - Applied: `tdi.sync = on`, `lines/deg = 149.5` (Pi `~/.config/xylosome/XYLOSOME.conf`
   `[calib]`), so every mode uses it. Turn `tdi.sync` off to get the old per-mode numbers.
+  Also the code default in `Calib.qml` since `tdi.sync` was verified.
+- [x] **Verified on a real curve scan** (scan 1817, 48 stages, −6 dB, focus on
+  the bin between the two cars). Full-res crops of the bin at equal angular
+  size, `docs/concept/tdi_sync_bin_compare.png` (`capture/tdi_sync_crop.py`):
+
+  | crop | scan | setup | bin score |
+  |---|---|---|---|
+  | left | 1804 | curve, 175.3 lines/deg | 0.23 — edges doubled along scan |
+  | middle | 1817 | curve, 149.5 lines/deg + 27.1 ms trigger delay | **0.52** |
+  | right | 1812 | constant speed, 150 | 0.43 |
+
+  The curve scan now beats the constant-speed one, so the speed changes no
+  longer add blur: the trigger delay and the sync value are both doing their job.
+  1817 logged 21528 lines / 144° = 149.5 and `axis lag ~29.5 ms`.
 - [ ] Explain the 175.3 vs 149.5 gap. Sync depends on subject distance from the
   axis, so the square target likely sat at a different distance — re-check by
   placing it at the scene's depth. Until then, `C = 9310` is aspect-only.
