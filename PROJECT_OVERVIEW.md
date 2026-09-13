@@ -303,6 +303,9 @@ separate island (auxiliary analog out), not part of the EtherCAT motion chain.
 - Read a real **scan TIFF header** (bit depth + dimensions) and set the real
   **`line_max_hz`** from CamExpert.
 
+**Future improvements (imaging, modes, calibration):** tick-box checklist in
+`docs/concept/calibration_modes_ideas.md`.
+
 **Decisions pending (not blocking):**
 - Filter mechanism geometry + inter-pass time budget.
 - Which 50:1 harmonic drive to fit.
@@ -330,6 +333,7 @@ separate island (auxiliary analog out), not part of the EtherCAT motion chain.
 | `docs/grabber_io_wiring.md` | EL2521 → Xtium-CL MX4 line-trigger/encoder wiring (pins, Sapera params) |
 | `docs/cabinet_schematic.svg` | Cabinet stack + all connections (power, EtherCAT, network, motor, sync) |
 | `docs/concept/review_suite_plan.md` | Full Review Suite plan + design decisions |
+| `docs/concept/calibration_modes_ideas.md` | **Future improvements checklist**: HS-80 firmware questions, shared exposure panel, focus readout, curve-in-EV, squeeze calibration, xerox mode, varying-speed sharpness tests |
 | `suite/README.md`, `suite/NEXT_SESSION.md` | Suite build + resume handoff |
 | `docs/architecture/README.md` | Which architecture diagram is current vs stale |
 | `docs/concept/xylosome_ui_concept.docx` | Full screen spec + pendant interaction model |
