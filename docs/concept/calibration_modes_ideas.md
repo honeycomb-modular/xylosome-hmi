@@ -359,6 +359,15 @@ Decision pending (Hoyte) — the question last asked:
   now match). Residual: edges ~10% BRIGHTER than centre (centre/edge 0.90) — `ccp`
   saw one static patch whose lighting differs from the scanned average; redo `ccp`
   on a more even / defocused target if it shows in scenes. (1794/1795 were clipped.)
+- Sync check after the calibration (Hoyte asked): Pi `syncLinesPerDeg=149.5`,
+  `syncEnabled=true`; xylod trigger delay 27.1 ms, axis lag ~29.5 ms (same as 1817);
+  camera 48 stages, no binning, clm 16 — all unchanged. Street scans 1798–1803 are
+  smeared along the scan (sync-score bands down to 0.07–0.2; defocus would sit near 1)
+  because the camera was left in **reverse** after the reverse flat check
+  (`camera_settings.json` `"scan.dir": "reverse"`), not because of the FFC.
+  Confirmed: back to forward, same scene, scans 1808/1809 sharp (Hoyte), street
+  bands 0.83–2.5 vs 0.47–0.8 in reverse 1801. Lesson: after any reverse test, set
+  scan.dir back to forward — the setting persists across agent restarts.
 - [ ] Reverse 1797 collected 7909/8972 lines ("frame not filled", ~12% short;
   forward ~7 short) — grab/trigger side, unrelated to the calibration. Look into it.
 - [ ] Recalibrate if aperture, stages, or gain change (`ccp` at least).
