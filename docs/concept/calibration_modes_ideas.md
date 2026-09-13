@@ -254,3 +254,31 @@ so stretch isn't read as blur. Scripts: `capture/tdi_sync_sweep.py` /
   axis, so the square target likely sat at a different distance — re-check by
   placing it at the scene's depth. Until then, `C = 9310` is aspect-only.
 - [ ] Re-run the sweep whenever the lens, focus distance or subject depth changes.
+
+### Every mode on one sync rule — 2026-09-13
+
+Rule: trigger rate = lines/deg × actual speed, lines/deg from `Calib`.
+- [x] Curve, timed, HDR, stack, gradient, ramp (curve) take lines from `Calib`.
+- [x] Pendulum and party: lines are now automatic (`Calib.linesForTravel`), not
+  typed in; execute blocks if the trigger would pass 37 kHz or one frame
+  (65000 lines) (`e014962`).
+- [x] Line mode (curve/fixed) is a saved setting only ramp/gradient wrote, so a
+  ramp scan on `[line: fixed]` silently broke the next curve/timed/hdr/stack/
+  pendulum/party scan. Each now sets curve before executing (`e014962`).
+- [x] Time-indexed passes emitted 1.04% more lines than planned (sample mean
+  over n instead of the n−1 intervals) and cut the end off every pendulum.
+  Fixed in xylod + `Calib` (`d5cc024`); verified on the cart: 64376 emitted =
+  64376 planned.
+- Deliberately unsynced: freerun, ramp `[line: fixed]`, static/chrono.
+
+### Sharp return strokes — tried, not viable this way
+
+- [x] Mid-grab TDI direction flip (`scd 2` + grabber `LINESCAN_DIRECTION_OUTPUT`
+  set at each turnaround): the scan armed and ran, but the agent's scan thread
+  never came back from the first flip — scan 1824 lost, agent restart needed.
+  Reverted (`aa15750`, message has the details).
+- [ ] Remaining routes, both separate projects: serial `scd 0/1` per stroke
+  (slow; only long periods), or a dedicated hardware line to CC3.
+  Until then use `[lines: forward]`.
+- [ ] Agent `read_state()` crashes on an empty SYNC Frequency reply
+  (`float('')`) — seen when the camera was stuck in sem 3 + scd 2. One-line guard.
