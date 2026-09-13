@@ -107,25 +107,6 @@ EXTSYNC_EDITS = {
     "Line Integrate Input":  "0x1020001",   # CC1 = Pulse #1 (EXSYNC out)
 }
 
-# --- TDI direction follows the axis (EXPERIMENT, off by default) ------------
-# The camera's CCD shift runs one way, so a reversing pass (pendulum, party) is
-# sharp on one stroke and smeared on the other. `scd 2` hands the shift direction
-# to Camera Link CC3 (1 = forward), which the grabber drives as its linescan
-# direction output — settable from software. With dir.follow on, the camera goes
-# to scd 2 for the scan and the grabber's output is flipped at each turnaround,
-# read off xylod's axis velocity (status, 25 Hz). The switch lands where speed
-# passes through zero, so almost no lines are triggered while it is wrong.
-# UNKNOWN until tried: whether Sapera accepts the change mid-snap. Toggled over
-# :5521 (`set dir.follow on|off`), never persisted — a restart is always off.
-DIR_FOLLOW = {"on": False}
-DIR_HYST_DEGS = 0.5          # ignore velocity this close to zero
-DIRFLIP_EDITS = {
-    "LineScan Direction":          "1",          # camera HAS a direction input
-    "LineScan Direction Polarity": "2",          # active high = forward (CC3=1)
-    "LineScan Direction Output":   "1",          # start forward
-    "Linescan Direction Input":    "0x1020003",  # Camera Link, pin 3 = CC3
-}
-
 # ---------- camera serial (COM3) ----------
 ser_lock = threading.Lock()
 ser = serial.Serial(COM, BAUD, timeout=0.3)
@@ -180,11 +161,6 @@ def apply_set(key, value):
         v = float(value)
         if not (-10 <= v <= 10): return False, "-10..10 dB"
         cam_cmd("sag 0 %s" % v); return True, "ok"
-    if key == "dir.follow":
-        s = str(value).lower()
-        if s in ("on", "1", "true"):   DIR_FOLLOW["on"] = True;  return True, "ok (next scan)"
-        if s in ("off", "0", "false"): DIR_FOLLOW["on"] = False; return True, "ok (next scan)"
-        return False, "on|off"
     if key == "scan.dir":
         s = str(value).lower()
         if s in ("forward", "fwd", "0"): cam_cmd("scd 0"); return True, "ok"
@@ -355,7 +331,7 @@ class BoardLock:
 board_lock = BoardLock()
 
 _ccf_cache = {}
-def _ccf_for(lines, ext=EXT_SYNC, dirf=False):
+def _ccf_for(lines, ext=EXT_SYNC):
     # Derive a .ccf whose grabber frame height (Crop Height / Scale Vertical) is
     # `lines`. When `ext`, also apply EXTSYNC_EDITS so the grabber is paced by the
     # EL2521 line trigger (EXSYNC). Bit depth and tap layout are NOT patched here
@@ -363,7 +339,7 @@ def _ccf_for(lines, ext=EXT_SYNC, dirf=False):
     # The base .ccf is read-only under Program Files, so write the derived copy to
     # temp. Cached per (lines, ext).
     lines = max(LINE_MIN, min(LINE_MAX, int(lines)))
-    key = (lines, ext, dirf)
+    key = (lines, ext)
     cached = _ccf_cache.get(key)
     if cached and os.path.exists(cached):
         return cached
@@ -384,27 +360,21 @@ def _ccf_for(lines, ext=EXT_SYNC, dirf=False):
     if ext:
         for k, v in EXTSYNC_EDITS.items():
             txt = put(txt, k, v)
-    if dirf:
-        for k, v in DIRFLIP_EDITS.items():
-            txt = put(txt, k, v)
     if missing:
         print("capture: WARNING - %s lacks these keys, settings NOT applied: %s"
               % (os.path.basename(BASE_CCF), ", ".join(missing)))
     out = os.path.join(tempfile.gettempdir(),
-                       "xylosome_%s%s_%d.ccf" % ("ext" if ext else "free",
-                                                 "_dir" if dirf else "", lines))
+                       "xylosome_%s_%d.ccf" % ("ext" if ext else "free", lines))
     with open(out, "w", encoding="latin-1") as fh:
         fh.write(txt)
     _ccf_cache[key] = out
     return out
 
 class Grabber:
-    def __init__(self, lines=CAP_LINES, ext=EXT_SYNC, dirf=False):
+    def __init__(self, lines=CAP_LINES, ext=EXT_SYNC):
         self.ext = ext
-        self.dir = 1 if dirf else None     # +1 forward / -1 reverse; None = not following
-        self.flips = 0; self.flip_fail = 0; self.flip_ms = 0.0
         self.loc = SapLocation(SERVER, 0)
-        self.acq = SapAcquisition(self.loc, _ccf_for(lines, ext, dirf))
+        self.acq = SapAcquisition(self.loc, _ccf_for(lines, ext))
         self.buf = SapBuffer(1, self.acq, SapBuffer.MemoryType.ScatterGather)
         self.xfer = SapAcqToBuf(self.acq, self.buf)
         for o in (self.acq, self.buf, self.xfer):
@@ -433,23 +403,6 @@ class Grabber:
         raw = ctypes.string_at(int(self.ptr.ToInt64()), self.n * 2)
         img = np.frombuffer(raw, dtype="<u2").reshape(self.h, self.w)
         return img << RAW_SHIFT      # right-justified board data -> true 16-bit
-    def set_dir(self, d):
-        # Flip the grabber's linescan direction output (CC3) — the camera follows
-        # it under scd 2. Called mid-snap; whether Sapera allows that is the test.
-        val = (SapAcquisition.Val.LINESCAN_DIRECTION_FORWARD if d > 0
-               else SapAcquisition.Val.LINESCAN_DIRECTION_REVERSE)
-        t = time.monotonic()
-        try:
-            ok = bool(self.acq.SetParameter(SapAcquisition.Prm.LINESCAN_DIRECTION_OUTPUT, val, True))
-        except Exception as e:
-            ok = False; print("dir: flip raised:", e)
-        ms = (time.monotonic() - t) * 1000
-        if ok:
-            self.dir = d; self.flips += 1; self.flip_ms = max(self.flip_ms, ms)
-        else:
-            self.flip_fail += 1
-            if self.flip_fail <= 3: print("dir: flip to %s REFUSED (%.0fms)" % ("fwd" if d > 0 else "rev", ms))
-        return ok
     def frame(self):
         self.arm(); return self.collect()
     def close(self):
@@ -588,9 +541,7 @@ def cam_client(conn, addr):
             elif cmd == "set":
                 key, val = m.get("key"), m.get("value")
                 ok, note = apply_set(key, val)
-                # survives the next agent start — except the direction experiment,
-                # which must always come back off
-                if ok and key != "dir.follow": save_cam_setting(key, val)
+                if ok: save_cam_setting(key, val)   # survives the next agent start
                 print("  set %s=%s -> ok=%s (%s)" % (key, val, ok, note))
                 conn.sendall((json.dumps({"ack": "set", "ok": ok, "key": key, "value": val, "note": note}) + "\n").encode())
                 if ok: _bcast(dict({"ev": "state"}, **read_state()))
@@ -621,7 +572,6 @@ def xylod_client():
     in_seq = False # a sequence is in flight (board opened, or the open was refused)
     armed = None   # pass index whose EXSYNC snap is running, awaiting collect
     planned = 0    # lines xylod last said a pass will deliver (status, 25 Hz)
-    dir_scan = [False]  # this scan put the camera on scd 2 (restore on close)
 
     def open_board():
         nonlocal seq, grab, have
@@ -653,16 +603,6 @@ def xylod_client():
         # with the only print at the far end a stall looked exactly like "the agent
         # never received the event" — which cost a whole diagnosis on 2026-07-24.
         print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines, note))
-        if EXT_SYNC and DIR_FOLLOW["on"]:
-            # Before sem 3, while the camera still answers serial promptly. Gain,
-            # offset and flat-field are stored PER DIRECTION and swapped on every
-            # flip, so the reverse set must carry the same gain or alternate
-            # strokes differ in brightness. Then hand the direction to CC3.
-            # close_board() puts the camera back on scd 0.
-            g = str(load_saved_cam().get("gain", "-6"))
-            cam_cmd("scd 1"); cam_cmd("sag 0 %s" % g); cam_cmd("scd 2")
-            dir_scan[0] = True
-            print("dir: following axis — reverse gain %s dB, camera scd 2" % g)
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
         # A scan outranks a focus session: if LIVE has stranded the board, ask the
         # stalled holder to let go and try once more, rather than silently
@@ -674,7 +614,7 @@ def xylod_client():
             have = board_lock.acquire(who)
         if have:
             try:
-                grab = Grabber(lines=lines, dirf=dir_scan[0])
+                grab = Grabber(lines=lines)
                 print("CAPTURE seq %d board open (%s) %d lines%s"
                       % (seq, CAP_SYNC, lines, note))
             except Exception as e:
@@ -686,12 +626,6 @@ def xylod_client():
 
     def close_board():
         nonlocal grab, have, in_seq, armed
-        if dir_scan[0]:
-            if grab: print("dir: %d flips, %d refused, slowest %.0fms"
-                           % (grab.flips, grab.flip_fail, grab.flip_ms))
-            try: cam_cmd("scd 0")        # back to the fixed forward shift
-            except Exception: pass
-            dir_scan[0] = False
         if grab:
             try: grab.close()
             except Exception: pass
@@ -735,12 +669,6 @@ def xylod_client():
                             print("armed pass %d during settle (%dms)"
                                   % (p, (time.monotonic() - t_arm) * 1000))
                         except Exception as e: print("capture: arm failed:", e)
-                    if grab and grab.dir is not None and armed is not None:
-                        # Follow the axis: actual velocity, which lags the command by
-                        # the same ~27 ms the trigger is delayed, so sign and lines agree.
-                        v = float(m.get("velDegS") or 0.0)
-                        want = 1 if v > DIR_HYST_DEGS else (-1 if v < -DIR_HYST_DEGS else 0)
-                        if want and want != grab.dir: grab.set_dir(want)
                     if in_seq and p < 0 and st in ("idle", "fault", "estop"):
                         close_board()   # stop / fault mid-scan: no seq_done ever comes
                 elif ev == "pass_start":
