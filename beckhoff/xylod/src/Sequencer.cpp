@@ -42,6 +42,21 @@ double Sequencer::profileAt(double x) const {
     return p[i] * (1.0 - t) + p[i + 1] * t;
 }
 
+// The trigger rate is derived from the setpoint, but the axis reaches each
+// setpoint line_lag_ms later. Hold every rate back by that long so the sensor's
+// charge shift tracks the subject's real speed. On a constant-speed pass this
+// changes nothing but a fixed offset; on a speed curve it is the difference
+// between the rate and the motion disagreeing through every acceleration, which
+// 48 TDI stages multiply into smear.
+double Sequencer::delayLine(double hz) {
+    const double n = std::round(m_cfg.lineLagMs * 1000.0 / std::max(1, m_cfg.cycleUs));
+    m_lineDelay.push_back(hz);
+    if (double(m_lineDelay.size()) <= std::max(0.0, n)) return 0.0;
+    const double out = m_lineDelay.front();
+    m_lineDelay.pop_front();
+    return out;
+}
+
 void Sequencer::startMove(double target, double vel, double accel) {
     m_moveTarget = target;
     m_moveVelMax = std::max(0.5, vel);
@@ -418,6 +433,10 @@ void Sequencer::cycle(double dt) {
             event(b);
             m_passLines = 0.0;
             m_passHzMax = 0.0;
+            m_lineDelay.clear();
+            m_drainLeft = -1;
+            m_lagSum = 0.0;
+            m_lagN   = 0;
             LOGI("seq: pass %d begin — scale %.3f, rate %.0f Hz intended",
                  m_pass, passVelScale(), m_job.lineBaseHz * passVelScale());
             m_st = St::SeqRun;
@@ -431,17 +450,21 @@ void Sequencer::cycle(double dt) {
         const double dr = dt / 0.25;
         m_pauseRamp += std::max(-dr, std::min(dr, rampTarget - m_pauseRamp));
 
-        double lineHzNow = 0.0;
-        bool   passDone  = false;
+        double lineHzNow  = 0.0;   // rate the COMMANDED motion implies this cycle
+        bool   motionDone = false;
+        double vSigned    = 0.0;   // commanded output velocity, for the lag measurement
 
-        if (m_job.staticHold) {
+        if (m_drainLeft >= 0) {
+            // The sweep is over but the delayed trigger is not: hold the end pose
+            // (already snapped) and let the queued rates play out below.
+        } else if (m_job.staticHold) {
             // Hold the pose and run the trigger flat; the pass ends on the clock.
             // Paused time does not count, so a pause lengthens the wall-clock
             // capture without shortening the image.
             m_setpoint = m_job.arcStartDeg;
             lineHzNow  = m_job.lineBaseHz * m_pauseRamp;
             m_dwellS  += dt * m_pauseRamp;
-            passDone   = m_dwellS >= m_job.durationS;
+            motionDone = m_dwellS >= m_job.durationS;
         } else if (m_job.timeProfile) {
             // Reversible sweep. The profile is indexed by TIME and its samples
             // are signed, so the axis can turn around mid-pass — which is the
@@ -467,7 +490,8 @@ void Sequencer::cycle(double dt) {
             // TDI runs one way only — see ScanJob::lineForwardOnly. The axis
             // still travels the return stroke; it just is not scanned.
             if (m_job.lineForwardOnly && v <= 0.0) lineHzNow = 0.0;
-            passDone = m_dwellS >= m_job.durationS;
+            vSigned    = v;
+            motionDone = m_dwellS >= m_job.durationS;
         } else {
             const double arc = m_job.arcEndDeg - m_job.arcStartDeg;     // signed
             const double arcAbs = std::max(1e-6, std::fabs(arc));
@@ -490,27 +514,51 @@ void Sequencer::cycle(double dt) {
             lineHzNow = m_job.lineCurve
                 ? effBase * (v / std::max(1e-6, effMax))
                 : (m_st == St::SeqRun ? effBase : 0.0);
-            passDone = m_arcS >= arcAbs;
+            vSigned    = arc > 0 ? v : -v;
+            motionDone = m_arcS >= arcAbs;
         }
-        m_bk.setLineHz(lineHzNow);
+
+        // A static hold never moves, so there is no lag to match.
+        const double lineHzOut = m_job.staticHold ? lineHzNow : delayLine(lineHzNow);
+        m_bk.setLineHz(lineHzOut);
         if (m_st == St::SeqRun) {
-            m_passLines += lineHzNow * dt;
-            if (lineHzNow > m_passHzMax) m_passHzMax = lineHzNow;
+            m_passLines += lineHzOut * dt;
+            if (lineHzOut > m_passHzMax) m_passHzMax = lineHzOut;
+        }
+
+        // How far the axis really trails the command. The actual position is a
+        // cycle old, so this reads ~1 ms high; it is a check on line_lag_ms, not
+        // a controller. Slow speeds are skipped — dividing by v there is noise.
+        if (m_st == St::SeqRun && m_drainLeft < 0 && std::fabs(vSigned) > 20.0) {
+            m_lagSum += (m_setpoint - m_bk.axisPosDeg()) / vSigned;
+            m_lagN++;
         }
 
         // line-count blink: a snappy pulse every line_blink_div scanned lines
         if (m_st == St::SeqRun && m_cfg.lineBlinkDiv > 0.0) {
-            m_lineCount += lineHzNow * dt;
+            m_lineCount += lineHzOut * dt;
             const long tick = long(m_lineCount / m_cfg.lineBlinkDiv);
             if (tick != m_blinkTick) { m_blinkTick = tick; m_blinkLeft = m_cfg.lineBlinkMs * 1e-3; }
         }
 
-        if (passDone) {
+        // Each drain cycle above emitted one queued rate. The pass closes once
+        // the queue is empty, not when the command reaches the arc end.
+        bool passDone = false;
+        if (m_drainLeft > 0) --m_drainLeft;
+        if (m_drainLeft == 0) passDone = true;
+        if (motionDone && m_drainLeft < 0) {
             // Snap to the exact arc end so rounding cannot leave the pass short.
             // Neither a static hold nor a reversing sweep HAS an arc end, and
             // snapping one there would be a jump to somewhere it never was.
             if (!m_job.staticHold && !m_job.timeProfile)
                 m_setpoint = passArcStart() + (m_job.arcEndDeg - m_job.arcStartDeg);
+            m_drainLeft = m_job.staticHold ? 0 : int(m_lineDelay.size());
+            if (m_drainLeft == 0) passDone = true;
+        }
+
+        if (passDone) {
+            m_drainLeft = -1;
+            m_lineDelay.clear();
             m_bk.setLineHz(0.0);
             m_bk.setPassActive(false);
             char b[96];
@@ -520,8 +568,10 @@ void Sequencer::cycle(double dt) {
             // What the daemon BELIEVES it emitted. Compare against the capture
             // agent's collected count: if these agree and the agent sees fewer,
             // the pulses are lost past this point (EL2521 or cabling), not here.
-            LOGI("seq: pass %d end — emitted %.0f lines, peak %.0f Hz",
-                 m_pass, m_passLines, m_passHzMax);
+            LOGI("seq: pass %d end — emitted %.0f lines, peak %.0f Hz, "
+                 "axis lag ~%.1f ms (trigger delay %.1f ms)",
+                 m_pass, m_passLines, m_passHzMax,
+                 m_lagN ? 1000.0 * m_lagSum / m_lagN : 0.0, m_cfg.lineLagMs);
 
             if (m_pass + 1 < m_passCount) {
                 enterPass(m_pass + 1);

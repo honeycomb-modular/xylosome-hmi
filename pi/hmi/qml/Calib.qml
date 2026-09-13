@@ -58,10 +58,16 @@ QtObject {
     //   220 ->  55 deg/s : 675.4 lines shift  ->  t = 27.17 ms
     //
     // Two brackets agreeing to 0.7%, so it is a constant rather than a fit. Modes
-    // that run passes at DIFFERENT speeds must offset each pass by lead*velocity
-    // or the frames do not register; same-speed modes share the error and never
-    // show it. Re-measure the same way if the drive's acceleration changes.
-    readonly property real triggerLeadSec: 0.0271
+    // that ran passes at DIFFERENT speeds had to offset each pass by lead*velocity
+    // or the frames did not register; same-speed modes shared the error.
+    //
+    // 2026-09-13: xylod now delays the trigger itself by this measured lag
+    // (`line_lag_ms = 27.1` in xylod.conf), so the offset is gone at the source —
+    // and so is the TDI smear the same lag caused on speed curves, which a
+    // head-start here could never fix. Hence 0: adding a lead on top would now
+    // shift the brackets the other way. If line_lag_ms is ever set back to 0,
+    // put 0.0271 back here.
+    readonly property real triggerLeadSec: 0.0
 
     // Angular head-start a sweep at this speed needs to line up with the others.
     function leadDeg(degPerSec) { return calib.triggerLeadSec * degPerSec }

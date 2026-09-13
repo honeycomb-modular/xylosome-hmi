@@ -234,6 +234,7 @@ Item {
             // late — an angle that depends on speed. It is a start-of-pass
             // effect, so the START velocity is the one that sets it. Both ends
             // move together, leaving arc length and line count unchanged.
+            // (Zero since 2026-09-13: xylod delays the trigger by line_lag_ms.)
             var lead = Calib.leadDeg(root.velAt(0))
             // minVelDegS is a FLOOR, not the slow end: xylod applies it as
             // max(min·scale, profile·maxVel), and passing the real slow velocity

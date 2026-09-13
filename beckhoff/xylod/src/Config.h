@@ -45,6 +45,9 @@ struct Config {
                                              // achieved ssf is 37986.7. Overruns are
                                              // dropped silently — keep <= that, with
                                              // margin for the camera's ssf quantisation.
+    double lineLagMs    = 27.1;              // delay the trigger by the axis's lag behind the
+                                             // CSP setpoint, so the rate tracks where the
+                                             // subject IS, not where it was commanded. 0 = off.
 
     // ── digital I/O bit map ──────────────────────────────────────────────────
     int diHome = 0, diEndMin = 1, diEndMax = 2, diEstop = 3, diFwIndex = 4;

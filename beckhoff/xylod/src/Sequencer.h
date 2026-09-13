@@ -150,6 +150,7 @@ private:
     double passArcStart() const;              // arcStartDeg shifted by the pass offset
     double passVelScale() const;              // this pass's speed multiplier
     double profileAt(double x) const;         // linear interp; samples may be signed
+    double delayLine(double hz);              // trigger rate, delayed by line_lag_ms
     long long nowMs() const;
 
     const Config &m_cfg;
@@ -179,6 +180,14 @@ private:
     double m_passLines = 0.0;       // integral of lineHz over the current pass
     double m_passHzMax = 0.0;       // peak lineHz commanded during it
     double m_meanAbsProfile = 1.0;  // mean |profile|, time-indexed passes only
+    // Trigger delay line (line_lag_ms). The rate the motion implies goes in, and
+    // comes out that many cycles later — when the axis actually gets there.
+    // Once the commanded sweep ends, the pass stays open for the samples still
+    // queued, so the delay costs no lines.
+    std::deque<double> m_lineDelay;
+    int    m_drainLeft = -1;        // cycles of queued trigger left after the sweep; -1 = sweeping
+    double m_lagSum = 0.0;          // following error / velocity, summed over the pass
+    int    m_lagN   = 0;
     double m_lineCount  = 0.0;      // accumulated scanned lines this sequence
     int    m_plannedLines = 0;      // lines each pass will deliver, after the rate clamp
     long   m_blinkTick  = 0;        // last line_blink_div boundary crossed
