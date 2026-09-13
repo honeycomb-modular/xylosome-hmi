@@ -246,13 +246,31 @@ void Sequencer::cycle(double dt) {
             // decides how far it travels and how many lines it delivers.
             m_meanAbsProfile = 1.0;
             if (m_job.timeProfile && m_job.profile.size() >= 2) {
-                double s = 0.0;
                 // Gating to the forward stroke halves what is actually scanned,
                 // so the line-count target must be solved against the captured
                 // half only — otherwise a gated pass delivers half the aspect.
-                for (double p : m_job.profile)
-                    s += m_job.lineForwardOnly ? std::max(0.0, p) : std::fabs(p);
-                m_meanAbsProfile = std::max(1e-6, s / double(m_job.profile.size()));
+                //
+                // The mean of what the run loop actually integrates: profileAt()
+                // interpolates linearly across n-1 intervals, so this is the exact
+                // area under |p| (or max(0,p)) per interval. It used to be a plain
+                // sum over n samples, which counts one interval too many — a
+                // 97-sample pendulum emitted 97/96 = 1.04% more lines than planned
+                // and overflowed its frame, cutting the end off every scan.
+                const auto &pr = m_job.profile;
+                double area = 0.0;
+                for (size_t i = 0; i + 1 < pr.size(); i++) {
+                    const double a = pr[i], b = pr[i + 1];
+                    if (m_job.lineForwardOnly) {
+                        if (a >= 0.0 && b >= 0.0)      area += 0.5 * (a + b);
+                        else if (a > 0.0 || b > 0.0)   area += 0.5 * std::max(a, b) * std::max(a, b)
+                                                               / (std::fabs(a) + std::fabs(b));
+                    } else if ((a >= 0.0) == (b >= 0.0) || a == 0.0 || b == 0.0) {
+                        area += 0.5 * (std::fabs(a) + std::fabs(b));
+                    } else {                   // crosses zero mid-interval
+                        area += 0.5 * (a * a + b * b) / (std::fabs(a) + std::fabs(b));
+                    }
+                }
+                m_meanAbsProfile = std::max(1e-6, area / double(pr.size() - 1));
             }
             if (m_job.staticHold) {
                 // No sweep to integrate: the artist picks a line count and a

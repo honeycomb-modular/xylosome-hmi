@@ -85,15 +85,27 @@ QtObject {
     // lines / (mean|profile| * duration) — forward-only counts positive samples
     // only (Sequencer.cpp). Lines per degree then come out as exactly
     // lines / (peak * mean * duration); asking for linesPerDeg times that makes
-    // them equal the calibration. Uses the SAME sample mean xylod uses, not the
+    // them equal the calibration. Uses the SAME mean xylod uses — the exact area
+    // under the linearly interpolated profile over its n-1 intervals — not the
     // analytic one: at 16 samples a cycle mean|sin| is already 1.3% off 2/pi.
+    // Must stay identical to Sequencer.cpp, or sync and the frame size both drift.
     function linesForTravel(profile, peakVelDegS, durationSec, forwardOnly) {
         if (!profile || profile.length < 2) return 1
-        var s = 0
-        for (var i = 0; i < profile.length; i++)
-            s += forwardOnly ? Math.max(0, profile[i]) : Math.abs(profile[i])
+        var area = 0
+        for (var i = 0; i + 1 < profile.length; i++) {
+            var a = profile[i], b = profile[i + 1]
+            if (forwardOnly) {
+                if (a >= 0 && b >= 0)     area += 0.5 * (a + b)
+                else if (a > 0 || b > 0)  area += 0.5 * Math.max(a, b) * Math.max(a, b)
+                                                  / (Math.abs(a) + Math.abs(b))
+            } else if ((a >= 0) === (b >= 0) || a === 0 || b === 0) {
+                area += 0.5 * (Math.abs(a) + Math.abs(b))
+            } else {
+                area += 0.5 * (a * a + b * b) / (Math.abs(a) + Math.abs(b))
+            }
+        }
         return Math.max(1, Math.round(calib.linesPerDeg * Math.abs(peakVelDegS)
-                                      * (s / profile.length) * durationSec))
+                                      * (area / (profile.length - 1)) * durationSec))
     }
     // xylod's line_max_hz. A synced trigger peaks at linesPerDeg * peak speed; a
     // reversing pass cannot slow down to fit (there is no single peak to cap), so
