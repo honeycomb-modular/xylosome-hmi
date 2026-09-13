@@ -200,4 +200,43 @@ the two modes differ only in the profile:
 - [ ] Confirm on one curve scan: blur bands should sit where the curve is steepest, not where it's slowest
 - [ ] Velocity ramp — does blur track |accel| or v?
 - [ ] Stages 32 → 16 → 8 (blur roughly halving confirms stage mismatch; costs a stop each step)
-- [ ] Log Beckhoff actual-vs-commanded following error, correlate with blur bands
+- [x] Log Beckhoff actual-vs-commanded following error — done 2026-09-13: every
+  `pass N end` line now reports `axis lag ~N ms`. First real curve scan: 29.6 ms
+  (reads ~1 ms high) against the 27.1 ms `line_lag_ms` now in xylod (`91af11d`).
+
+### TDI sync calibration — 2026-09-13 (48 stages, −6 dB)
+
+Stages went 16 → 48 and curve scans looked softer: at 48 stages lines/deg must
+be right to ~2%. Modes disagreed (curve 175.3, timed 150, Calib 150.65), so it
+was measured instead. Method: xylod driven directly, single constant-speed pass
+14° → 158°, line rate held at 10.8 kHz so exposure is identical, lines/deg
+swept. Score = along-scan detail energy ÷ across-sensor detail energy in the
+same TIFF, after box-resampling every scan to one angular grid (140 lines/deg)
+so stretch isn't read as blur. Scripts: `capture/tdi_sync_sweep.py` /
+`capture/tdi_sync_score.py`.
+
+| lines/deg | scan | score |
+|---|---|---|
+| 112.5 | 1809 | 0.235 |
+| 125 | 1810 | 0.274 |
+| 137.5 | 1811 | 0.445 |
+| 145 | 1813 | 0.616 |
+| 147.5 | 1814 | 0.628 |
+| **150** | 1805 / 1812 | **0.664 / 0.627** |
+| 152.5 | 1815 | 0.596 |
+| 155 | 1816 | 0.548 |
+| 162.5 | 1806 | 0.440 |
+| 175 | 1807 | 0.325 |
+| 187.5 | 1808 | 0.145 |
+
+(1805–1808 ran at 72 °/s with varying rate; 150 repeated at constant rate agrees.)
+
+- **Peak 149.5 lines/deg** (quadratic fit, 68% bootstrap 147.5–149.8) — within
+  1% of the 2026-08-09 doorframe value 150.65. The square target's 175.3 is 17%
+  high for this scene (≈8 px of smear at 48 stages).
+- Applied: `tdi.sync = on`, `lines/deg = 149.5` (Pi `~/.config/xylosome/XYLOSOME.conf`
+  `[calib]`), so every mode uses it. Turn `tdi.sync` off to get the old per-mode numbers.
+- [ ] Explain the 175.3 vs 149.5 gap. Sync depends on subject distance from the
+  axis, so the square target likely sat at a different distance — re-check by
+  placing it at the scene's depth. Until then, `C = 9310` is aspect-only.
+- [ ] Re-run the sweep whenever the lens, focus distance or subject depth changes.
