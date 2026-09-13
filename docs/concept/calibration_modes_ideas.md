@@ -299,16 +299,70 @@ deleted in the Suite so could not be used):
   densest in columns ~2000–4100. Deepest: columns 2404–2415, ≈ −8%, identical
   in all four scans. Other sharp steps at 5115 (+3.4%), 6656 (−4%).
 - NO steps at the 4-tap boundaries (2048/4096/6144) → not tap mismatch.
+  (WRONG — see flat-target scans below: steps every 512 columns.)
 - Plot: `docs/concept/sensor_bands_profile.png` (top: whole sensor, blue lines =
   tap boundaries; bottom: columns 2300–2520, one colour per scan).
 - Diagnosis: dust/particles on the sensor window (thin dark shadows), plus a
   smaller general PRNU underneath.
 
+**Flat-target scans 1792/1793 (2026-09-13, 48 stages, 0 dB, forward)** — Hoyte
+scanned an evenly lit surface. Scripts `capture/sensor_flat_check.py`, `capture/sensor_tap_steps.py`; plot `docs/concept/sensor_flat_1793.png` (image, column means + trend, % vs trend).
+- The two scans' column patterns correlate 0.99; first vs second half of 1793: 0.996.
+- **Correction to the above: there ARE tap steps — at every 512 columns** (the
+  sensor's 16 taps; `sag`/`sao`/`ssg` take tap 0–16), not at the 4 Camera Link
+  taps. The 129-px running median followed the steps, so the high-pass hid them.
+  Steps at 512…7680 (%): +17.0 +12.3 +8.9 +5.3 +1.1 −0.7 +0.1 −0.4 −2.2 −0.5
+  −3.7 −5.2 −6.3 −2.6 −1.7. Largest toward the edges, where the falloff is steep.
+- Same left-side steps (+17 +13/14 +9 +6) in old scene scans 1694, 1723, 1785,
+  1786 (16 stages, 0 dB) → long-standing, not caused by today's gain change.
+- Large-scale falloff centre/edge ≈ 1.7 (lens vignetting + lighting, can't separate).
+- Dark lines on the flat (vs local trend): 2403–2422 −7.5%, 802–819 −5.3%,
+  1954–1970 −3.9%, 5816–5834 −3.9%, 6657–6667 −2.7%, single column 1024 −2.4%,
+  + ~14 more between −1.5 and −2.2%. Column-scale ripple 0.57% rms.
+- Open: why the taps mismatch. Candidates: pixel coefficients off / not the
+  factory set (`gcp` → "FFC Coefficient Set", "FPN/PRNU Coefficients"), or the
+  agent's `sag 0 <dB>` flattening per-tap gain trims. `ccp` corrects taps,
+  vignetting and dust in one go regardless (per-pixel coefficients).
+
 Decision pending (Hoyte) — the question last asked:
 - [ ] **Option 1 — clean the sensor window** (manual p.113: lens off, compressed
   air; if needed ESD-safe wiper + alcohol, slowly, across the short width; no
   cotton swabs). Then one scan with sky → re-run the measure script.
-- [ ] **Option 2 — camera flat-field correction** for what remains: `ccf` (FPN,
+- [x] Hoyte chose **Option 2** (2026-09-13). Raw serial pass-through added to the
+  agent (`{"cmd":"raw","line":...}` on :5521, allowlisted, ccf/ccp/gla hold the
+  board) + client `capture/cam_raw.py`. Uncommitted; needs the elevated agent restart.
+**Root cause found (2026-09-13, via the pass-through):**
+- The raw sensor (`gla`, no coefficients) has NO section steps. They came from the
+  loaded **FFC set 3**: FPN all 0, PRNU jumping at section edges (px 7680→7681:
+  1360→600 → predicted +16.2% vs measured +17.0% at image col 512; px 512→513
+  predicted −1.6% vs −1.7%). Coefficient = 1 + value/4096. User sets 1, 2, 4 had
+  the same fault; factory set 0 was sane (FPN ~78, +0.9% at that edge).
+- **Reverse** carried per-section analog *reference* gains of +5.6…+8.9 dB
+  (bathtub, highest at the edges = an old `ccg` run with the lens on); forward was
+  0. So reverse passes were ~2–2.7× brighter than forward.
+- Camera is mirrored (`Mirroring Mode: 1, right to left`): image col c = sensor px 8193−c.
+
+**Done (Hoyte approved; lens, aperture and target as at the time of calibration):**
+- Reverse reference cleared: `sag t −ref` per section (exact values from `get ugr t`)
+  → totals 0.0 → `ugr`. Raw reverse then matched forward within 1–3% per section.
+- Set 1 recalibrated both directions, 48 stages, 0 dB: `ccf` lens capped (dark ≈79–81),
+  `wfc 1`; `ccp` on the flat target at `ssf 15000` (brightest px 82–84%), `wpc 1`.
+  No warnings. Forward coefficients lift the dust line (px 5770–5797: 745→1072→719);
+  reverse shows no bump there or mirrored — reverse probably uses the other
+  48 stage rows, so it doesn't see that particle.
+- Restored `scd 0`, `ssf 38000`, `epc 1 1`, then `wus`. Old sets 2, 3, 4 untouched (all bad).
+- Pass-through allowlist now also has `sag`/`ugr`; `gla` timeout 120 s (a full-width
+  `gla` takes ~70 s at 9600 baud and spilled into the next reply at 30 s).
+- [x] Verified with flat scans (Hoyte: "looks good"). Forward 1796 / reverse 1797:
+  section steps within ±0.3% (were up to +17%), dark lines deeper than −1.5%: 0
+  (were 20), ripple 0.10 / 0.08% rms (was 0.57%), mean 2893 vs 2790 DN (directions
+  now match). Residual: edges ~10% BRIGHTER than centre (centre/edge 0.90) — `ccp`
+  saw one static patch whose lighting differs from the scanned average; redo `ccp`
+  on a more even / defocused target if it shows in scenes. (1794/1795 were clipped.)
+- [ ] Reverse 1797 collected 7909/8972 lines ("frame not filled", ~12% short;
+  forward ~7 short) — grab/trigger side, unrelated to the calibration. Look into it.
+- [ ] Recalibrate if aperture, stages, or gain change (`ccp` at least).
+- [ ] Old, now superseded: **Option 2 — camera flat-field correction** for what remains: `ccf` (FPN,
   lens capped), `ccp` (PRNU, even defocused white target), save `wfc`/`wpc`,
   enable `epc 1 1`. At working setup: 48 stages, −6 dB, forward (scd 0), and
   redo if aperture changes. COM3 is owned by the capture agent → needs a small

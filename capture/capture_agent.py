@@ -111,16 +111,21 @@ EXTSYNC_EDITS = {
 ser_lock = threading.Lock()
 ser = serial.Serial(COM, BAUD, timeout=0.3)
 
-def cam_cmd(cmd):
+_CAM_NOT_OK = re.compile(r"(Warning|Error) \d+:[^\r\n]*>\s*$")
+
+def cam_cmd(cmd, timeout=3, stop_on_warning=False):
     with ser_lock:
         ser.reset_input_buffer()
         ser.write((cmd + "\r").encode())
-        buf = ""; deadline = time.time() + 3
+        buf = ""; deadline = time.time() + timeout
         while time.time() < deadline:
             chunk = ser.read(4096).decode(errors="replace")
             if chunk:
                 buf += chunk
                 if buf.rstrip().endswith("OK>"): break
+                # a Warning/Error prompt ends the reply too; without this a long
+                # timeout (ccf/ccp) would sit out its whole deadline on a warning
+                if stop_on_warning and _CAM_NOT_OK.search(buf): break
     return buf
 
 def field(text, label):
@@ -167,6 +172,31 @@ def apply_set(key, value):
         if s in ("reverse", "rev", "1"): cam_cmd("scd 1"); return True, "ok"
         return False, "forward|reverse"
     return False, "unknown key"
+
+# Serial pass-through for flat-field calibration (checklist §7). Allowlisted verbs
+# with their reply timeouts; nothing here is written to camera_settings.json.
+# ccf/ccp need the camera free-running (sem 7) at a fixed direction (scd 0/1, not 2)
+# for the whole sample, so those and gla hold the board: a LIVE or grab that tries
+# to start meanwhile is refused instead of flipping the camera to sem 3 mid-sample.
+# sag (per tap) + ugr: clearing a stale per-tap gain reference (reverse had +5.6..8.9 dB
+# left from an old ccg run with the lens on). gla over the full 8192 px takes ~70 s at
+# 9600 baud; a timeout shorter than the dump spills its tail into the next reply.
+RAW_TIMEOUT = {"gcp": 5, "get": 5, "vt": 5, "css": 5, "roi": 5, "epc": 5, "rpc": 5,
+               "scd": 5, "sem": 5, "ssf": 5, "sag": 5, "ugr": 15, "lpc": 15, "gla": 120,
+               "ccf": 120, "ccp": 120, "cpa": 120, "wfc": 60, "wpc": 60, "wus": 60}
+RAW_HOLDS_BOARD = {"gla", "ccf", "ccp", "cpa"}
+
+def raw_cmd(line):
+    parts = line.split()
+    verb = parts[0].lower() if parts else ""
+    if verb not in RAW_TIMEOUT: return False, "not allowed: %r" % verb
+    hold = verb in RAW_HOLDS_BOARD
+    if hold and not board_lock.acquire("calibration: " + line):
+        return False, "board busy (%s)" % board_lock.status()
+    try:
+        return True, cam_cmd(line, RAW_TIMEOUT[verb], stop_on_warning=True)
+    finally:
+        if hold: board_lock.release()
 
 # Camera settings pushed on agent startup, overriding whatever the camera
 # powered up with. Forward scan direction is markedly sharper on the bench;
@@ -545,6 +575,11 @@ def cam_client(conn, addr):
                 print("  set %s=%s -> ok=%s (%s)" % (key, val, ok, note))
                 conn.sendall((json.dumps({"ack": "set", "ok": ok, "key": key, "value": val, "note": note}) + "\n").encode())
                 if ok: _bcast(dict({"ev": "state"}, **read_state()))
+            elif cmd == "raw":
+                line = str(m.get("line", "")).strip()
+                ok, reply = raw_cmd(line)
+                print("  raw %r -> ok=%s %r" % (line, ok, reply[-120:]))
+                conn.sendall((json.dumps({"ack": "raw", "ok": ok, "line": line, "reply": reply}) + "\n").encode())
             else:
                 conn.sendall((json.dumps({"ack": cmd, "ok": False}) + "\n").encode())
     except (OSError, ConnectionError): pass
