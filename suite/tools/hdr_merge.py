@@ -685,7 +685,7 @@ def tonemap(v, knee):
     return np.clip(y, 0.0, 1.0) ** (1.0 / 2.2)
 
 
-def merge(bs, geo, W, P, out_path, flat=None, ref=0):
+def merge(bs, geo, W, P, out_path, flat=None, ref=0, write_view=False):
     # The output grid has to land inside every bracket at BOTH ends. A negative
     # fitted offset puts the source row below 0 near the top, and a negative
     # numpy slice start wraps to the end of the file — which yields an empty
@@ -737,9 +737,14 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
 
     out = tifffile.memmap(out_path, shape=(H, Wout), dtype=np.float32,
                           photometric="minisblack", bigtiff=True)
+    # The float file is the result; the preview is a glance at it. The 16-bit
+    # tone-mapped "_view" (another 870 MB per merge) is opt-in — nothing reads
+    # it, and the preview is built straight from the float chunks.
     view_path = os.path.splitext(out_path)[0] + "_view.tif"
     view = tifffile.memmap(view_path, shape=(H, Wout), dtype=np.uint16,
-                           photometric="minisblack", bigtiff=True)
+                           photometric="minisblack", bigtiff=True) if write_view else None
+    step = PREVIEW_STEP
+    prev = np.zeros(((H + step - 1) // step, (Wout + step - 1) // step), np.uint8)
     all_clipped = rescued = salvaged = floored = 0
     kept = np.zeros(len(bs)); offered = np.zeros(len(bs))
     for y0 in range(0, H, CHUNK):
@@ -815,15 +820,22 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
         chunk = (rad * scale).astype(np.float32)
         rescued += int((chunk > knee).sum())
         out[y0:y1] = chunk
-        view[y0:y1] = (tonemap(chunk, knee) * 65535.0 + 0.5).astype(np.uint16)
+        if view is not None:
+            view[y0:y1] = (tonemap(chunk, knee) * 65535.0 + 0.5).astype(np.uint16)
+        ys = np.arange(y0, y1)
+        sel = ys[ys % step == 0]
+        prev[sel // step] = (tonemap(chunk[sel - y0, ::step], knee) * 255.0 + 0.5).astype(np.uint8)
         print(f"  rows {y0:6d}-{y1:6d}", end="\r")
-    out.flush(); view.flush()
+    out.flush()
+    if view is not None:
+        view.flush()
     px = H * W
     print(f"\nwrote {out_path}  ({os.path.getsize(out_path)/1e6:.0f} MB, 32-bit float, "
           f"1.0 = brightest recoverable)")
     # Not "wrote ": the Suite takes the last such line as the merge result.
-    print(f"  viewable  -> {view_path}  (16-bit, highlights rolled off above "
-          f"{knee:.3f})")
+    if view is not None:
+        print(f"  viewable  -> {view_path}  (16-bit, highlights rolled off above "
+              f"{knee:.3f})")
     print("  ghost rejection, share of each bracket's weight removed: " +
           ", ".join(f"{b['name']}: {100.0 * (1 - k / max(o, 1e-9)):.1f}%"
                     for b, k, o in zip(bs, kept, offered)))
@@ -833,7 +845,7 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
     print(f"  saturated in every bracket     : {all_clipped:,} px ({100.0*all_clipped/px:.4f}%)")
     print(f"  raised to a clipped bracket's floor: {floored:,} px ({100.0*floored/px:.4f}%)"
           f"  <- the unclipped brackets claimed less than a clipped one proved")
-    return view
+    return prev
 
 
 def check_agreement(bs, geo, P):
@@ -862,10 +874,13 @@ def check_agreement(bs, geo, P):
               f"(IQR {np.percentile(ratio,25):.3f}-{np.percentile(ratio,75):.3f})")
 
 
-def preview(view, path, step=12):
-    img = (np.asarray(view[::step, ::step]) >> 8).astype(np.uint8)
+PREVIEW_STEP = 12    # every 12th row and column of the merge, tone-mapped, 8-bit
+
+
+def preview(img, path):
     tifffile.imwrite(path, img, photometric="minisblack")
-    print(f"  preview -> {path}  ({img.shape[1]} x {img.shape[0]}, same curve as the viewable file)")
+    print(f"  preview -> {path}  ({img.shape[1]} x {img.shape[0]}, 1/{PREVIEW_STEP} scale, "
+          f"tone-mapped)")
 
 
 def main():
@@ -878,6 +893,9 @@ def main():
                     help="one black level for the whole line instead of a "
                          "per-column profile (for comparing the two)")
     ap.add_argument("--suffix", default="", help="appended to the output name")
+    ap.add_argument("--view", action="store_true",
+                    help="also write a 16-bit tone-mapped _view.tif (870 MB); the "
+                         "float file and the preview are what you normally want")
     ap.add_argument("--flat", default="",
                     help="scan number or path of a FLAT FIELD sweep (evenly lit, "
                          "featureless, defocused). Corrects the sensor's "
@@ -937,8 +955,8 @@ def main():
             sys.exit(f"flat field not found: {fp}")
         flat = load_flat(fp, float(P) if np.isscalar(P) else float(np.median(P)))
 
-    view = merge(bs, geo, W, P, out_path, flat, ref)
-    preview(view, os.path.join(args.out, stem + "_preview.tif"))
+    prev = merge(bs, geo, W, P, out_path, flat, ref, write_view=args.view)
+    preview(prev, os.path.join(args.out, stem + "_preview.tif"))
 
 
 if __name__ == "__main__":

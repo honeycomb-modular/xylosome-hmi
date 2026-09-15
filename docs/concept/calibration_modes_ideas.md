@@ -141,7 +141,7 @@ Set FOV and duration. Once the scan is running, the red execute button is
 re-bound: **press = motor halts, release = motor accelerates back**. Camera keeps
 acquiring, so every press paints a smear stripe into the image.
 
-**Built 2026-09-15 (`capture.xerox`, xylod `xerox` execute flag) — untested on hardware.**
+**Built 2026-09-15 (`capture.xerox`, xylod `xerox` execute flag) — first hardware run same day, Hoyte: "it's great".**
 
 - [x] **Decide: FOV vs duration** → (b) **travel fixed**, duration extends by the halted time (Hoyte 2026-09-15).
   - The line count grows by `rate × halted time`; the image gets longer, never cut short.
@@ -160,8 +160,8 @@ acquiring, so every press paints a smear stripe into the image.
   - Brightness is unchanged — stripe is repeated, not brighter (same integration time per line).
 - [x] **Frame room**: `haltBudgetS = (65000 − FOV lines) / rate` is sent; xylod adds it to `plannedLines`
   so the agent sizes the frame, and refuses halts once spent. Settle is 2000 ms (big buffer clear).
-- [ ] **Verify on hardware**: halt/release latency, stripe edge look per brake setting, frame arm time
-  with a ~65000-line buffer, and that the FOV completes after a spent budget.
+- [x] **Verify on hardware**: first run 2026-09-15 worked as intended (Hoyte). Not yet measured: halt/release
+  latency, stripe edge look per brake setting, frame arm time with a ~65000-line buffer, spent-budget behaviour.
 - [ ] Set EL1xxx **input filter** to minimum (often 3 ms default)
   - Chain: button → input filter → EtherCAT cycle → NC cycle → decel ramp. Ramp
     dominates: stop distance `v²/2a`. Lower base velocity and higher decel both
