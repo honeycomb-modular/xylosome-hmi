@@ -96,14 +96,20 @@ void PendantReader::handleLine(const QByteArray &line)
     else if (line == "JOG -1")      postKey(Qt::Key_Up);      // CCW → prev
     else if (line == "ENC_SW DOWN") postKey(Qt::Key_Return);  // click → enter
     else if (line == "BTN2 DOWN")   postKey(Qt::Key_Escape);  // back
-    else if (line == "BTN1 DOWN")   postKey(Qt::Key_Delete);  // context
-    // READY and *_UP lines are ignored.
+    // BTN1 is the one button whose RELEASE matters: capture.xerox halts the
+    // axis while it is held and lets it go on release. So its edges are
+    // forwarded as they happen, not as a press+release pair on DOWN.
+    else if (line == "BTN1 DOWN")   postKey(Qt::Key_Delete, true,  false);  // context
+    else if (line == "BTN1 UP")     postKey(Qt::Key_Delete, false, true);
+    // READY and the other *_UP lines are ignored.
 }
 
-void PendantReader::postKey(int key)
+void PendantReader::postKey(int key, bool press, bool release)
 {
     if (!m_target)
         return;
-    QGuiApplication::postEvent(m_target, new QKeyEvent(QEvent::KeyPress,   key, Qt::NoModifier));
-    QGuiApplication::postEvent(m_target, new QKeyEvent(QEvent::KeyRelease, key, Qt::NoModifier));
+    if (press)
+        QGuiApplication::postEvent(m_target, new QKeyEvent(QEvent::KeyPress,   key, Qt::NoModifier));
+    if (release)
+        QGuiApplication::postEvent(m_target, new QKeyEvent(QEvent::KeyRelease, key, Qt::NoModifier));
 }

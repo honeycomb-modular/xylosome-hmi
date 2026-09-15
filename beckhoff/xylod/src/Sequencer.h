@@ -98,6 +98,22 @@ struct ScanJob {
     // different gain set. So the return stroke is simply not captured.
     // Costs half the lines per cycle; the image is sharp throughout.
     bool   lineForwardOnly = false;
+
+    // ── xerox: halt the axis mid-sweep, keep scanning ────────────────────────
+    // A plain sweep (position-indexed, FOV fixed) whose pause has different
+    // rules. Pause normally ramps the TRIGGER down with the motion, so a halt is
+    // a gap in the image. Here the rate never changes: every line is integrated
+    // for the same time whatever the axis does, and while it stands still the
+    // same subject line is written over and over — a photocopier dragged to a
+    // stop. The FOV still completes; the pass just takes longer, by exactly the
+    // halted time. Line mode is forced to fixed.
+    bool   xerox       = false;
+    double haltRampS   = 0.0;      // full speed → standstill (and back), s; 0 = as hard as
+                                   // acc_limit_degs2 allows. Never faster than that.
+    double haltBudgetS = 0.0;      // total halted time the frame has room for. The lines
+                                   // it adds go into plannedLines so the capture side
+                                   // sizes the frame; once spent, halts are refused so the
+                                   // FOV is never cut off.
 };
 
 struct SeqCommand {
@@ -205,7 +221,13 @@ private:
     long   m_blinkTick  = 0;        // last line_blink_div boundary crossed
     double m_blinkLeft  = 0.0;      // remaining pulse time, s
     double m_pauseRamp = 1.0;       // 1 running → 0 paused (slewed)
+    double m_pauseRampS = 0.25;     // full slew time, s (xerox: haltRampS, accel-bounded)
     bool   m_pausing = false;
+    // Xerox halt budget. Lines emitted beyond what the motion alone would have,
+    // i.e. baseHz × halted time (ramps counted by their stationary fraction).
+    double m_haltLines = 0.0;
+    double m_haltBudgetLines = 0.0;
+    bool   m_haltSpent = false;     // budget gone: halts are refused for the rest of the job
     double m_indexPulseLeft = 0.0;  // pass_index pulse timer, s
     bool   m_estopLatched = false;
     double m_faultResetHoldS = 0.0; // ignore the drive's fault bit while a reset lands

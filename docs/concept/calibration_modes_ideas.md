@@ -141,23 +141,27 @@ Set FOV and duration. Once the scan is running, the red execute button is
 re-bound: **press = motor halts, release = motor accelerates back**. Camera keeps
 acquiring, so every press paints a smear stripe into the image.
 
-- [ ] **Decide: FOV vs duration** (they conflict as soon as you press; base velocity = FOV/duration, every halt adds time)
-  - (a) duration fixed → line count fixed → travel falls short of FOV, or
-  - (b) travel fixed → duration extends → image gets longer
-  - Don't let the machine speed up to catch up — that changes exposure mid-pass.
-- [ ] Rebind execute button during scan: momentary/held, not toggle, must **not** trigger abort
-- [ ] **Free-run line trigger** in this mode (hard requirement)
-  - If EXSYNC stays encoder-locked, stopping the motor stops the triggers — a gap,
-    not a smear. Must run on the internal timer line rate.
+**Built 2026-09-15 (`capture.xerox`, xylod `xerox` execute flag) — untested on hardware.**
+
+- [x] **Decide: FOV vs duration** → (b) **travel fixed**, duration extends by the halted time (Hoyte 2026-09-15).
+  - The line count grows by `rate × halted time`; the image gets longer, never cut short.
+  - The machine never speeds up to catch up — the rate is flat for the whole pass.
+- [x] Rebind execute button during scan: BTN1 held = halt, released = go. Abort is `[abort]` on the ring.
+  - `PendantReader` now forwards `BTN1 UP` as a key release; `main.qml` routes it to `btn1Release()`.
+- [x] **Free-run line trigger** — not needed as such: the EL2521 *is* the grabber's "encoder", and xylod
+  keeps emitting at the flat rate while the axis stands still, so the grabber keeps clocking lines.
+  (`lineHzNow = effBase` in every state of a xerox pass, including paused.)
 - [ ] Make **TDI stages** a control in this mode
-  - 1 stage = clean repeated lines, true xerox smear. 32 stages with the object
-    stationary = blurred stripe. Both usable.
-- [ ] Tune stripe **edges** via decel/jerk; try drive quick-stop (own decel ratio) instead of profile decel
-  - Decel ramp puts a gradient tail in; accel ramp puts one on the way out. Soft
-    S-curve is the enemy.
-- [ ] Show the **stripe length** trade: `hold duration × line rate`
-  - Longer line period (brighter) = fewer lines/sec = shorter stripes.
-  - Brightness is unchanged — stripe is repeated, not brighter.
+  - 1 stage = clean repeated lines, true xerox smear. 48 stages (current) with the object
+    stationary = blurred stripe. Both usable. Camera-side setting, capture agent owns it.
+- [~] Stripe **edges**: `[brake]` on the screen = hard (accel limit) · medium 150 ms · soft 600 ms,
+  a linear velocity slew (= constant decel). Drive quick-stop not tried.
+- [~] **Stripe length** = `hold duration × line rate`; the screen shows the rate and counts halted lines live.
+  - Brightness is unchanged — stripe is repeated, not brighter (same integration time per line).
+- [x] **Frame room**: `haltBudgetS = (65000 − FOV lines) / rate` is sent; xylod adds it to `plannedLines`
+  so the agent sizes the frame, and refuses halts once spent. Settle is 2000 ms (big buffer clear).
+- [ ] **Verify on hardware**: halt/release latency, stripe edge look per brake setting, frame arm time
+  with a ~65000-line buffer, and that the FOV completes after a spent budget.
 - [ ] Set EL1xxx **input filter** to minimum (often 3 ms default)
   - Chain: button → input filter → EtherCAT cycle → NC cycle → decel ramp. Ramp
     dominates: stop distance `v²/2a`. Lower base velocity and higher decel both

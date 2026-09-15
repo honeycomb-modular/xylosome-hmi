@@ -66,6 +66,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenLive.qml
         qml/ScreenScan.qml
         qml/ScreenTimed.qml
+        qml/ScreenXerox.qml
         qml/ScreenStatic.qml
         qml/ScreenChrono.qml
         qml/ScreenRamp.qml

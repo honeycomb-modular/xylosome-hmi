@@ -422,7 +422,9 @@ void Sequencer::cycle(double dt) {
                          m_job.lineTarget, m_job.durationS, want, m_cfg.lineMaxHz);
                 m_job.lineBaseHz = std::min(want, m_cfg.lineMaxHz);
             }
-            else if (m_job.lineCurve && m_job.lineTarget > 0.0) {
+            // Xerox derives its rate exactly like a curve scan — the FOV's line
+            // count over the arc at the crawl speed — and then holds it flat.
+            else if ((m_job.lineCurve || m_job.xerox) && m_job.lineTarget > 0.0) {
                 const double want = m_job.lineTarget * m_job.maxVelDegS / arcAbs;
                 if (want > m_cfg.lineMaxHz) {
                     const double velCap = m_cfg.lineMaxHz * arcAbs / m_job.lineTarget;
@@ -441,12 +443,30 @@ void Sequencer::cycle(double dt) {
                       * m_job.durationS + 0.5)
                 : m_job.lineCurve
                 ? int(m_job.lineBaseHz * arcAbs / std::max(1e-6, m_job.maxVelDegS) + 0.5)
+                : m_job.xerox
+                // The FOV's lines plus every line the halt budget can add: the
+                // frame is sized to this, and the tail crop drops what the
+                // artist does not use.
+                ? int(m_job.lineBaseHz * (arcAbs / std::max(1e-6, m_job.maxVelDegS)
+                                          + std::max(0.0, m_job.haltBudgetS)) + 0.5)
                 : 0;   // fixed-rate mode: lines depend on duration, not arc — unknown here
             // An explicit count wins; otherwise the colour/BW behaviour stands.
             m_passCount = (m_job.passCount > 0) ? m_job.passCount
                         : (m_job.colorMode == 1) ? 1 : 4;
             m_bk.axisEnable(true);
             m_pauseRamp = 1.0; m_pausing = false;
+            m_pauseRampS = 0.25;
+            m_haltLines = 0.0; m_haltBudgetLines = 0.0; m_haltSpent = false;
+            if (m_job.xerox) {
+                // The halt ramp is a linear slew of the velocity, i.e. a constant
+                // decel of maxVel / rampS. The artist picks how hard; the accel
+                // limit says how hard it can be. 0 means "as hard as allowed".
+                const double acc = std::max(1.0, m_cfg.accLimitDegS2);
+                m_pauseRampS = std::max({0.001, m_job.haltRampS, m_job.maxVelDegS / acc});
+                m_haltBudgetLines = m_job.lineBaseHz * std::max(0.0, m_job.haltBudgetS);
+                LOGI("seq: xerox — halt ramp %.0f ms, budget %.1f s = %.0f lines",
+                     m_pauseRampS * 1e3, m_job.haltBudgetS, m_haltBudgetLines);
+            }
             m_lineCount = 0.0; m_blinkTick = 0; m_blinkLeft = 0.0;
             enterPass(0);
             LOGI("seq: execute — %d pass(es), arc %.1f→%.1f deg, %zu profile samples, "
@@ -456,7 +476,9 @@ void Sequencer::cycle(double dt) {
             break;
         }
         case SeqCommand::Pause:
-            if (m_st == St::SeqRun) { m_pausing = true; m_st = St::SeqPaused; }
+            // A xerox halt past its budget would run the frame out before the
+            // FOV is done, so it is refused rather than truncating the image.
+            if (m_st == St::SeqRun && !m_haltSpent) { m_pausing = true; m_st = St::SeqPaused; }
             break;
         case SeqCommand::Resume:
             if (m_st == St::SeqPaused) { m_pausing = false; m_st = St::SeqRun; }
@@ -572,9 +594,10 @@ void Sequencer::cycle(double dt) {
 
     case St::SeqPaused:
     case St::SeqRun: {
-        // pause ramp: slew 1→0 (paused) or 0→1 (running) in ~250 ms
+        // pause ramp: slew 1→0 (paused) or 0→1 (running) in ~250 ms (xerox: its
+        // own brake ramp, see Execute)
         const double rampTarget = (m_st == St::SeqPaused) ? 0.0 : 1.0;
-        const double dr = dt / 0.25;
+        const double dr = dt / m_pauseRampS;
         m_pauseRamp += std::max(-dr, std::min(dr, rampTarget - m_pauseRamp));
 
         double lineHzNow  = 0.0;   // rate the COMMANDED motion implies this cycle
@@ -644,17 +667,38 @@ void Sequencer::cycle(double dt) {
             m_setpoint = passArcStart() + (arc > 0 ? m_arcS : -m_arcS);
 
             // line trigger follows the velocity (the third creative axis)
-            lineHzNow = m_job.lineCurve
+            lineHzNow = m_job.xerox
+                // Xerox: the rate is the one thing that never moves. Halted,
+                // braking or running, every line integrates for the same time —
+                // that is what makes the stripe the same exposure as the image.
+                ? effBase
+                : m_job.lineCurve
                 ? effBase * (v / std::max(1e-6, effMax))
                 : (m_st == St::SeqRun ? effBase : 0.0);
             vSigned    = arc > 0 ? v : -v;
             motionDone = m_arcS >= arcAbs;
+
+            if (m_job.xerox && m_drainLeft < 0) {
+                // Lines the motion did not earn: the stationary fraction of the
+                // rate, so a ramp counts by how much of it the axis stood still.
+                // When the frame's spare room is gone the halt is released here
+                // and further presses are refused — the FOV always completes.
+                m_haltLines += effBase * dt * (1.0 - m_pauseRamp);
+                if (!m_haltSpent && m_haltLines >= m_haltBudgetLines) {
+                    m_haltSpent = true;
+                    if (m_st == St::SeqPaused) { m_pausing = false; m_st = St::SeqRun; }
+                    LOGW("seq: xerox halt budget spent (%.0f lines) — releasing, "
+                         "further halts refused", m_haltBudgetLines);
+                }
+            }
         }
 
         // A static hold never moves, so there is no lag to match.
         const double lineHzOut = m_job.staticHold ? lineHzNow : delayLine(lineHzNow);
         m_bk.setLineHz(lineHzOut);
-        if (m_st == St::SeqRun) {
+        // A xerox halt keeps emitting, so its lines count too.
+        const bool emitting = (m_st == St::SeqRun) || (m_job.xerox && m_st == St::SeqPaused);
+        if (emitting) {
             m_passLines += lineHzOut * dt;
             if (lineHzOut > m_passHzMax) m_passHzMax = lineHzOut;
         }
@@ -668,7 +712,7 @@ void Sequencer::cycle(double dt) {
         }
 
         // line-count blink: a snappy pulse every line_blink_div scanned lines
-        if (m_st == St::SeqRun && m_cfg.lineBlinkDiv > 0.0) {
+        if (emitting && m_cfg.lineBlinkDiv > 0.0) {
             m_lineCount += lineHzOut * dt;
             const long tick = long(m_lineCount / m_cfg.lineBlinkDiv);
             if (tick != m_blinkTick) { m_blinkTick = tick; m_blinkLeft = m_cfg.lineBlinkMs * 1e-3; }

@@ -24,7 +24,7 @@ Every command may carry an optional `"id"` (int) which is echoed in the ack.
 | `moveTo` | `{"posDeg":12.5,"velDegS":20.0}` | absolute move (output degrees) |
 | `filter` | `{"slot":2}` | filter wheel → slot 0=R 1=G 2=B 3=C |
 | `execute` | see below | run the full scan sequence |
-| `pause` | — | freeze a running pass (velocity ramps to 0, position held) |
+| `pause` | — | freeze a running pass (velocity ramps to 0, position held). In a `xerox` job: halt the axis, the trigger keeps running |
 | `resume` | — | continue a paused pass |
 | `stop` | — | abort sequence / motion, controlled decel |
 | `fault_reset` | — | CiA-402 fault reset + clear E-stop latch (if input OK) |
@@ -100,6 +100,35 @@ reverse. That is what pendulum and party motion need.
   `line_max_hz` is clamped and the pass delivers fewer.
 - Mutually exclusive with `static` — rejected with `"static and timeProfile are
   exclusive"`.
+
+#### Optional: `xerox` — halt the axis mid-sweep, keep scanning
+
+```json
+{ "cmd": "execute", "xerox": true, "haltRampMs": 150, "haltBudgetS": 38.0,
+  "arcStartDeg": -45.0, "arcEndDeg": 45.0, "maxVelDegS": 9.0, "minVelDegS": 9.0,
+  "line": { "mode": "fixed", "lines": 13500 }, "profile": [1.0, 1.0] }
+```
+
+A plain position-indexed sweep whose `pause` / `resume` mean *halt* / *go*
+instead of freezing the capture. The HMI binds them to the execute button held
+down / let go.
+
+- The trigger rate is derived like a curve scan (`lines × maxVelDegS / arc`) and
+  then **held flat** for the whole pass — running, braking or halted. Every line
+  integrates for the same time, so the smear stripe a halt paints is exposed
+  exactly like the rest of the image. `line.mode` is forced to `fixed`;
+  `line.lines` is required.
+- The **FOV always completes**. A halt adds time, not travel: the pass lasts the
+  crawl time plus the halted time.
+- `haltRampMs` — velocity slew from crawl to standstill and back, ms. `0` = as
+  hard as `acc_limit_degs2` allows; a softer ramp puts a gradient tail on each
+  stripe's edges. Never faster than the accel limit permits.
+- `haltBudgetS` — the total halted time the frame has room for. Its lines
+  (`rate × budget`) are **added to `plannedLines`**, which is how the capture
+  side sizes the frame (the tail crop drops what is unused). Once the budget is
+  spent the current halt is released and further `pause` commands are ignored,
+  so a halt-happy artist gets a shorter stripe, never a cut-off FOV.
+- Mutually exclusive with `static` and `timeProfile`.
 
 The server acks immediately (`{"ack":"execute","ok":true}`) and then drives the
 sequence; progress arrives via events + status pushes.

@@ -125,12 +125,25 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
         j.timeProfile   = req.value("timeProfile", false);
         j.lineForwardOnly = req.value("lineForwardOnly", false);
         j.tag           = req.value("tag", std::string());
+        j.xerox         = req.value("xerox", false);
+        j.haltRampS     = req.value("haltRampMs", 0.0) * 1e-3;
+        j.haltBudgetS   = req.value("haltBudgetS", 0.0);
+        // Xerox is defined by its flat rate; whatever line.mode the client's
+        // saved setting says, the sequencer must not follow the velocity.
+        if (j.xerox) j.lineCurve = false;
         if (req.contains("passVelScale") && req["passVelScale"].is_array())
             j.passVelScale = req["passVelScale"].get<std::vector<double>>();
         if (req.contains("profile") && req["profile"].is_array())
             j.profile = req["profile"].get<std::vector<double>>();
         if (j.passCount < 0 || j.passCount > 64) {
             ack["ok"] = false; ack["err"] = "passes out of range"; post = false;
+        }
+        else if (j.xerox && (j.staticHold || j.timeProfile)) {
+            // A halt needs a sweep to halt, and the FOV it completes.
+            ack["ok"] = false; ack["err"] = "xerox needs a plain sweep"; post = false;
+        }
+        else if (j.xerox && j.lineTarget <= 0.0) {
+            ack["ok"] = false; ack["err"] = "xerox needs line.lines"; post = false;
         }
         else if (j.timeProfile) {
             // A reversing sweep is bounded by the clock, not by an arc, and its

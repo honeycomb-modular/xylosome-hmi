@@ -346,6 +346,40 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
     });
 }
 
+void BeckhoffLink::executeXerox(int colorMode, double arcStartDeg, double arcEndDeg,
+                                double velDegS, int targetLines,
+                                int haltRampMs, double haltBudgetS)
+{
+    QSettings s;
+    // Flat crawl: min = max so the daemon floor cannot override. The rate is
+    // xylod's to derive from the line count (it knows the clamp) and to hold
+    // flat — "fixed" here is stated, not read from beckhoff/lineMode, because
+    // the flat rate is the mode.
+    QJsonArray prof{1.0, 1.0};
+    QJsonObject line{
+        {QStringLiteral("mode"),  QStringLiteral("fixed")},
+        {QStringLiteral("lines"), targetLines},
+    };
+    sendJson({
+        {QStringLiteral("cmd"),          QStringLiteral("execute")},
+        {QStringLiteral("xerox"),        true},
+        {QStringLiteral("haltRampMs"),   haltRampMs},
+        {QStringLiteral("haltBudgetS"),  haltBudgetS},
+        {QStringLiteral("colorMode"),    colorMode},
+        {QStringLiteral("arcStartDeg"),  arcStartDeg},
+        {QStringLiteral("arcEndDeg"),    arcEndDeg},
+        {QStringLiteral("maxVelDegS"),   velDegS},
+        {QStringLiteral("minVelDegS"),   velDegS},
+        // The frame is sized to the FOV plus the whole halt budget, so the
+        // agent's pre-arm buffer clear is a big one: give it the multi-pass
+        // settle rather than the single-sweep one.
+        {QStringLiteral("settleMs"),     s.value(QStringLiteral("beckhoff/settleMsMultiPass"), 2000.0).toDouble()},
+        {QStringLiteral("returnVelDegS"),s.value(QStringLiteral("beckhoff/returnVelDegS"), 240.0).toDouble()},
+        {QStringLiteral("line"),         line},
+        {QStringLiteral("profile"),      prof},
+    });
+}
+
 void BeckhoffLink::pause()  { sendJson({{QStringLiteral("cmd"), QStringLiteral("pause")}}); }
 void BeckhoffLink::resume() { sendJson({{QStringLiteral("cmd"), QStringLiteral("resume")}}); }
 void BeckhoffLink::stop()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("stop")}}); }

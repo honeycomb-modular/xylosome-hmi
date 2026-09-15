@@ -79,6 +79,9 @@ ApplicationWindow {
                 }
                 break
             case Qt.Key_Delete:   // BTN1 — dedicated execute, not in focus chain
+                // A held keyboard key auto-repeats; the pendant never does. Drop
+                // the repeats so holding Delete behaves like holding BTN1.
+                if (event.isAutoRepeat) { event.accepted = true; break }
                 if (s && typeof s.btn1Execute === "function") { s.btn1Execute(); event.accepted = true }
                 break
             case Qt.Key_Escape: case Qt.Key_Backspace:
@@ -86,6 +89,13 @@ ApplicationWindow {
                 else if (s && typeof s.focusBack === "function") { s.focusBack(); event.accepted = true }
                 break
             }
+        }
+        // BTN1 let go. Only a screen that declares btn1Release cares (capture.xerox:
+        // held = axis halted, released = axis goes again); everyone else ignores it.
+        Keys.onReleased: function(event) {
+            if (event.key !== Qt.Key_Delete || event.isAutoRepeat) return
+            var s = nav.currentItem
+            if (s && typeof s.btn1Release === "function") { s.btn1Release(); event.accepted = true }
         }
 
         pushEnter: Transition {

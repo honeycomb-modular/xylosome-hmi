@@ -6,7 +6,8 @@
 //   JOG -1 (CCW)  -> Key_Up      (movePrev / adjust -1 while editing)
 //   ENC_SW DOWN   -> Key_Return  (enter / confirm)
 //   BTN2 DOWN     -> Key_Escape  (back)
-//   BTN1 DOWN     -> Key_Delete  (screen context action)
+//   BTN1 DOWN/UP  -> Key_Delete press / release (screen context action; the
+//                    release is what capture.xerox's hold-to-halt listens for)
 //
 // Dependency-free: raw POSIX serial + QSocketNotifier (QtCore/QtGui only).
 // Auto-reopens if the Teensy is absent at boot or unplugged at runtime.
@@ -35,7 +36,7 @@ private slots:
 
 private:
     void handleLine(const QByteArray &line);
-    void postKey(int key);
+    void postKey(int key, bool press = true, bool release = true);
     void closeDevice();
 
     int              m_fd       = -1;

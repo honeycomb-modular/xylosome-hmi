@@ -119,6 +119,18 @@ public:
                                   double maxVelDegS, double minVelDegS,
                                   int targetLines, const QVariantList &profile,
                                   const QVariantList &passVelScale = {});
+    // executeXerox: a constant crawl over the FOV (like capture.timed) whose
+    // pause/resume mean halt/go — bound to the execute button held/released.
+    // The trigger rate never changes, so a halt writes the same subject line
+    // over and over at the image's exposure: the photocopier smear. The FOV
+    // still completes; the pass just lasts longer by the halted time.
+    // haltRampMs: crawl → standstill (and back), 0 = accel limit. haltBudgetS:
+    // total halted time the frame has room for — xylod adds its lines to
+    // plannedLines (so the capture side sizes the frame) and refuses halts
+    // once it is spent.
+    Q_INVOKABLE void executeXerox(int colorMode, double arcStartDeg, double arcEndDeg,
+                                  double velDegS, int targetLines,
+                                  int haltRampMs, double haltBudgetS);
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void stop();
