@@ -293,10 +293,18 @@ def resample(arr, g, rows, x0, w):
     slab = np.asarray(arr[lo:hi, j0:j1], np.float32)
     wr = _lanczos((sr - i0).astype(np.float32))
     V = np.zeros(sr.shape, np.float32); Vp = np.zeros(sr.shape, np.float32)
+    # The peak is taken over the two NEAREST taps per axis only (the 2x2 that
+    # carry ~90% of the kernel), not all 36. Sun glints in road aggregate are
+    # single saturated pixels, and judging a sample by its outer lobes threw
+    # away every bracket within 3 px of each one - on 1863-1866 that left the
+    # sunlit pavement to the fastest bracket alone, at 20x the wrong radiance
+    # (a shadow had moved), as hard-edged dark blocks. An outer lobe's share
+    # of a clipped neighbour is a percent or two; a wrong bracket is not.
     for k, wk in zip(range(-LZ + 1, LZ + 1), wr):
         s = np.take_along_axis(slab, i0 - lo + k, axis=0)
         V += wk * s
-        np.maximum(Vp, s, out=Vp)
+        if k in (0, 1):
+            np.maximum(Vp, s, out=Vp)
     del wr, sr
     xs = x0 + dc                                   # source column of output column 0, per row
     ic = np.floor(xs).astype(np.int64)
@@ -306,7 +314,8 @@ def resample(arr, g, rows, x0, w):
     for k, wk in zip(range(-LZ + 1, LZ + 1), wc):
         idx = base + k
         out += wk * np.take_along_axis(V, idx, axis=1)
-        np.maximum(peak, np.take_along_axis(Vp, idx, axis=1), out=peak)
+        if k in (0, 1):
+            np.maximum(peak, np.take_along_axis(Vp, idx, axis=1), out=peak)
     return out, peak
 
 
@@ -617,21 +626,47 @@ def _upsample(c, h, w, B):
 
 
 def deghost(per):
-    """per = [(sig, wt, t)] fastest first. Returns the weights to use."""
+    """per = [(sig, wt, t)] fastest first. Returns the weights to use.
+
+    The anchor used to need a block with EVERY pixel unclipped (block weight
+    > 0.99), and a bracket was only judged if it was bright (> GHOST_FLOOR)
+    itself. On 1863-1866 that missed a whole car: sun glints in the pavement
+    cost the slower brackets their anchor status one block at a time, the
+    fastest bracket was then judged against itself, and its dark tyre - dim,
+    so exempt anyway - was averaged into the road. Now the anchor is the
+    slowest bracket with half its block unclipped, each pair is compared over
+    the pixels BOTH see unclipped, and the test is whether the bracket saw what
+    the anchor says it should have - which a shadow or a tyre fails by being
+    too dark, not just too bright."""
     B = GHOST_BLOCK
-    S = [_block_means(sig, B) for sig, _, _ in per]
+    n = len(per)
     Wb = [_block_means(wt, B) for _, wt, _ in per]
-    anchor = np.full(S[0].shape, np.nan, np.float32)
-    for i in reversed(range(len(per))):                 # slowest first
-        take = np.isnan(anchor) & (Wb[i] > 0.99) & (S[i] > GHOST_FLOOR)
-        anchor[take] = S[i][take] / per[i][2]
+    Sw = [_block_means(sig * wt, B) / np.maximum(Wb[i], 1e-6)
+          for i, (sig, wt, _) in enumerate(per)]
+    aidx = np.full(Wb[0].shape, -1, np.int64)
+    for i in reversed(range(n)):                        # slowest first
+        take = (aidx < 0) & (Wb[i] > 0.5) & (Sw[i] > GHOST_FLOOR)
+        aidx[take] = i
     out = []
     for i, (sig, wt, t) in enumerate(per):
-        judged = np.isfinite(anchor) & (Wb[i] > 0.99) & (S[i] > GHOST_FLOOR)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            dev = np.abs(np.log(np.maximum(S[i], 1.0) / t / anchor))
-        k = np.clip((dev - GHOST_LO) / (GHOST_HI - GHOST_LO), 0.0, 1.0)
-        c = np.where(judged, 1.0 - k * k * (3.0 - 2.0 * k), 1.0).astype(np.float32)
+        c = np.ones(Wb[0].shape, np.float32)
+        for a in range(i + 1, n):                       # anchors are slower brackets
+            blk = aidx == a
+            if not blk.any():
+                continue
+            asig, awt, at = per[a]
+            m = wt * awt                                # pixels both see unclipped
+            mb = _block_means(m, B)
+            mm = np.maximum(mb, 1e-6)
+            si = _block_means(sig * m, B) / mm          # this bracket, common pixels
+            sa = _block_means(asig * m, B) / mm         # anchor, same pixels
+            # Judged where the common set is real and the anchor implies this
+            # bracket should have seen a clear signal; dimness is then evidence.
+            ok = blk & (mb > 0.25) & (sa > GHOST_FLOOR) & (sa * (t / at) > GHOST_FLOOR)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                dev = np.abs(np.log(np.maximum(si, 1.0) / t / (np.maximum(sa, 1.0) / at)))
+            k = np.clip((dev - GHOST_LO) / (GHOST_HI - GHOST_LO), 0.0, 1.0)
+            c = np.where(ok, 1.0 - k * k * (3.0 - 2.0 * k), c).astype(np.float32)
         out.append(wt if c.min() >= 1.0 else wt * _upsample(c, *sig.shape, B))
     return out
 
@@ -705,14 +740,14 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
     view_path = os.path.splitext(out_path)[0] + "_view.tif"
     view = tifffile.memmap(view_path, shape=(H, Wout), dtype=np.uint16,
                            photometric="minisblack", bigtiff=True)
-    all_clipped = rescued = salvaged = 0
+    all_clipped = rescued = salvaged = floored = 0
     kept = np.zeros(len(bs)); offered = np.zeros(len(bs))
     for y0 in range(0, H, CHUNK):
         y1 = min(y0 + CHUNK, H)
         # Output row y comes from REFERENCE row y+top; `top` is what keeps every
         # bracket's source index non-negative.
         rows = np.arange(y0, y1, dtype=np.float64) + top
-        per = []
+        per = []; raw_of = []
         for b, g in zip(bs, geo):
             raw, peak = resample(b["arr"], g, rows, M, Wout)
             # Weight fades to zero as the brightest raw sample under the kernel
@@ -737,6 +772,7 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
             if flat is not None:
                 sig = sig / flat[xi:xi + Wout][None, :]
             per.append((sig, wt, np.float32(b["t"])))
+            raw_of.append(raw)
             # Keep the fastest bracket's own reading. Where every weight has
             # gone to zero it is the only thing left that still has structure,
             # and flooring those pixels to a constant instead was replacing the
@@ -749,11 +785,18 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
                                 if flat is not None else np.float32(1.0))
         num = np.zeros((y1 - y0, Wout), np.float32)
         den = np.zeros((y1 - y0, Wout), np.float32)
+        # A clipped sample is not nothing: it says the radiance is AT LEAST its
+        # clip level. Whatever the unclipped brackets end up claiming, the
+        # answer may not fall below the brightest floor any clipped bracket
+        # sets. Without this, a pixel where every slow bracket had saturated
+        # could be reported at a twentieth of what they proved it exceeded.
+        floor = np.zeros((y1 - y0, Wout), np.float32)
         for i, ((sig, wt, t), wg) in enumerate(zip(per, deghost(per))):
             num += wg * sig
             den += wg * t
             offered[i] += float(wt.sum()); kept[i] += float(wg.sum())
-        del per
+            np.maximum(floor, np.where(raw_of[i] >= SOFT_HI, sig / t, 0.0), out=floor)
+        del per, raw_of
         # Three cases, in order of how much is actually known:
         #   weights survive        -> the weighted estimate
         #   none survive, not sat  -> the fastest bracket's own value (shoulder
@@ -767,6 +810,8 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
                        np.where(hard, (SAT - Pm) / t_min,
                                 (fastest_raw - fastest_ped) / fastest_flat / t_min),
                        num / np.maximum(den, 1e-12))
+        floored += int((rad < floor).sum())
+        rad = np.maximum(rad, floor)
         chunk = (rad * scale).astype(np.float32)
         rescued += int((chunk > knee).sum())
         out[y0:y1] = chunk
@@ -786,6 +831,8 @@ def merge(bs, geo, W, P, out_path, flat=None, ref=0):
     print(f"  held by the fastest bracket    : {salvaged:,} px ({100.0*salvaged/px:.4f}%)"
           f"  <- shoulder detail, would have been flat white")
     print(f"  saturated in every bracket     : {all_clipped:,} px ({100.0*all_clipped/px:.4f}%)")
+    print(f"  raised to a clipped bracket's floor: {floored:,} px ({100.0*floored/px:.4f}%)"
+          f"  <- the unclipped brackets claimed less than a clipped one proved")
     return view
 
 
