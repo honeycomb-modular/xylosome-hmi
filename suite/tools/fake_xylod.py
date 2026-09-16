@@ -221,7 +221,7 @@ def serve():
         print("client", addr)
         with lock:
             clients.append(c)
-        send(c, {"ev": "welcome", "version": "fake-0.1", "sim": True})
+        send(c, {"ev": "welcome", "version": "fake-0.1", "rev": "fake", "sim": True})
         threading.Thread(target=drain, args=(c,), daemon=True).start()
 
 def drain(c):

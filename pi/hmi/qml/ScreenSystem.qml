@@ -6,7 +6,8 @@ import XylosomeHMI 1.0
 ChoiceList {
     title: "system"
     entries: [
-        { key: "fw.version",  value: "0.1-qt" },
+        { key: "fw.version",  value: Qt.application.version },
+        { key: "xylod",       value: Beckhoff.connected ? Beckhoff.xylodVersion : "offline" },
         { key: "fw.platform", value: "qt6 / qml / pi" },
         { key: "hmi.role",    value: "pendant / hmi only" }
     ]

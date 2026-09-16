@@ -15,7 +15,7 @@ ApplicationWindow {
     visible: true
     width: 1280
     height: 800
-    title: "Xylosome Suite"
+    title: "Xylosome Suite · " + Qt.application.version
     color: "#FFFFFF"
 
     // Full screen: remembered between runs, F11 toggles, and --fullscreen forces
@@ -357,7 +357,7 @@ ApplicationWindow {
                 Label { text: "·"; color: root.inkFaint; font.pixelSize: 11 }
                 Label {
                     text: Xylod.connected
-                          ? (Xylod.sim ? qsTr("xylod · sim") : qsTr("xylod · %1").arg(Xylod.host))
+                          ? (Xylod.sim ? qsTr("xylod · sim") : qsTr("xylod · %1 · %2").arg(Xylod.host).arg(Xylod.rev))
                           : qsTr("xylod · offline")
                     color: Xylod.connected ? root.inkMuted : root.inkFaint
                     font.pixelSize: 11

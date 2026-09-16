@@ -134,7 +134,10 @@ void BeckhoffLink::handleMessage(const QJsonObject &m) {
         qWarning() << "[beckhoff] FAULT:" << m_faultText;
     }
     else if (ev == QLatin1String("welcome")) {
-        qInfo() << "[beckhoff] xylod" << m.value(QStringLiteral("version")).toString()
+        m_xylodVersion = m.value(QStringLiteral("version")).toString() + QLatin1Char(' ')
+                       + m.value(QStringLiteral("rev")).toString();
+        emit xylodVersionChanged();
+        qInfo() << "[beckhoff] xylod" << m_xylodVersion
                 << (m.value(QStringLiteral("sim")).toBool() ? "[SIM]" : "");
     }
 }

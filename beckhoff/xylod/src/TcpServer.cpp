@@ -1,6 +1,7 @@
 // TcpServer.cpp — poll loop + JSON glue (nlohmann::json).
 #include "TcpServer.h"
 #include "Log.h"
+#include "gitrev.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -46,7 +47,7 @@ void TcpServer::acceptClient() {
     m_clients.push_back({fd, "", ip});
     LOGI("tcp: client connected: %s (%zu total)", ip, m_clients.size());
 
-    json w = {{"ev", "welcome"}, {"version", "0.1"}, {"sim", m_sim}};
+    json w = {{"ev", "welcome"}, {"version", "0.1"}, {"rev", GIT_REV}, {"sim", m_sim}};
     sendTo(m_clients.back(), w.dump());
 }
 

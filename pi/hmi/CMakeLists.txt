@@ -125,4 +125,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|armv7l")
     )
 endif()
 
+# git revision -> gitrev.h (GIT_REV), refreshed on every build; see cmake/GitRev.cmake
+add_custom_target(hmi_gitrev ALL
+    COMMAND ${CMAKE_COMMAND} -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/gitrev.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/GitRev.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/gitrev.h)
+add_dependencies(xylosome_hmi hmi_gitrev)
+target_include_directories(xylosome_hmi PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 install(TARGETS xylosome_hmi RUNTIME DESTINATION bin)

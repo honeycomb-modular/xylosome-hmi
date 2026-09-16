@@ -48,6 +48,14 @@ add_executable(xylod
 )
 target_link_libraries(xylod PRIVATE soem nlohmann_json::nlohmann_json pthread)
 
+# git revision -> gitrev.h (GIT_REV), refreshed on every build; see cmake/GitRev.cmake
+add_custom_target(xylod_gitrev ALL
+    COMMAND ${CMAKE_COMMAND} -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/gitrev.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/GitRev.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/gitrev.h)
+add_dependencies(xylod xylod_gitrev)
+target_include_directories(xylod PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 # ── bench tools ───────────────────────────────────────────────────────────────
 add_executable(ec_scan    ../tools/ec_scan.cpp)
 target_link_libraries(ec_scan PRIVATE soem pthread)

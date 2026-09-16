@@ -26,13 +26,14 @@
 #include "PendantReader.h"
 #include "BeckhoffLink.h"
 #include "CameraLink.h"
+#include "gitrev.h"
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     app.setOverrideCursor(Qt::BlankCursor);   // kiosk — no mouse pointer
     app.setApplicationName(QStringLiteral("XYLOSOME"));
-    app.setApplicationVersion(QStringLiteral("0.1-qt"));
+    app.setApplicationVersion(QStringLiteral("0.1-qt+" GIT_REV));
     app.setOrganizationName(QStringLiteral("xylosome"));
 
     // ── 1. Motor model ────────────────────────────────────────────────────────

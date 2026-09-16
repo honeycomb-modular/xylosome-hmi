@@ -34,6 +34,7 @@ class BeckhoffLink : public QObject
     Q_PROPERTY(double  lineHz      READ lineHz      NOTIFY statusChanged)
     Q_PROPERTY(int     filterSlot  READ filterSlot  NOTIFY statusChanged)
     Q_PROPERTY(QString faultText   READ faultText   NOTIFY faultTextChanged)
+    Q_PROPERTY(QString xylodVersion READ xylodVersion NOTIFY xylodVersionChanged) // "0.1 797ef7fe8" from welcome
 
 public:
     explicit BeckhoffLink(QObject *parent = nullptr);
@@ -56,6 +57,7 @@ public:
     double  lineHz()       const { return m_lineHz; }
     int     filterSlot()   const { return m_filterSlot; }
     QString faultText()    const { return m_faultText; }
+    QString xylodVersion() const { return m_xylodVersion; }
 
     void setHost(const QString &h);
     void setPort(int p);
@@ -161,6 +163,7 @@ signals:
     void passIndexChanged();
     void progressChanged();
     void faultTextChanged();
+    void xylodVersionChanged();
 
     // sequence events — drive ScreenScan + MetadataRecorder when connected
     void passStarted(int pass, qint64 tMs);
@@ -192,4 +195,5 @@ private:
     int     m_pass = -1, m_filterSlot = -1;
     double  m_progress = 0.0, m_posDeg = 0.0, m_velDegS = 0.0, m_lineHz = 0.0;
     QString m_faultText;
+    QString m_xylodVersion;
 };

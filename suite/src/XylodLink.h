@@ -35,6 +35,7 @@ class XylodLink : public QObject
     Q_PROPERTY(double  velocityDegS READ velocityDegS NOTIFY statusChanged)
     Q_PROPERTY(double  lineHz      READ lineHz      NOTIFY statusChanged)
     Q_PROPERTY(QString faultText   READ faultText   NOTIFY faultTextChanged)
+    Q_PROPERTY(QString rev         READ rev         NOTIFY connectedChanged) // daemon git revision, from welcome
     Q_PROPERTY(bool    sim         READ sim         NOTIFY connectedChanged)
 
 public:
@@ -56,6 +57,7 @@ public:
     double  velocityDegS() const { return m_velDegS; }
     double  lineHz()       const { return m_lineHz; }
     QString faultText()    const { return m_faultText; }
+    QString rev()          const { return m_rev; }
     bool    sim()          const { return m_sim; }
 
     void setHost(const QString &h);
@@ -105,4 +107,5 @@ private:
     QString m_filterName;
     double  m_progress = 0.0, m_posDeg = 0.0, m_velDegS = 0.0, m_lineHz = 0.0;
     QString m_faultText;
+    QString m_rev;
 };

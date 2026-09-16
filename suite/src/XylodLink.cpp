@@ -152,8 +152,9 @@ void XylodLink::handleMessage(const QJsonObject &m) {
     }
     else if (ev == QLatin1String("welcome")) {
         m_sim = m.value(QStringLiteral("sim")).toBool();
+        m_rev = m.value(QStringLiteral("rev")).toString();
         emit connectedChanged();
-        qInfo() << "[xylod] daemon" << m.value(QStringLiteral("version")).toString()
+        qInfo() << "[xylod] daemon" << m.value(QStringLiteral("version")).toString() << m_rev
                 << (m_sim ? "[SIM]" : "");
     }
 }

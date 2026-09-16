@@ -11,6 +11,7 @@
 #include "Sequencer.h"
 #include "TcpServer.h"
 #include "Log.h"
+#include "gitrev.h"
 
 #include <csignal>
 #include <memory>
@@ -22,7 +23,7 @@ int main(int argc, char **argv) {
     bool sim = false;
     const Config cfg = Config::fromArgs(argc, argv, sim);
 
-    LOGI("xylod 0.1 — XYLOSOME motion daemon%s", sim ? " [SIM]" : "");
+    LOGI("xylod 0.1 (%s) — XYLOSOME motion daemon%s", GIT_REV, sim ? " [SIM]" : "");
 
     std::unique_ptr<IBackend> backend;
     if (sim) backend = std::make_unique<SimBackend>(cfg);

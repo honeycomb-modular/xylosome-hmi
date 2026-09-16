@@ -32,6 +32,14 @@ qt_add_executable(xylosome-suite
     src/HmiLink.cpp
 )
 
+# git revision -> gitrev.h (GIT_REV), refreshed on every build; see cmake/GitRev.cmake
+add_custom_target(suite_gitrev ALL
+    COMMAND ${CMAKE_COMMAND} -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/gitrev.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GitRev.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/gitrev.h)
+add_dependencies(xylosome-suite suite_gitrev)
+target_include_directories(xylosome-suite PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 # App icon (the HMI rainbow void, miniaturized)
 if(WIN32)
     target_sources(xylosome-suite PRIVATE assets/icon.rc)

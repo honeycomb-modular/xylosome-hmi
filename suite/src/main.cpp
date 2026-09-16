@@ -17,6 +17,7 @@
 #include "LiveLink.h"
 #include "SessionStore.h"
 #include "XylodLink.h"
+#include "gitrev.h"
 
 // Log file from day one (plan → Foundations #5): everything qInfo/qWarning
 // also lands in <AppData>/suite.log, timestamped.
@@ -46,7 +47,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setOrganizationName("Honeycomb Modular");
     QGuiApplication::setOrganizationDomain("honeycomb-modular.com");
     QGuiApplication::setApplicationName("Xylosome Suite");
-    QGuiApplication::setApplicationVersion("0.1.0");
+    QGuiApplication::setApplicationVersion("0.1.0+" GIT_REV);
 
     // Basic style: identical rendering on all three platforms; the suite
     // draws its own design language on top.
