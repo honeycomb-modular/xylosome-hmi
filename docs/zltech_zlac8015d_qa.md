@@ -10,6 +10,23 @@ driver.
 > session's working repo; move it to the motion project repo (motionbox /
 > motosome) if that becomes its home.
 
+## The parameter set (ZLTECH message 1)
+
+> For hub motor ZLLG50ASM200-HY, poles pair is 10, encoder is 1024 lines, hall
+> offset is 240. Please set above parameters, click Save to EEPROM, and power
+> off, then re-power on driver, run motor again. If it doesn't work, take a
+> picture of the software interface for our check and take a video to show
+> your wiring connection between hub motor and driver.
+
+| Parameter    | Value      |
+| ------------ | ---------- |
+| Pole pairs   | 10         |
+| Encoder      | 1024 lines |
+| Hall offset  | 240        |
+
+Procedure: set parameters → Save to EEPROM → power driver off and back on →
+run motor again.
+
 ## Answers
 
 **(a) Is there a parameter to invert the velocity feedback or the motor
@@ -29,11 +46,8 @@ correctly, and can it be supplied?**
 > Firmware 26057 is no problem, just adjust the parameters we told you.
 
 → **No firmware update needed.** Firmware 26057 is declared compatible; the fix
-is the parameter set ZLTECH provided earlier. Their procedure (from the
-preceding message): set the parameters, **save to EEPROM, power the driver off
-and back on**, then run the motor again. If it still misbehaves, they want a
-screenshot of the software interface and a video of the hub-motor↔driver
-wiring.
+is the parameter set above (pole pairs 10, encoder 1024 lines, hall offset
+240), saved to EEPROM and power-cycled.
 
 **(c) What does the "-HY" suffix denote, and is this motor the intended pairing
 for the ZLAC8015D, or for another driver (e.g. ZLAC706)?**
@@ -57,7 +71,8 @@ parameter set from (b).
 
 ## Takeaways / next steps
 
-1. Apply ZLTECH's parameter set, save to EEPROM, power-cycle, retest.
+1. Apply the parameter set (pole pairs 10, encoder 1024 lines, hall offset
+   240), save to EEPROM, power-cycle, retest.
 2. If direction is wrong, invert in our host software — the driver cannot.
 3. If the retest still fails, capture the tuning-software screen and a wiring
    video for ZLTECH.
