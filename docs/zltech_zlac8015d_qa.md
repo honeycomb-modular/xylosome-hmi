@@ -78,3 +78,56 @@ parameter set from (b).
    video for ZLTECH.
 4. Motor is electrically a stock ZLLG50ASM200 V1.0 single shaft — use the
    standard ZLLG50ASM200 datasheet/wiring, on ZLAC8015D V4.2.
+
+## Bench retest checklist (velocity mode)
+
+All three ZLTECH parameters are commutation data — with them in and
+persisted, velocity mode is the mode that should now work. Run the retest in
+this order; each step gates the next.
+
+### Before commanding anything
+
+1. **Read the parameters back after the power cycle.** The EEPROM save is the
+   step that most often silently fails (some drivers require the axis
+   disabled when saving). Confirm pole pairs = 10, encoder = 1024, hall
+   offset = 240 survived the re-power. If not, nothing else matters.
+2. **Confirm firmware is actually 26057.** ZLTECH's "no problem" assumes it —
+   read the version from the tool/register, don't trust the label.
+3. **Passive feedback sanity check.** Driver disabled, rotate the wheel by
+   hand, watch reported position/velocity:
+   - counts must be smooth — jumps mean encoder wiring / line-count mismatch;
+   - sign must match the motor's *default* rotation direction (per answer
+     (a), that's the only reference the driver gives us).
+   This separates "config fixed" from "wiring problem" before the motor ever
+   gets current.
+
+### The velocity-mode test
+
+4. Set gentle accel/decel ramps, enable, command **10–20 RPM**. A correctly
+   commutated hub motor at that speed is quiet and draws almost nothing.
+   Growling, cogging or high current at low speed = commutation still wrong →
+   hall wiring order (that's the wiring video ZLTECH asked for).
+5. Commanded +RPM must produce the default rotation direction AND positive
+   reported velocity. If the signs disagree with each other, closed loop runs
+   away. No polarity object exists: negate command/feedback host-side, or fix
+   the physical phase/hall order if it's genuinely miswired — never paper
+   over a wiring swap in software.
+6. On any fault, **read the fault code register** before retrying —
+   overcurrent vs. encoder fault vs. overvoltage each point somewhere
+   different.
+
+### Not yet tried (likely gotchas)
+
+- **Regen/overvoltage on decel.** Bench PSUs can't absorb the energy a
+  decelerating hub wheel pushes back — the driver trips overvoltage. Longer
+  decel ramps, or test on the battery / add a brake resistor. Catches almost
+  everyone with hub wheels.
+- **Motor current limits.** ZLAC8015D defaults may not match a 200 W
+  ZLLG50ASM200 — check rated/max current settings.
+- **Treat the motor as stock.** Per answer (c), use the standard
+  ZLLG50ASM200 V1.0 pinout for phase/hall/encoder — don't assume the "-HY"
+  harness is special.
+
+If the low-RPM test passes cleanly, velocity mode at working speeds follows.
+If it still growls with parameters confirmed persisted, it's wiring — take
+the tuning-screen picture and wiring video for ZLTECH.
