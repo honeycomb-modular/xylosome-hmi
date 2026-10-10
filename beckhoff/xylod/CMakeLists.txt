@@ -79,3 +79,12 @@ add_executable(ec_coe     ../tools/ec_coe.cpp)
 target_link_libraries(ec_coe PRIVATE soem pthread)
 
 install(TARGETS xylod ec_scan motor_test ec_blink ec_meter ec_step ec_dial ec_coe RUNTIME DESTINATION /usr/local/bin)
+
+# EL7211-9014 colour-wheel servo: copies of the motionbox bench tools (expected
+# to diverge). autoconf reads the OCT type plate and writes motor settings;
+# csp brings the terminal to OP with DC and moves it. Run with xylod STOPPED.
+add_executable(el7211_autoconf ../tools/el7211_autoconf.cpp)
+target_link_libraries(el7211_autoconf PRIVATE soem pthread)
+
+add_executable(el7211_csp ../tools/el7211_csp.cpp)
+target_link_libraries(el7211_csp PRIVATE soem pthread)
