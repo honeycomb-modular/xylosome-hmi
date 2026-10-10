@@ -596,6 +596,32 @@ int main(int argc, char **argv) {
     std::printf("  modes of operation display 0x6010:03 = %ld   (8 = CSP, 9 = CSV, 10 = CST)\n",
                 sdoR(sl, 0x6010, 0x03));
     std::printf("  following error 0x6010:06            = %ld\n", sdoR(sl, 0x6010, 0x06));
+    // DC link and the drive's own diagnosis: bit 7 of the statusword has four
+    // causes (I2T, STO voltage missing, >80 C, undervoltage) and the diag
+    // history is the only thing that tells them apart. 0x10F3:02 points at the
+    // newest record; each record is 28 bytes, TEXT ID at bytes 6-7.
+    std::printf("  DC link voltage 0x9010:12            = %ld mV\n", sdoR(sl, 0x9010, 0x12));
+    {
+        long newest = sdoR(sl, 0x10F3, 0x02);
+        std::printf("  diag history newest 0x10F3:02        = %ld\n", newest);
+        for (long k = newest; k >= 6 && k > newest - 4; k--) {
+            uint8_t rec[64] = {0}; int sz = int(sizeof rec);
+            if (ec_SDOread(sl, 0x10F3, uint8_t(k), FALSE, &sz, rec, EC_TIMEOUTRXM) <= 0) break;
+            uint32_t diag = 0; uint16_t flags = 0, text = 0;
+            std::memcpy(&diag, rec, 4); std::memcpy(&flags, rec + 4, 2); std::memcpy(&text, rec + 6, 2);
+            std::printf("    0x10F3:%02lX diag=0x%08X flags=0x%04X TEXT ID=0x%04X", k, diag, flags, text);
+            switch (text) {
+                case 0x8302: std::printf("  Encoder/Feedback error"); break;
+                case 0x8146: std::printf("  Sync-Mode / PDO config incompatible"); break;
+                case 0x841C: std::printf("  STO de-energised while enabled"); break;
+                case 0x8105: std::printf("  PD watchdog"); break;
+                case 0x8135: std::printf("  cycle time not multiple of 125 us"); break;
+                case 0x4102: std::printf("  (info) PDO config discrepancy"); break;
+                default: break;
+            }
+            std::printf("\n");
+        }
+    }
 
     // Go to INIT first, THEN release SYNC0. Calling ec_dcsync01(..., FALSE, 0,
     // 0, 0) while the slave is still configured writes a cycle time of 0, and
