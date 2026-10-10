@@ -253,7 +253,14 @@ void EcBackend::shutdown() {
 
 // ── control-context accessors ────────────────────────────────────────────────
 void EcBackend::axisSetTargetDeg(double deg) {
-    m_targetDeg = std::min(m_cfg.softMaxDeg, std::max(m_cfg.softMinDeg, deg));
+    // Never command a step. If the axis sits outside the soft envelope (moved by
+    // hand while powered down), widen the clamp to include the current pose so
+    // it can only move inward. 2026-10-10: parked at -183.6 deg, the clamp to
+    // -180 was a 65k-count step on enable -> A6-EC Er87.1 on every execute.
+    const double pos = axisPosDeg();
+    const double lo = std::min(m_cfg.softMinDeg, pos);
+    const double hi = std::max(m_cfg.softMaxDeg, pos);
+    m_targetDeg = std::min(hi, std::max(lo, deg));
     m_targetValid = true;
 }
 double EcBackend::axisPosDeg()  const { return m_drvTx ? countsToDeg(m_drvTx->actualPos) : 0.0; }
