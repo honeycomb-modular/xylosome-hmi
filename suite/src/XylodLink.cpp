@@ -31,6 +31,10 @@ XylodLink::XylodLink(QObject *parent)
     m_reconnect.setSingleShot(true);
     connect(&m_reconnect, &QTimer::timeout, this, &XylodLink::tryConnect);
 
+    m_watchdog.setInterval(kWatchdogMs);
+    m_watchdog.setSingleShot(true);
+    connect(&m_watchdog, &QTimer::timeout, this, &XylodLink::onWatchdog);
+
     tryConnect();
 }
 
@@ -64,9 +68,23 @@ void XylodLink::onConnected() {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("hello")},
               {QStringLiteral("client"), QStringLiteral("suite")}});
     sendJson({{QStringLiteral("cmd"), QStringLiteral("status")}});
+    m_watchdog.start();
+}
+
+void XylodLink::onWatchdog() {
+    if (!m_connected) return;
+    qWarning() << "[xylod] no message for" << kWatchdogMs
+               << "ms on an open socket — daemon dropped us; reconnecting";
+    m_sock.abort();            // no disconnected() from abort(); do it by hand
+    onDisconnected();
 }
 
 void XylodLink::onDisconnected() {
+    m_watchdog.stop();
+    if (!m_connected) {        // abort()+manual call, or a late signal
+        if (!m_reconnect.isActive()) m_reconnect.start();
+        return;
+    }
     m_connected = false;
     m_state = QStringLiteral("offline");
     emit connectedChanged();
@@ -81,6 +99,7 @@ void XylodLink::sendJson(const QJsonObject &obj) {
 }
 
 void XylodLink::onReadyRead() {
+    m_watchdog.start();        // any traffic proves the daemon still has us
     m_rx += m_sock.readAll();
     int nl;
     while ((nl = m_rx.indexOf('\n')) >= 0) {

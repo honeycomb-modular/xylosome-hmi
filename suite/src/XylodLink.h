@@ -87,6 +87,7 @@ private slots:
     void onDisconnected();
     void onReadyRead();
     void tryConnect();
+    void onWatchdog();
 
 private:
     void sendJson(const QJsonObject &obj);
@@ -94,6 +95,14 @@ private:
 
     QTcpSocket m_sock;
     QTimer     m_reconnect;
+    // xylod pushes status at 10 Hz while we are connected. If nothing arrives
+    // for kWatchdogMs the daemon has dropped us without closing the socket
+    // (TcpServer marks a client dead on a failed send but leaves the fd open,
+    // which happens when the suite stalls long enough for the send buffer to
+    // fill — e.g. emptying a large quarantine). TCP stays ESTABLISHED on both
+    // ends, no error ever fires, so only a silence timer can notice.
+    QTimer     m_watchdog;
+    static constexpr int kWatchdogMs = 3000;
     QByteArray m_rx;
 
     QString m_host = QStringLiteral("192.168.10.20");

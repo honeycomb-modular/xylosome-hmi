@@ -53,7 +53,11 @@ void TcpServer::acceptClient() {
 
 void TcpServer::sendTo(Client &c, const std::string &j) {
     const std::string line = j + "\n";
-    if (::send(c.fd, line.data(), line.size(), MSG_NOSIGNAL) < 0) c.fd = -1;  // reaped below
+    // A failed send (EPIPE, or EAGAIN when the client has stopped reading and
+    // its window is full) drops the client. close() it so the peer sees FIN
+    // and can reconnect; without that the connection stays ESTABLISHED and a
+    // client that is merely slow never learns it has been dropped.
+    if (::send(c.fd, line.data(), line.size(), MSG_NOSIGNAL) < 0) { close(c.fd); c.fd = -1; }  // reaped below
 }
 
 void TcpServer::broadcast(const std::string &j) {
