@@ -2,6 +2,10 @@
 //
 //   sudo ./el7211_csp <iface> [slavePos=2] [sweepCounts=0] [seconds=10]
 //
+// COLOUR WHEEL GUARD: every mode is confined to +-30 deg (--max-deg=N) around
+// the pose at enable, and leaving it trips quick stop + disable. Spin mode
+// (negative sweep) refuses to run without --allow-spin (wheel OFF only).
+//
 // ⚠️ NEVER RUN ON HARDWARE. Written from the manual, not yet run against a
 // real terminal. Every claim below traces to docs/manuals/EL72x1-901x_en.pdf;
 // none of it has been confirmed on the bench. Treat the first run as an
@@ -58,6 +62,87 @@ static long sdoR(int s, uint16_t i, uint8_t sub) {
     return ec_SDOread(s, i, sub, FALSE, &sz, &v, EC_TIMEOUTRXM) > 0 ? long(v) : -1;
 }
 
+// --peek: raw SDO reads/writes and a timestamped diag-history dump, then exit.
+// Lets us ask the drive questions (is STO actually seen? is 0x441C stale?)
+// without walking the enable sequence. Items after --peek:
+//   r:IDX:SUB[:N]     read N consecutive subindices (hex idx/sub)
+//   w:IDX:SUB:VAL:SZ  write VAL (hex) with SZ bytes
+//   diag              newest 6 records of 0x10F3 with their timestamps
+static void peekRead(int sl, int idx, int sub) {
+    uint8_t buf[256] = {0}; int sz = int(sizeof buf);
+    std::printf("  0x%04X:%02X ", idx, sub);
+    if (ec_SDOread(sl, uint16_t(idx), uint8_t(sub), FALSE, &sz, buf, EC_TIMEOUTRXM) <= 0) {
+        std::printf("-- fail");
+        while (EcatError) std::printf("  [%s]", ec_elist2string());
+        std::printf("\n"); return;
+    }
+    uint64_t v = 0; std::memcpy(&v, buf, sz > 8 ? 8 : sz);
+    if (sz <= 8) std::printf("= %llu (0x%llX)", (unsigned long long)v, (unsigned long long)v);
+    std::printf("  [");
+    for (int i = 0; i < sz; i++) std::printf("%s%02X", i ? " " : "", buf[i]);
+    std::printf("]\n");
+}
+static void peekDiag(int sl) {
+    long newest = sdoR(sl, 0x10F3, 0x02);
+    std::printf("  diag newest=%ld  flags(0x10F3:05)=0x%lX\n", newest, sdoR(sl, 0x10F3, 0x05));
+    for (long k = newest; k >= 6 && k > newest - 6; k--) {
+        uint8_t rec[64] = {0}; int sz = int(sizeof rec);
+        if (ec_SDOread(sl, 0x10F3, uint8_t(k), FALSE, &sz, rec, EC_TIMEOUTRXM) <= 0) break;
+        uint16_t fl = 0, tx = 0; uint64_t ts = 0;
+        std::memcpy(&fl, rec + 4, 2); std::memcpy(&tx, rec + 6, 2); std::memcpy(&ts, rec + 8, 8);
+        std::printf("  0x10F3:%02lX text=0x%04X flags=0x%04X ts=%.3f s (since 2000-01-01)  params:",
+                    k, tx, fl, double(ts) / 1e9);
+        for (int i = 16; i < sz; i++) std::printf(" %02X", rec[i]);
+        std::printf("\n");
+    }
+}
+// od        list every object index with its name (SDO info service)
+// od:IDX    list the entries of one object with names and current values
+// rail      list every slave on the bus (which terminal is at which position)
+static void peekOd(int sl, int only) {
+    ec_ODlistt odl; std::memset(&odl, 0, sizeof odl);
+    if (!ec_readODlist(uint16_t(sl), &odl)) { std::printf("  OD list failed\n"); return; }
+    for (uint16_t i = 0; i < odl.Entries; i++) {
+        if (only >= 0 && odl.Index[i] != only) continue;
+        ec_readODdescription(i, &odl);
+        std::printf("  0x%04X  %s\n", odl.Index[i], odl.Name[i]);
+        if (only < 0) continue;
+        ec_OElistt oel; std::memset(&oel, 0, sizeof oel);
+        ec_readOE(i, &odl, &oel);
+        for (int s = 0; s <= odl.MaxSub[i]; s++) {
+            if (!oel.DataType[s]) continue;
+            std::printf("    :%02X %-40s ", s, oel.Name[s]);
+            uint8_t buf[256] = {0}; int sz = int(sizeof buf);
+            if (ec_SDOread(sl, odl.Index[i], uint8_t(s), FALSE, &sz, buf, EC_TIMEOUTRXM) <= 0) {
+                std::printf("(no read)\n"); while (EcatError) ec_elist2string(); continue;
+            }
+            uint64_t v = 0; std::memcpy(&v, buf, sz > 8 ? 8 : sz);
+            if (sz <= 8) std::printf("= %llu (0x%llX)\n", (unsigned long long)v, (unsigned long long)v);
+            else { std::printf("["); for (int b = 0; b < sz; b++) std::printf("%s%02X", b ? " " : "", buf[b]); std::printf("]\n"); }
+        }
+    }
+}
+static int peek(int sl, int argc, char **argv, int from) {
+    for (int a = from; a < argc; a++) {
+        int idx = 0, sub = 0, n = 1, size = 0; char m = 0; unsigned long val = 0;
+        if (!std::strcmp(argv[a], "diag")) { peekDiag(sl); continue; }
+        if (!std::strcmp(argv[a], "od"))   { peekOd(sl, -1); continue; }
+        if (!std::strncmp(argv[a], "od:", 3)) { peekOd(sl, int(std::strtol(argv[a] + 3, nullptr, 16))); continue; }
+        if (!std::strcmp(argv[a], "rail")) {
+            for (int i = 1; i <= ec_slavecount; i++) std::printf("  slave %2d: %s\n", i, ec_slave[i].name);
+            continue;
+        }
+        if (argv[a][0] == 'w' && std::sscanf(argv[a], "%c:%x:%x:%lx:%d", &m, &idx, &sub, &val, &size) == 5) {
+            const bool ok = ec_SDOwrite(sl, uint16_t(idx), uint8_t(sub), FALSE, size, &val, EC_TIMEOUTRXM) > 0;
+            std::printf("  write 0x%04X:%02X = 0x%lX (%d bytes) -> %s\n", idx, sub, val, size, ok ? "ok" : "FAIL");
+            continue;
+        }
+        if (std::sscanf(argv[a], "%c:%x:%x:%d", &m, &idx, &sub, &n) >= 3)
+            for (int s = sub; s < sub + n; s++) peekRead(sl, idx, s);
+    }
+    ec_close(); return 0;
+}
+
 int main(int argc, char **argv) {
     // Separate flags from positionals FIRST. Mixing them bit once already:
     // "--monitor" landed in argv[5] (the cycle time), atol() made it 0, and the
@@ -66,9 +151,27 @@ int main(int argc, char **argv) {
     const char *pos[16];
     int nPos = 0;
     bool monitorOnly = false;
+    bool allowSpin = false;
+    bool teachRed = false;    // --teach-red: monitor only (no torque), save the shaft angle as RED
+    bool rgb = false;         // --rgb: cycle B(-sweep/2) -> G(+sweep/2) -> R(start), 0.5 s dwell each
+    bool symmetric = false;   // --symmetric: trapezoid between start-sweep/2 and start+sweep/2 (B/G about R)
+    // Colour wheel on the shaft (2026-10-16): no hard stop, so a full turn must
+    // be impossible in software. Every mode is confined to +-maxDeg around the
+    // pose at enable; leaving it trips a quick stop. --max-deg=N changes it.
+    double maxDeg = 30.0;
+    double tripDeg = -1.0;   // --trip-deg=N; default maxDeg + 3. Set below maxDeg to TEST the trip.
+    int peekFrom = -1;
     for (int i = 0; i < argc && nPos < 16; i++) {
+        if (peekFrom >= 0) break;   // everything after --peek belongs to peek()
         if (!std::strncmp(argv[i], "--", 2)) {
             if (!std::strcmp(argv[i], "--monitor")) monitorOnly = true;
+            if (!std::strcmp(argv[i], "--peek"))    peekFrom = i + 1;
+            if (!std::strcmp(argv[i], "--allow-spin")) allowSpin = true;
+            if (!std::strcmp(argv[i], "--symmetric"))  symmetric = true;
+            if (!std::strcmp(argv[i], "--rgb"))        { rgb = true; symmetric = true; }
+            if (!std::strcmp(argv[i], "--teach-red"))  { teachRed = true; monitorOnly = true; }
+            if (!std::strncmp(argv[i], "--max-deg=", 10)) maxDeg = std::atof(argv[i] + 10);
+            if (!std::strncmp(argv[i], "--trip-deg=", 11)) tripDeg = std::atof(argv[i] + 11);
         } else {
             pos[nPos++] = argv[i];
         }
@@ -99,6 +202,20 @@ int main(int argc, char **argv) {
         std::printf("slave %d out of range (1..%d)\n", sl, ec_slavecount); ec_close(); return 1;
     }
     std::printf("slave %d: %s\n", sl, ec_slave[sl].name);
+    if (peekFrom >= 0) return peek(sl, argc, argv, peekFrom);
+    // Refuse before touching the bus state. Spin mode is continuous rotation -
+    // with the colour wheel fitted that is exactly the move that must never run.
+    if (sweep < 0 && !allowSpin) {
+        std::printf("REFUSED: spin mode (negative sweep) rotates continuously.\n"
+                    "The colour wheel must never make a full turn. Remove the wheel,\n"
+                    "then pass --allow-spin if you really mean it.\n");
+        ec_close(); return 1;
+    }
+    if (tripDeg < 0.0) tripDeg = maxDeg + 3.0;
+    if (!(maxDeg > 0.0 && maxDeg < 180.0) || !(tripDeg > 0.0 && tripDeg < 180.0)) {
+        std::printf("REFUSED: --max-deg must be between 0 and 180 (got %g).\n", maxDeg);
+        ec_close(); return 1;
+    }
     if (sweep == 0)
         std::printf("sweepCounts=0 — will enable and report, NO MOTION commanded.\n");
     else
@@ -384,6 +501,53 @@ int main(int argc, char **argv) {
     // Counts per revolution, read from the motor's own nameplate rather than
     // assumed — 0x9008:12 "Resolution, steps per revolution".
     const double CPR = double(sdoR(sl, 0x9008, 0x12));
+    // Angle window in counts. Only spin mode with --allow-spin (wheel off) is exempt.
+    const bool    windowed = !(sweep < 0 && allowSpin);
+    const int32_t winCnt   = int32_t(maxDeg / 360.0 * CPR);
+    const int32_t tripCnt  = int32_t(tripDeg / 360.0 * CPR);   // default 3 deg past the clamp
+    bool   tripped = false;
+    double tTrip   = 0.0;
+
+    // RED = the colour wheel's home, taught by hand (--teach-red) and stored as
+    // the encoder's SINGLE-TURN angle. The EKS36 is absolute within one turn, so
+    // that angle means the same physical spot after hand-turning or a power
+    // cycle; the multi-turn part of the position is only the terminal counting
+    // since power-up and is ignored. With RED known, the angle window and trip
+    // are centred on RED, not on wherever the shaft happens to sit at enable.
+    const char *RED_FILE = "/var/lib/xylod/el7211_red";
+    const long long ST = (CPR > 0.0) ? (long long)CPR : 1;
+    auto stAngle = [&](long long p) { return ((p % ST) + ST) % ST; };       // 0..ST-1
+    auto stDelta = [&](long long a) { long long d = stAngle(a);              // -ST/2..ST/2-1
+                                      return d >= ST / 2 ? d - ST : d; };
+    long long redSt = -1;
+    if (!teachRed) {
+        if (FILE *f = std::fopen(RED_FILE, "r")) {
+            if (std::fscanf(f, "%lld", &redSt) != 1 || redSt < 0 || redSt >= ST) redSt = -1;
+            std::fclose(f);
+        }
+        if (redSt >= 0)
+            std::printf("RED home loaded: single-turn %lld (%s); window centred on RED\n",
+                        redSt, RED_FILE);
+        else
+            std::printf("no RED home (%s) - window centred on the pose at enable\n", RED_FILE);
+    }
+    int32_t center = 0;
+    // Enable is HELD until the start pose is confirmed inside the RED window.
+    // Position reads 0 while the drive sits in switch-on-disabled (0x0060), so
+    // it is only judged after >= 50 consecutive cycles in ready-to-switch-on.
+    bool redOk = (redSt < 0) || !windowed;
+    int  readyCycles = 0;                    // window/trip anchor: RED, or startPos without it
+    if (windowed && (CPR <= 0.0 || std::labs(symmetric ? sweep / 2 : sweep) > winCnt)) {   // symmetric: endpoints at +-sweep/2
+        std::printf("\nREFUSED: %s (CPR=%.0f, sweep=%ld counts, window=+-%.1f deg = %d counts)\n",
+                    CPR <= 0.0 ? "cannot read counts/rev 0x9008:12" : "sweep exceeds the angle window",
+                    CPR, sweep, maxDeg, winCnt);
+        run_ = false;
+    } else if (windowed) {
+        std::printf("angle window +-%.1f deg (+-%d counts) around the pose at enable; "
+                    "trip at +-%.1f deg\n", maxDeg, winCnt, double(tripCnt) / CPR * 360.0);
+    } else {
+        std::printf("*** --allow-spin: NO angle window. Wheel must be OFF. ***\n");
+    }
     double spinCounts = 0.0;                       // accumulated spin target
 
     // ── Trapezoidal point-to-point state (used when `repeats` > 0) ───────────
@@ -406,6 +570,26 @@ int main(int argc, char **argv) {
         ec_send_processdata();
         const int wkc = ec_receive_processdata(EC_TIMEOUTRET);
 
+        // -- ANGLE WINDOW TRIP ------------------------------------------------
+        // Measured, not commanded: whatever the cause (bad target arithmetic,
+        // PDO mis-map, feedback jump), once the shaft is outside the window the
+        // drive gets quick stop (0x0002, drive-internal emergency ramp), then
+        // disable voltage, and the run ends. Checked before anything else.
+        if (windowed && enabled && !tripped &&
+            (tx->pos > center + tripCnt || tx->pos < center - tripCnt)) {
+            tripped = true; tTrip = t;
+            std::printf("\n*** ANGLE WINDOW TRIP: pos %+d counts (%+.1f deg) from enable pose - "
+                        "quick stop + disable ***\n",
+                        tx->pos - center, double(tx->pos - center) / CPR * 360.0);
+        }
+        if (tripped) {
+            rx->cw = (t - tTrip) < 0.2 ? 0x0002 : 0x0000;
+            rx->target = tx->pos;
+            if (t - tTrip > 0.4) break;
+            dcAlign(); cycleSleep();
+            continue;
+        }
+
         // MDP 742 keeps the standard CiA-402 state machine bit layout.
         const uint16_t sw = tx->sw;
         uint16_t cw = 0x0006;
@@ -416,7 +600,7 @@ int main(int argc, char **argv) {
         if      ((sw & 0x004F) == 0x0008)
             cw = (int(t * 1000) / 50) % 2 ? 0x0080 : 0x0000;           // fault -> pulsed reset
         else if ((sw & 0x004F) == 0x0040) cw = 0x0006;                 // shutdown
-        else if ((sw & 0x006F) == 0x0021) cw = 0x0007;                 // switch on
+        else if ((sw & 0x006F) == 0x0021) cw = redOk ? 0x0007 : 0x0006;                 // switch on
         else if ((sw & 0x006F) == 0x0023) cw = 0x000F;                 // enable operation
         else if ((sw & 0x006F) == 0x0027) { cw = 0x000F; if (!enabled) { enabled = true; tEn = t; } }
         // Hard interlock: in monitor mode the controlword never leaves
@@ -431,6 +615,25 @@ int main(int argc, char **argv) {
         // reach "operation enabled", startPos latches and becomes the fixed
         // anchor for both the sweep and the clamp.
         if (!enabled) startPos = tx->pos;
+        // Anchor on RED: the RED nearest the current pose, in this session's counts.
+        center = (redSt >= 0) ? int32_t(startPos - stDelta((long long)startPos - redSt)) : startPos;
+        readyCycles = ((sw & 0x006F) == 0x0021) ? readyCycles + 1 : 0;
+        if (!redOk && !tripped && !monitorOnly && readyCycles >= 50 && tx->pos != 0) {
+            if (startPos <= center + winCnt && startPos >= center - winCnt) {
+                redOk = true;
+                std::printf("\nstart pose %+.2f deg from RED - inside the window, enabling\n",
+                            double(startPos - center) / CPR * 360.0);
+            }
+        }
+        if (!redOk && !tripped && !monitorOnly && readyCycles >= 50 && tx->pos != 0 &&
+            (startPos > center + winCnt || startPos < center - winCnt)) {
+            tripped = true; tTrip = t;
+            std::printf("\n*** START POSE OUTSIDE THE RED WINDOW: %+.1f deg from RED - no motion ***\n",
+                        double(startPos - center) / CPR * 360.0);
+            rx->cw = 0x0000; rx->target = tx->pos;
+            dcAlign(); cycleSleep();
+            continue;
+        }
 
         int32_t target = startPos;
 
@@ -438,8 +641,9 @@ int main(int argc, char **argv) {
         if (enabled && repeats > 0) {
             const double dt = double(CYCLE_NS) / 1e9;
             if (!trapInit) {                       // latch endpoints on first enabled cycle
-                posA = startPos; posB = startPos + int32_t(sweep);
-                cmdPos = double(startPos); tgt = posB; trapInit = true;
+                posA = symmetric ? center - int32_t(sweep / 2) : center;
+                posB = symmetric ? center + int32_t(sweep / 2) : center + int32_t(sweep);
+                cmdPos = double(startPos); tgt = rgb ? posA : posB; trapInit = true;
                 std::printf("\ntrapezoid: A=%d  B=%d  (%.1f deg)  vmax=%.0f rpm  accel=%.0f rev/s^2\n",
                             posA, posB, double(sweep) / CPR * 360.0,
                             TRAP_VMAX_RPM, TRAP_ACCEL_RPS2);
@@ -447,7 +651,7 @@ int main(int argc, char **argv) {
 
             if (dwell > 0.0) {
                 dwell -= dt;                       // holding at an endpoint
-            } else if (movesDone < repeats * 2) {
+            } else if (movesDone < (rgb ? repeats * 3 : repeats * 2 + 1)) {   // +1 = final move home to startPos
                 const double remaining = std::fabs(double(tgt) - cmdPos);
                 const double dir       = (double(tgt) > cmdPos) ? 1.0 : -1.0;
                 const double decelDist = (vel * vel) / (2.0 * ACCEL);
@@ -463,13 +667,27 @@ int main(int argc, char **argv) {
                     movesDone++;
                     dwell = TRAP_DWELL_S;
                     tgt = (movesDone % 2) ? posA : posB;
+                    // End every run where it began. Without this a run ends at an
+                    // endpoint, the next run centres on it, and repeated runs walk
+                    // the wheel round (2026-10-16: -15 deg per --symmetric run).
+                    if (movesDone >= repeats * 2) tgt = center;
+                    if (rgb) {                       // B -> G -> R, ends on R every cycle
+                        const int32_t seq[3] = {posA, posB, center};
+                        tgt = seq[movesDone % 3];
+                        dwell = 0.5;
+                    }
                     std::printf("\n  move %d/%d complete at %d\n",
                                 movesDone, repeats * 2, int32_t(cmdPos));
                 } else {
                     cmdPos += dir * step;
                 }
             }
-            rx->target = int32_t(cmdPos);
+            {
+                int32_t c = int32_t(cmdPos);
+                if (windowed && c > center + winCnt) c = center + winCnt;
+                if (windowed && c < center - winCnt) c = center - winCnt;
+                rx->target = c;
+            }
 
             if (int(t * 1000) % 20 == 0)
                 std::printf("\n  pos=%+11d  cmd=%+11d  v=%+7.1f rpm  err=%+6d  torque=%+6d  sw=0x%04X",
@@ -509,7 +727,11 @@ int main(int argc, char **argv) {
         }
 
         if (enabled && sweep != 0) {
-            const double s = std::sin(2.0 * M_PI * (t - tEn) / 8.0);   // 8 s period
+            // Stop on a zero crossing (every 4 s) and hold the enable pose, so a
+            // run always ends where it began and repeated runs cannot walk.
+            const double el   = t - tEn;
+            const double tEnd = std::ceil(secs / 4.0) * 4.0;   // <= secs + 4 < loop end
+            const double s = el < tEnd ? std::sin(2.0 * M_PI * el / 8.0) : 0.0;   // 8 s period
             target = startPos + int32_t(double(sweep) * s);
         }
         // Second safety net: a commanded target can never be further from the
@@ -527,15 +749,23 @@ int main(int argc, char **argv) {
         //
         // A limit must be anchored to something the controlled variable cannot
         // move.
-        const int32_t maxDev = int32_t(std::labs(sweep)) + 4096;   // ~5.6 deg margin
+        int32_t maxDev = int32_t(std::labs(sweep)) + 4096;   // ~5.6 deg margin
+        if (windowed && maxDev > winCnt) maxDev = winCnt;    // never outside the angle window
         if (target > startPos + maxDev) target = startPos + maxDev;
         if (target < startPos - maxDev) target = startPos - maxDev;
+        if (windowed && target > center + winCnt) target = center + winCnt;
+        if (windowed && target < center - winCnt) target = center - winCnt;
         rx->target = target;
 
-        if (int(t * 1000) % 250 == 0)
+        if (int(t * 1000) % 250 == 0) {
             std::printf("\nsw=0x%04X pos=%+11d (%+d from start) torque=%+6d wkc=%d al=0x%02X",
                         sw, tx->pos, tx->pos - startPos, tx->torque, wkc,
                         unsigned(ec_slave[sl].state));
+            if (redSt >= 0)
+                std::printf("  red%+.2f deg", double(stDelta((long long)tx->pos - redSt)) / CPR * 360.0);
+            if (teachRed)
+                std::printf("  st=%lld", stAngle((long long)tx->pos));
+        }
         std::fflush(stdout);
 
         dcAlign(); cycleSleep();
@@ -632,6 +862,21 @@ int main(int argc, char **argv) {
     ec_statecheck(0, EC_STATE_INIT, EC_TIMEOUTSTATE * 2);
     ec_close();
 
+    if (teachRed) {
+        const long long st = stAngle((long long)lastPos);
+        FILE *f = std::fopen(RED_FILE, "w");
+        if (f && CPR > 0.0) {
+            std::fprintf(f, "%lld\n", st);
+            std::fclose(f);
+            std::printf("\nRED TAUGHT: single-turn angle %lld of %.0f (%.2f deg) -> %s\n",
+                        st, CPR, double(st) / CPR * 360.0, RED_FILE);
+        } else {
+            if (f) std::fclose(f);
+            std::printf("\nRED NOT SAVED: cannot write %s (or CPR unknown)\n", RED_FILE);
+        }
+    }
+    if (tripped)
+        std::printf("\nRUN ENDED BY ANGLE WINDOW TRIP - investigate before running again.\n");
     if (!enabled)
         std::printf("\nNEVER REACHED 'operation enabled' (statusword 0x0027).\n"
                     "Check, in this order:\n"
