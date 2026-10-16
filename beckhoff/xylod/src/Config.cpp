@@ -45,6 +45,14 @@ bool Config::load(const std::string &path) {
     d("fw_vel_steps_s", fwVelStepsS);  d("fw_acc_steps_s2", fwAccStepsS2);
     d("fw_slot_r", fwSlotOffset[0]);   d("fw_slot_g", fwSlotOffset[1]);
     d("fw_slot_b", fwSlotOffset[2]);   d("fw_slot_c", fwSlotOffset[3]);
+    b("wheel_enable", wheelEnable);    s("wheel_red_file", wheelRedFile);
+    d("wheel_slot_r", wheelSlotDeg[0]); d("wheel_slot_g", wheelSlotDeg[1]);
+    d("wheel_slot_b", wheelSlotDeg[2]); d("wheel_slot_c", wheelSlotDeg[3]);
+    d("wheel_window_deg", wheelWindowDeg); d("wheel_trip_deg", wheelTripDeg);
+    d("wheel_vel_rpm", wheelVelRpm);   d("wheel_acc_rps2", wheelAccRps2);
+    i("wheel_vel_gain", wheelVelGain); i("wheel_pos_gain", wheelPosGain);
+    i("wheel_vel_limit_rpm", wheelVelLimitRpm);
+    i("wheel_rated_ma", wheelRatedMa);
     d("el2521_base_hz", el2521BaseHz); d("line_max_hz", lineMaxHz);
     d("line_lag_ms", lineLagMs);        d("runup_ms", runupMs);
     i("di_home", diHome);              i("di_end_min", diEndMin);

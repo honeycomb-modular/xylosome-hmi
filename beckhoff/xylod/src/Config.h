@@ -1,6 +1,7 @@
 #pragma once
 // Config.h — xylod configuration. Plain key=value file (see config/xylod.conf).
 // Everything hardware-specific lives here so bench changes never touch code.
+#include <cmath>
 #include <string>
 #include <map>
 
@@ -34,6 +35,24 @@ struct Config {
     double fwVelStepsS     = 4000.0;         // slew rate
     double fwAccStepsS2    = 16000.0;
     double fwSlotOffset[4] = {0.0, 0.25, 0.50, 0.75};  // R G B C, fraction of a rev
+
+    // ── colour wheel (EL7211-9014 + AM8111, direct drive, NO hard stop) ─────
+    // Half wheel, three glass filters. A full turn must be impossible: every
+    // target is clamped to red ± wheelWindowDeg and a measured excursion past
+    // red ± wheelTripDeg quick-stops the drive and latches until fault_reset.
+    // Red is the encoder's single-turn angle, taught by hand with
+    // `el7211_csp ... --teach-red` and read from wheelRedFile.
+    bool   wheelEnable     = false;      // false = EL7211 left untouched (pre-2026-10-16)
+    std::string wheelRedFile = "/var/lib/xylod/el7211_red";
+    double wheelSlotDeg[4] = {0.0, 45.0, -45.0, NAN};   // R G B C from red; nan = not fitted
+    double wheelWindowDeg  = 46.0;
+    double wheelTripDeg    = 48.0;
+    double wheelVelRpm     = 40.0;       // bench-proven with the wheel on, 2026-10-16
+    double wheelAccRps2    = 4.0;
+    int    wheelVelGain    = 2000;       // 0x8010:15 — tuned WITH the wheel fitted
+    int    wheelPosGain    = 1000;       // 0x8010:17
+    int    wheelVelLimitRpm = 300;       // 0x8010:31 drive-side speed cap
+    int    wheelRatedMa    = 2710;       // 0x8011:12 must read this (AM8111 nameplate)
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     double el2521BaseHz = 50000.0;           // CoE 0x8001:02 base frequency 1

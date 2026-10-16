@@ -31,7 +31,7 @@ public:
     bool operational() const override { return m_op; }
 
     void   axisEnable(bool on) override { m_wantEnable = on; }
-    void   axisFaultReset() override { m_faultReset = true; }
+    void   axisFaultReset() override;     // also re-arms a tripped colour wheel
     void   axisSetTargetDeg(double deg) override;
     double axisPosDeg() const override;
     double axisVelDegS() const override;
@@ -39,8 +39,11 @@ public:
     DriveState drive() const override;
 
     void fwMoveToSlot(int slot) override;
-    bool fwBusy() const override { return m_fwBusy; }
-    int  fwSlot() const override { return m_fwBusy ? -1 : m_fwSlot; }
+    bool fwBusy() const override { return m_cfg.wheelEnable ? wheelBusy() : m_fwBusy; }
+    int  fwSlot() const override {
+        if (m_cfg.wheelEnable) return wheelBusy() ? -1 : m_whSlot;
+        return m_fwBusy ? -1 : m_fwSlot;
+    }
 
     void setLineHz(double hz) override;
     double lineHz() const override { return m_lineHzCmd; }
@@ -60,6 +63,12 @@ private:
     void readInputs();
     void writeOutputs();
     void fwCycle(double dt);              // filter-wheel SW position loop
+
+    // colour wheel on the EL7211-9014 (see Config.h)
+    bool wheelPreop(int s);               // checks + PDO/sync/gains, slave in PRE-OP
+    bool wheelArmDc(int s);               // INIT walk-back, re-apply, SYNC0+1, SAFE-OP
+    void wheelCycle(double dt);           // state machine + trapezoid + window/trip
+    bool wheelBusy() const { return m_wh != Wh::Holding; }
 
     double countsToDeg(int32_t c) const;      // position: zero-referenced
     double countsToDegRel(int32_t c) const;   // scale only (velocities)
@@ -106,6 +115,28 @@ private:
     bool   m_fwBusy = false;
     int    m_fwSlot = 3;                  // assume parked on Clear at boot
     double m_fwPosSteps = 0.0, m_fwTargetSteps = 0.0, m_fwVelCmd = 0.0;
+
+    // colour wheel — EL7211-9014, MDP 742 CSP. PDO assignment set in PRE-OP:
+    //   Rx 0x1600 controlword + 0x1606 target POSITION (default 0x1601 is
+    //   VELOCITY — verified before enabling, a mis-map would be a runaway)
+    //   Tx 0x1A00 FB position + 0x1A01 statusword + 0x1A03 torque
+    struct WheelRx { uint16_t cw; int32_t target; } __attribute__((packed));
+    struct WheelTx { int32_t pos; uint16_t sw; int16_t torque; } __attribute__((packed));
+    WheelRx *m_whRx = nullptr;
+    WheelTx *m_whTx = nullptr;
+    int      m_whPos = 0;                 // slave index, 0 = not found / not enabled
+    enum class Wh { Off, Waiting, Enabling, Holding, Moving, Tripped };
+    Wh       m_wh = Wh::Off;              // Off = fitted but unusable (logged why)
+    long long m_whRedSt = -1;             // red, single-turn counts
+    long long m_whCpr = 0;                // counts per rev (0x9008:12)
+    int32_t  m_whCenter = 0;              // red in this session's counts
+    int32_t  m_whWin = 0, m_whTrip = 0;   // window / trip in counts
+    int32_t  m_whTarget = 0;              // where the trapezoid is heading
+    double   m_whCmd = 0.0, m_whVel = 0.0;// profile position / speed (counts, counts/s)
+    int      m_whSlot = -1;               // slot at rest, -1 = between slots
+    int      m_whPendSlot = -1;           // requested before the drive was enabled
+    int      m_whReady = 0;               // consecutive cycles in ready-to-switch-on
+    double   m_whTripT = 0.0;             // time in the current state (trip: quick stop, then disable)
 
     // mirrored telemetry (written only in cyclic thread)
     DigitalIn m_din;
