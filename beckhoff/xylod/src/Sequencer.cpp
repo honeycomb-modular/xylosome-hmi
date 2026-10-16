@@ -167,6 +167,10 @@ void Sequencer::finishPass() {
         char e[64];
         std::snprintf(e, sizeof e, "{\"ev\":\"seq_done\",\"passes\":%d}", m_passCount);
         event(e);
+        // The half colour wheel is off-balance: holding it on G or B costs
+        // ~25% rated current indefinitely, and every scan should start from
+        // red. Runs alongside the axis return, which it does not touch.
+        if (m_cfg.wheelEnable) m_bk.fwMoveToSlot(0);
     }
 }
 
@@ -299,6 +303,7 @@ void Sequencer::cycle(double dt) {
                                   m_pass >= 0 ? m_pass + 1 : 0);
                     event(b);
                     LOGI("seq: aborted during pass %d — partial pass closed", m_pass);
+                    if (m_cfg.wheelEnable) m_bk.fwMoveToSlot(0);   // back to red, as at the end
                 }
                 startMove(m_setpoint, m_moveVelMax);   // decel-in-place via trapezoid
                 m_st = St::Idle;
