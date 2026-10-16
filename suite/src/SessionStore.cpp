@@ -1118,6 +1118,9 @@ void SessionStore::setRejected(int row, bool rejected)
         return;
     m_sessions[row].rejected = rejected;
     touchRow(row);
+    // rejectedCount is exposed with NOTIFY countChanged; without this the
+    // header's "N rejected" and the quarantine dialog keep a stale number.
+    emit countChanged();
 }
 
 int SessionStore::setRejectedRange(int fromRow, int toRow, bool rejected)
@@ -1142,6 +1145,8 @@ int SessionStore::setRejectedRange(int fromRow, int toRow, bool rejected)
     }
     qInfo() << "[sessions]" << (rejected ? "rejected" : "un-rejected") << n
             << "session(s) in rows" << fromRow << "-" << toRow;
+    if (n > 0)
+        emit countChanged();   // refresh rejectedCount (see setRejected)
     return n;
 }
 
