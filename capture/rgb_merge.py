@@ -89,17 +89,34 @@ rows = rowsR
 
 # Destripe: slow passes (the exposure-matched blue) integrate each line for
 # longer, so every sensor column's dark current adds its own offset — stripes
-# along the scan and a lifted black. Estimate each column's dark offset as its
-# 2nd percentile over the whole pass, remove it, and bring every channel's
-# black down to the lowest channel's floor (dark current is additive, so this
-# is a subtraction, not a gain).
-offs = {f: np.percentile(chan[f][:rows, :cols], 2, axis=0) for f in "RGB"}
-floor = min(float(np.median(o)) for o in offs.values())
+# along the scan and a lifted black. Two parts, both additive (subtraction,
+# never a gain):
+#  · the column PATTERN: each column's offset relative to its neighbours.
+#    Estimated as the median over all lines of (pixel - the row's local mean
+#    across 31 columns). Scene content is smooth across neighbouring columns
+#    and changes along the scan, so the median keeps only the fixed pattern.
+#    It used to be each column's 2nd percentile, which needs dark pixels in
+#    every column: on a bright wall (scan 2245) that was wall texture, and
+#    subtracting it printed the wall's column minima as bands in the merge.
+#  · the channel's lifted black: its 2nd percentile, brought down to the
+#    lowest channel's floor.
+def column_pattern(img):
+    sub = img[::max(1, img.shape[0] // 4000)].astype(np.float32)   # ~4000 lines is plenty
+    local = cv2.blur(sub, (31, 1))                                   # mean across 31 columns, per row
+    return np.median(sub - local, axis=0)
+
+offs = {}
 for f in "RGB":
-    c = chan[f][:rows, :cols].astype(np.float32) - (offs[f] - floor)[None, :].astype(np.float32)
+    img = chan[f][:rows, :cols]
+    pat = column_pattern(img)
+    offs[f] = float(np.percentile(img[::8, ::8], 2))
+    print(f"{f}: column pattern p5..p95 {np.percentile(pat, 5):+.0f}..{np.percentile(pat, 95):+.0f} counts, "
+          f"black (p2) {offs[f]:.0f}")
+    chan[f] = (img.astype(np.float32) - pat[None, :].astype(np.float32), None)
+floor = min(offs.values())
+for f in "RGB":
+    c = chan[f][0] - np.float32(offs[f] - floor)
     chan[f] = np.clip(c, 0, 65535).astype(np.uint16)
-    print(f"{f}: column dark offset median {np.median(offs[f]):.0f}, "
-          f"spread p5..p95 {np.percentile(offs[f], 5):.0f}..{np.percentile(offs[f], 95):.0f}")
 
 r, g, b = (chan[f] for f in "RGB")
 
