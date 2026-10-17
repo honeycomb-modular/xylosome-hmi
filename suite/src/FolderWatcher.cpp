@@ -46,6 +46,23 @@ void FolderWatcher::scan()
     const QFileInfoList entries =
         QDir(m_dir).entryInfoList(QDir::Files | QDir::Readable, QDir::Time);
 
+    // Forget files that are gone, so a NEW file under a recycled name is seen
+    // again. The capture agent numbers scans from the highest on disk at its
+    // start; delete the newest sessions in the Suite, restart the agent, and
+    // the next scans reuse names this set had already announced — they were
+    // never reported, and their sessions sat without images (2026-10-17).
+    QSet<QString> present;
+    for (const QFileInfo &fi : entries)
+        present.insert(fi.absoluteFilePath());
+    for (auto it = m_known.begin(); it != m_known.end();) {
+        if (!present.contains(*it)) it = m_known.erase(it);
+        else ++it;
+    }
+    for (auto it = m_pending.begin(); it != m_pending.end();) {
+        if (!present.contains(it.key())) it = m_pending.erase(it);
+        else ++it;
+    }
+
     bool anythingPending = false;
     for (const QFileInfo &fi : entries) {
         if (!isTiff(fi.fileName()))

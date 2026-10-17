@@ -587,9 +587,14 @@ def cam_client(conn, addr):
         _clients.discard(conn); conn.close()
 
 # ---------- :5510 xylod client -> per-pass capture ----------
+SEQ_FILE = os.path.join(CAPTURE_DIR, ".xylosome", "scan_seq")
+
 def _max_seq():
-    # Continue numbering past whatever is already on disk so a restart never
-    # reuses a filename (reused names get absorbed by old sidecars -> blank).
+    # Continue numbering past whatever is already on disk AND past the last
+    # number handed out (SEQ_FILE), so a restart never reuses a filename.
+    # Disk alone was not enough: delete the newest sessions in the Suite, then
+    # restart the agent, and the next scans got names the Suite had already
+    # seen and silently ignored (2026-10-17).
     mx = 0
     try:
         for fn in os.listdir(CAPTURE_DIR):
@@ -597,7 +602,18 @@ def _max_seq():
                 n = fn[5:].split("_", 1)[0]
                 if n.isdigit(): mx = max(mx, int(n))
     except OSError: pass
+    try:
+        with open(SEQ_FILE) as f: mx = max(mx, int(f.read().strip() or 0))
+    except (OSError, ValueError): pass
     return mx
+
+def _save_seq(n):
+    try:
+        os.makedirs(os.path.dirname(SEQ_FILE), exist_ok=True)
+        with open(SEQ_FILE, "w") as f: f.write("%d
+" % n)
+    except OSError as e:
+        print("seq file:", e)
 
 def xylod_client():
     seq = _max_seq(); pass_filter = {}; grab = None; have = False; scan_settings = {}
@@ -611,6 +627,7 @@ def xylod_client():
     def open_board():
         nonlocal seq, grab, have
         seq += 1
+        _save_seq(seq)
         # Frame height = the lines xylod says this pass will deliver (the HMI aspect
         # bar, after xylod's rate clamp). Sizing to it is what makes the aspect real:
         # a wide image needs more lines than the old fixed 8192 could hold, and the
