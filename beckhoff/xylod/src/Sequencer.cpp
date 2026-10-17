@@ -170,7 +170,7 @@ void Sequencer::finishPass() {
         // The half colour wheel is off-balance: holding it on G or B costs
         // ~25% rated current indefinitely, and every scan should start from
         // red. Runs alongside the axis return, which it does not touch.
-        if (m_cfg.wheelEnable) m_bk.fwMoveToSlot(0);
+        if (m_cfg.wheelEnable) m_bk.fwPark();
     }
 }
 
@@ -303,7 +303,7 @@ void Sequencer::cycle(double dt) {
                                   m_pass >= 0 ? m_pass + 1 : 0);
                     event(b);
                     LOGI("seq: aborted during pass %d — partial pass closed", m_pass);
-                    if (m_cfg.wheelEnable) m_bk.fwMoveToSlot(0);   // back to red, as at the end
+                    if (m_cfg.wheelEnable) m_bk.fwPark();   // back to red, as at the end
                 }
                 startMove(m_setpoint, m_moveVelMax);   // decel-in-place via trapezoid
                 m_st = St::Idle;
@@ -457,7 +457,31 @@ void Sequencer::cycle(double dt) {
                 : 0;   // fixed-rate mode: lines depend on duration, not arc — unknown here
             // An explicit count wins; otherwise the colour/BW behaviour stands.
             m_passCount = (m_job.passCount > 0) ? m_job.passCount
-                        : (m_job.colorMode == 1) ? 1 : 4;
+                        : (m_job.colorMode == 1) ? 1 : 3;   // colour = R/G/B; no Clear on the half wheel
+            // Colour exposure match: the filters pass very different amounts of
+            // light (measured 2026-10-16: G ~0.7, B ~2 stops under R). Each
+            // colour pass runs slower by its filter's correction — the bracketing
+            // mechanism, so geometry and line count are unchanged and nothing on
+            // the camera moves. Only the plain R/G/B walk: explicit brackets and
+            // stacks, pinned filters, static holds (exposure set by duration) and
+            // time-indexed profiles are left exactly as they were.
+            if (m_job.colorMode == 0 && m_job.passCount <= 0 && m_job.filterSlot < 0 &&
+                m_job.passVelScale.empty() && !m_job.staticHold && !m_job.timeProfile) {
+                double st[4], lo = 1e9;
+                for (int p = 0; p < m_passCount; p++) {
+                    st[p] = std::max(0.0, std::min(4.0, m_cfg.colourStops[std::min(3, p)]));
+                    lo = std::min(lo, st[p]);
+                }
+                bool any = false;
+                for (int p = 0; p < m_passCount; p++) {
+                    m_job.passVelScale.push_back(std::pow(2.0, -(st[p] - lo)));
+                    if (st[p] - lo > 1e-3) any = true;
+                }
+                if (any && m_passCount == 3)
+                    LOGI("seq: colour exposure match — R/G/B at x%.3f / x%.3f / x%.3f speed",
+                         m_job.passVelScale[0], m_job.passVelScale[1], m_job.passVelScale[2]);
+                if (!any) m_job.passVelScale.clear();
+            }
             m_bk.axisEnable(true);
             m_pauseRamp = 1.0; m_pausing = false;
             m_pauseRampS = 0.25;

@@ -52,7 +52,9 @@ bool Config::load(const std::string &path) {
     d("wheel_vel_rpm", wheelVelRpm);   d("wheel_acc_rps2", wheelAccRps2);
     i("wheel_vel_gain", wheelVelGain); i("wheel_pos_gain", wheelPosGain);
     i("wheel_vel_limit_rpm", wheelVelLimitRpm);
-    i("wheel_rated_ma", wheelRatedMa);
+    i("wheel_rated_ma", wheelRatedMa); d("wheel_release_s", wheelReleaseS);
+    d("colour_stops_r", colourStops[0]); d("colour_stops_g", colourStops[1]);
+    d("colour_stops_b", colourStops[2]); d("colour_stops_c", colourStops[3]);
     d("el2521_base_hz", el2521BaseHz); d("line_max_hz", lineMaxHz);
     d("line_lag_ms", lineLagMs);        d("runup_ms", runupMs);
     i("di_home", diHome);              i("di_end_min", diEndMin);

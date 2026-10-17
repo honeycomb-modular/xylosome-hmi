@@ -471,6 +471,7 @@ void EcBackend::fwMoveToSlot(int slot) {
     slot = std::max(0, std::min(3, slot));
     if (m_cfg.wheelEnable) {
         static const char kName[] = "RGBC";
+        m_whParkArmed = false;            // any explicit move holds; only fwPark() releases
         const double deg = m_cfg.wheelSlotDeg[slot];
         if (std::isnan(deg)) {
             LOGW("ec: wheel has no %c filter — staying where it is", kName[slot]);
@@ -487,6 +488,14 @@ void EcBackend::fwMoveToSlot(int slot) {
             LOGI("ec: wheel -> %c (%+.1f deg)", kName[slot], deg);
         } else if (m_wh == Wh::Moving || m_wh == Wh::Waiting || m_wh == Wh::Enabling) {
             m_whPendSlot = slot;      // never reverse mid-move: queue it for arrival
+        } else if (m_wh == Wh::Released) {
+            // Torque back on through the same start check (pose inside the
+            // window — it may have been nudged while free), then the move.
+            LOGI("ec: wheel torque on for %c", kName[slot]);
+            m_whPendSlot = slot;
+            m_wh = Wh::Waiting;
+            m_whReady = 0;
+            m_whTripT = 0.0;
         } else {
             LOGW("ec: wheel unavailable (%s) — %c ignored",
                  m_wh == Wh::Tripped ? "tripped, needs fault_reset" : "off", kName[slot]);
@@ -555,6 +564,11 @@ void EcBackend::fwCycle(double dt) {
     }
 }
 
+void EcBackend::fwPark() {
+    fwMoveToSlot(0);
+    if (m_cfg.wheelEnable) m_whParkArmed = true;   // release torque once at rest on red
+}
+
 // ── colour wheel, one cycle ──────────────────────────────────────────────────
 // Off      fitted but unusable: controlword 0, never energised
 // Waiting  drive coming up; once position is valid, judge the pose vs red
@@ -597,9 +611,14 @@ void EcBackend::wheelCycle(double dt) {
         break;
 
     case Wh::Waiting:
-        if ((sw & 0x004F) == 0x0008) {                      // latched fault: pulsed reset edges
+        // Latched fault: pulsed reset edges. Test the fault BIT, not the DS402
+        // fault pattern — this terminal reports faults together with
+        // switch-on-disabled (0x0068, 0x8028), which the 0x004F==0x0008 mask
+        // misses, so a 48 V dip (diag 0x8406) never cleared (2026-10-16).
+        if (sw & 0x0008) {
+            if (m_whReady >= 0) LOGW("ec: wheel drive fault (sw 0x%04X) — pulsing fault reset", sw);
             cw = std::fmod(m_whTripT, 0.1) < 0.05 ? 0x0080 : 0x0000;
-            m_whReady = 0;
+            m_whReady = -1;                                   // -1 = fault already logged
             break;
         }
         // Position reads 0 in switch-on-disabled; judge only after 50 cycles
@@ -632,6 +651,8 @@ void EcBackend::wheelCycle(double dt) {
                 if (!std::isnan(d) && std::fabs(degFromRed(pos) - d) < 0.5) m_whSlot = k;
             }
             m_wh = Wh::Holding;
+            m_whTripT = 0.0;
+            if (m_whPendSlot < 0) m_whParkArmed = true;    // boot / reset with nothing to do
             LOGI("ec: wheel enabled at %+.2f deg from red (slot %d)", degFromRed(pos), m_whSlot);
         }
         if (m_wh == Wh::Enabling && m_whTripT > 2.0) {
@@ -656,14 +677,31 @@ void EcBackend::wheelCycle(double dt) {
                 m_whCmd = double(m_whTarget);
                 m_whVel = 0.0;
                 m_wh = Wh::Holding;
+                m_whTripT = 0.0;
                 LOGI("ec: wheel at slot %d (%+.2f deg from red)", m_whSlot, degFromRed(pos));
             } else {
                 m_whCmd += dir * step;
             }
         }
         target = int32_t(std::llround(m_whCmd));
+        // Parked on red and left alone: drop torque so the lens can be worked
+        // on. Red is near the half wheel's balance point, so it stays put.
+        // Only after fwPark() or a boot/reset enable — a slot picked by hand
+        // keeps holding, and green/blue would swing toward red when freed.
+        if (m_wh == Wh::Holding && m_whParkArmed && m_whPendSlot < 0 &&
+            m_cfg.wheelReleaseS > 0.0 && m_whTripT > m_cfg.wheelReleaseS &&
+            std::fabs(degFromRed(target)) < 2.0) {
+            m_wh = Wh::Released;
+            m_whParkArmed = false;
+            LOGI("ec: wheel at red (%+.2f deg), torque off", degFromRed(pos));
+        }
         break;
     }
+
+    case Wh::Released:
+        cw = 0x0006;                                          // shutdown: output stage off
+        m_whSlot = std::fabs(degFromRed(pos)) < 0.5 ? 0 : -1;
+        break;
 
     case Wh::Tripped:
         cw = m_whTripT < 0.2 ? 0x0002 : 0x0000;               // quick stop, then disable voltage
@@ -678,9 +716,11 @@ void EcBackend::wheelCycle(double dt) {
 
     // A slot requested while busy runs once the wheel is at rest.
     if (m_wh == Wh::Holding && m_whPendSlot >= 0) {
-        const int p = m_whPendSlot;
+        const int  p = m_whPendSlot;
+        const bool armed = m_whParkArmed;                     // a queued park stays a park
         m_whPendSlot = -1;
         fwMoveToSlot(p);
+        m_whParkArmed = armed;
     }
 }
 

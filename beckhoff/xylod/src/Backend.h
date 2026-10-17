@@ -49,6 +49,9 @@ public:
     virtual void fwMoveToSlot(int slot) = 0;           // 0=R 1=G 2=B 3=C
     virtual bool fwBusy() const = 0;
     virtual int  fwSlot() const = 0;                   // -1 while moving/unknown
+    // End of a sequence: back to slot 0. A backend that can safely drop torque
+    // at rest (the colour wheel) may do so once it is there.
+    virtual void fwPark() { fwMoveToSlot(0); }
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     virtual void setLineHz(double hz) = 0;

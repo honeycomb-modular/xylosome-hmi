@@ -39,6 +39,7 @@ public:
     DriveState drive() const override;
 
     void fwMoveToSlot(int slot) override;
+    void fwPark() override;               // colour wheel: to red, then torque off
     bool fwBusy() const override { return m_cfg.wheelEnable ? wheelBusy() : m_fwBusy; }
     int  fwSlot() const override {
         if (m_cfg.wheelEnable) return wheelBusy() ? -1 : m_whSlot;
@@ -68,7 +69,7 @@ private:
     bool wheelPreop(int s);               // checks + PDO/sync/gains, slave in PRE-OP
     bool wheelArmDc(int s);               // INIT walk-back, re-apply, SYNC0+1, SAFE-OP
     void wheelCycle(double dt);           // state machine + trapezoid + window/trip
-    bool wheelBusy() const { return m_wh != Wh::Holding; }
+    bool wheelBusy() const { return m_wh != Wh::Holding && m_wh != Wh::Released; }
 
     double countsToDeg(int32_t c) const;      // position: zero-referenced
     double countsToDegRel(int32_t c) const;   // scale only (velocities)
@@ -125,7 +126,8 @@ private:
     WheelRx *m_whRx = nullptr;
     WheelTx *m_whTx = nullptr;
     int      m_whPos = 0;                 // slave index, 0 = not found / not enabled
-    enum class Wh { Off, Waiting, Enabling, Holding, Moving, Tripped };
+    enum class Wh { Off, Waiting, Enabling, Holding, Moving, Tripped, Released };
+    bool     m_whParkArmed = false;       // at rest after a park/boot: may release torque
     Wh       m_wh = Wh::Off;              // Off = fitted but unusable (logged why)
     long long m_whRedSt = -1;             // red, single-turn counts
     long long m_whCpr = 0;                // counts per rev (0x9008:12)

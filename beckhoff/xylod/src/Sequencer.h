@@ -27,7 +27,7 @@
 #include <vector>
 
 struct ScanJob {
-    int    colorMode    = 0;       // 0 color (4 passes), 1 BW (1 pass, Clear)
+    int    colorMode    = 0;       // 0 color (3 passes R/G/B), 1 BW (1 pass, slot C)
     double arcStartDeg  = 0.0;
     double arcEndDeg    = 90.0;
     double maxVelDegS   = 100.0;
@@ -49,7 +49,7 @@ struct ScanJob {
     double durationS   = 0.0;      // pass length; required when staticHold
 
     // ── multi-pass structure ─────────────────────────────────────────────────
-    // passCount 0 keeps the colorMode behaviour (1 BW pass / 4 colour passes).
+    // passCount 0 keeps the colorMode behaviour (1 BW pass / 3 colour passes).
     // An explicit N runs N passes, which is what stacking, exposure bracketing
     // and sub-pixel dithering all need and none of them could ask for before.
     int    passCount     = 0;

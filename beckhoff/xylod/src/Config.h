@@ -49,10 +49,15 @@ struct Config {
     double wheelTripDeg    = 48.0;
     double wheelVelRpm     = 40.0;       // bench-proven with the wheel on, 2026-10-16
     double wheelAccRps2    = 4.0;
-    int    wheelVelGain    = 2000;       // 0x8010:15 — tuned WITH the wheel fitted
+    int    wheelVelGain    = 1000;       // 0x8010:15 — tuned WITH the wheel fitted; 2000 hummed at standstill
     int    wheelPosGain    = 1000;       // 0x8010:17
     int    wheelVelLimitRpm = 300;       // 0x8010:31 drive-side speed cap
     int    wheelRatedMa    = 2710;       // 0x8011:12 must read this (AM8111 nameplate)
+    double wheelReleaseS   = 2.0;        // parked at red this long -> torque off (0 = always hold)
+    // Colour exposure match, in stops of EXTRA exposure per filter (R G B C).
+    // A colour pass runs at 2^-(stops - min stops) of full speed: same arc and
+    // line count, each line integrated longer. 0 0 0 = no correction.
+    double colourStops[4]  = {0.0, 0.0, 0.0, 0.0};
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     double el2521BaseHz = 50000.0;           // CoE 0x8001:02 base frequency 1
