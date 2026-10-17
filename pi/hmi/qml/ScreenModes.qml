@@ -86,8 +86,8 @@ Item {
         onItemRemoved: root.rebuildTargets()
 
         model: [
-            { name: "scan",      desc: "velocity curve over an arc — 1 or 4 pass",     page: "ScreenScan.qml"   },
-            { name: "timed",     desc: "constant crawl over a span — seconds to 24 h", page: "ScreenTimed.qml"  },
+            { name: "scan",      desc: "velocity curve over an arc — 1 or 3 pass",     page: "ScreenScan.qml"   },
+            { name: "timed",     desc: "constant crawl over a span — seconds to 24 h, mono or R/G/B", page: "ScreenTimed.qml"  },
             { name: "xerox",     desc: "hold the button — the axis halts, the lines keep coming", page: "ScreenXerox.qml" },
             { name: "static",    desc: "lines only — the camera never moves",          page: "ScreenStatic.qml" },
             { name: "chrono",    desc: "the same frame on an interval — time-lapse",   page: "ScreenChrono.qml" },

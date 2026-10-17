@@ -9,9 +9,12 @@
 // Execute sends a flat constant-velocity profile (vel = arc ÷ span). While
 // running the timeline fills with progress: % · elapsed/total · lines scanned.
 //
-// NOTE: single continuous pass (no 4-pass r/g/b/c). And the daemon's velocity
-// model floors at ~1°/s, so a true multi-hour crawl needs xylod/servo work —
-// the page still drives correctly offline and sends the right target velocity.
+// [color] runs three passes R / G / B through the colour wheel, each one the
+// same crawl over the same span, so exposure and line count match monochrome;
+// the clock shows the total (3 x span). [monochrome] is the single pass it
+// always was. The daemon's velocity model floors at ~1°/s, so a true
+// multi-hour crawl needs xylod/servo work — the page still drives correctly
+// offline and sends the right target velocity.
 
 import QtCore
 import QtQuick
@@ -29,6 +32,7 @@ Item {
         property alias hand1Angle:  root.hand1Angle
         property alias hand2Angle:  root.hand2Angle
         property alias durationSec: root.durationSec
+        property alias timedColor:  root.timedColor
     }
 
     // ── Scan definition ─────────────────────────────────────────────────────────
@@ -42,6 +46,12 @@ Item {
     readonly property int  durMinSec: 1
     readonly property int  durMaxSec: 86400
     property int  durationSec: 3600   // default 1 h
+
+    // Colour: 3 passes R/G/B (xylod colorMode 0), each a full crawl over the span.
+    property bool timedColor: false
+    readonly property int  passCount:  root.timedColor ? 3 : 1
+    readonly property var  passNames:  ["R", "G", "B"]
+    readonly property int  totalSec:   root.durationSec * root.passCount
 
     // "lines scanned" is an estimate until the capture pipeline defines a real
     // slow-scan line rate — scaled from the FOV arc by a nominal constant.
@@ -92,8 +102,8 @@ Item {
     FocusController {
         id: timedFocus
         // Reading order — left to right, then down a line:
-        //   fov dial · timeline · [settings] · [modes] · fault chip · [abort] · [home]
-        targets: [fovCircle, timelineProxy, settingsBtn, modesBtn]
+        //   fov dial · timeline · [color] · [settings] · [modes] · fault chip · [abort] · [home]
+        targets: [fovCircle, timelineProxy, colorBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -191,12 +201,13 @@ Item {
         root.homed        = false
         if (Beckhoff.connected) {
             // Constant crawl: pin min = max = target so the daemon floor can't
-            // override, flat 1.0 profile. Single pass (bw).
+            // override, flat 1.0 profile. colorMode 1 = one BW pass,
+            // 0 = R/G/B, the same crawl three times.
             // plannedLines is now sent, not just displayed: with max=min=velDegS
             // the rate works out to plannedLines/durationSec, so the "N lines"
             // readout above is what the trigger actually delivers.
             Beckhoff.setLineMode("curve")   // saved setting — ramp may have left "fixed"
-            Beckhoff.executeScan(1, root.hand1Angle, root.hand2Angle,
+            Beckhoff.executeScan(root.timedColor ? 0 : 1, root.hand1Angle, root.hand2Angle,
                                  root.velDegS, root.velDegS,
                                  root.plannedLines, root.buildFlatProfile())
         } else {
@@ -231,7 +242,7 @@ Item {
         onTriggered: {
             if (Beckhoff.connected) { simTimer.stop(); return }
             root.elapsedSec += 0.25
-            root.progressFrac = Math.min(1, root.elapsedSec / Math.max(1, root.durationSec))
+            root.progressFrac = Math.min(1, root.elapsedSec / Math.max(1, root.totalSec))
             if (root.progressFrac >= 1) root.finishRun()
         }
     }
@@ -253,8 +264,10 @@ Item {
         target: Beckhoff
         function onProgressChanged() {
             if (root.execState === "running" && Beckhoff.connected) {
-                root.progressFrac = Beckhoff.progress
-                root.elapsedSec   = Beckhoff.progress * root.durationSec
+                // progress is per pass; fold the pass index in for the whole run
+                var p = Math.max(0, Math.min(root.passCount - 1, Beckhoff.passIndex))
+                root.progressFrac = (p + Beckhoff.progress) / root.passCount
+                root.elapsedSec   = root.progressFrac * root.totalSec
             }
         }
         function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
@@ -419,6 +432,18 @@ Item {
         }
     }
 
+    // ── Colour / monochrome — under the clock, flush right ───────────────────────
+    TerminalButton {
+        id: colorBtn
+        controller: timedFocus
+        anchors { right: parent.right; rightMargin: Theme.marginX }
+        y: 272
+        width: 116; height: 26
+        fontSize: Theme.fontMonoS
+        label: root.timedColor ? "[color]" : "[monochrome]"
+        onClicked: if (root.execState === "idle") root.timedColor = !root.timedColor
+    }
+
     // ── Duration clock — big readout, mirrors the span ──────────────────────────
     Column {
         id: clockBox
@@ -427,7 +452,13 @@ Item {
         spacing: 2
         Text {
             anchors.right: parent.right
-            text: root.execState === "idle" ? "span" : "elapsed / span"
+            text: root.execState === "idle"
+                  ? (root.timedColor ? "span per pass" : "span")
+                  : (root.timedColor
+                     ? "pass " + (Math.max(0, Beckhoff.passIndex) + 1) + "/3 "
+                       + root.passNames[Math.max(0, Math.min(2, Beckhoff.passIndex))]
+                       + " · elapsed / total"
+                     : "elapsed / span")
             color: Theme.colorTextDim
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }
@@ -435,13 +466,14 @@ Item {
             anchors.right: parent.right
             text: root.execState === "idle"
                   ? root.fmtDuration(root.durationSec)
-                  : root.fmtDuration(root.elapsedSec) + " / " + root.fmtDuration(root.durationSec)
+                  : root.fmtDuration(root.elapsedSec) + " / " + root.fmtDuration(root.totalSec)
             color: root.execState === "idle" ? Theme.colorText : Theme.accent
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {
             anchors.right: parent.right
             text: "crawl " + root.velDegS.toFixed(root.velDegS < 1 ? 3 : 1) + " deg/s"
+                  + (root.timedColor ? " · R/G/B total " + root.fmtDuration(root.totalSec) : "")
             color: Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }
@@ -512,8 +544,8 @@ Item {
             Text {
                 anchors { right: parent.right; rightMargin: 8; bottom: parent.bottom; bottomMargin: 6 }
                 visible: root.execState !== "idle"
-                text: root.fmtLines(Math.round(root.progressFrac * root.plannedLines)) + " / "
-                      + root.fmtLines(root.plannedLines) + " lines"
+                text: root.fmtLines(Math.round(root.progressFrac * root.plannedLines * root.passCount)) + " / "
+                      + root.fmtLines(root.plannedLines * root.passCount) + " lines"
                 color: Theme.colorTextDim
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
             }
