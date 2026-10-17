@@ -111,6 +111,7 @@ private:
     bool   m_targetValid = false;         // until first set, echo actual back
     bool   m_passActive = false, m_passIndex = false, m_lineBlink = false;
     double m_lineHzCmd  = 0.0;
+    double m_freqAcc    = 0.0;            // EL2521 word dither carry (see writeOutputs)
 
     // filter wheel
     bool   m_fwBusy = false;

@@ -734,8 +734,26 @@ void EcBackend::writeOutputs() {
     }
     if (m_ltRx) {
         m_ltRx->ctrl = 0;
-        const double frac = m_lineHzCmd / m_cfg.el2521BaseHz;
-        m_ltRx->freqVal = int16_t(std::max(0.0, std::min(1.0, frac)) * 32767.0);
+        // The frequency word is 16-bit against base frequency 1, so one step
+        // is 50000/32767 = 1.53 Hz. Truncating to it lost lines on every slow
+        // pass — 1.5% of blue at 70 Hz, 0.5% of red at 299 Hz (scan 2233,
+        // 2026-10-17) — and squeezed each channel by a different amount along
+        // the scan. First-order sigma-delta instead: carry the fraction from
+        // cycle to cycle and alternate between the two adjacent words, so the
+        // MEAN frequency over a few cycles is the commanded one exactly. The
+        // ramp is off, so the terminal follows every cycle; the jitter is one
+        // step, under 1 ms of line spacing at 1 kHz.
+        const double frac = std::max(0.0, std::min(1.0, m_lineHzCmd / m_cfg.el2521BaseHz));
+        const double want = frac * 32767.0;
+        if (want <= 0.0) {
+            m_freqAcc = 0.0;
+            m_ltRx->freqVal = 0;
+        } else {
+            m_freqAcc += want;
+            const int word = int(m_freqAcc);          // floor: acc stays in [0, 1)
+            m_freqAcc -= word;
+            m_ltRx->freqVal = int16_t(std::min(32767, word));
+        }
     }
     if (m_dout) {
         uint8_t b = 0;
