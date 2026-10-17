@@ -59,6 +59,30 @@ ApplicationWindow {
         category: "merge"
         property alias discardAfterMerge: root.discardAfterMerge
     }
+
+    // View ▸ White balance (K): grey-world gains from the shown image's R/G/B
+    // medians (ingest stores them for merged colour images), applied live in
+    // the zoom view. Mono passes and merges from before the medians existed
+    // have none, so the toggle does nothing there until re-ingest.
+    property bool wbOn: false
+    Settings {
+        category: "view"
+        property alias wbOn: root.wbOn
+    }
+    readonly property vector3d wbGains: {
+        const it = strip.currentItem
+        if (!root.wbOn || !it || root.shownPass < 0) return Qt.vector3d(1, 1, 1)
+        const m = it.sPassMedians[root.shownPass]
+        if (!m || m.length !== 3 || m[0] <= 0 || m[1] <= 0 || m[2] <= 0) return Qt.vector3d(1, 1, 1)
+        return Qt.vector3d(m[1] / m[0], 1, m[1] / m[2])
+    }
+    readonly property bool wbAvailable: {
+        const it = strip.currentItem
+        if (!it || root.shownPass < 0) return false
+        const m = it.sPassMedians[root.shownPass]
+        return !!m && m.length === 3
+    }
+    Shortcut { enabled: root.keysLive; sequences: ["K"]; onActivated: root.wbOn = !root.wbOn }
     readonly property bool canMergeRGB: {
         const it = strip.currentItem
         if (!it || it.sState === "live") return false
@@ -283,6 +307,13 @@ ApplicationWindow {
                     !(strip.currentItem && strip.currentItem.sMetaWhite))
             }
             MenuItem { text: qsTr("Gray surround"); enabled: false }
+            MenuSeparator {}
+            MenuItem {
+                text: qsTr("White balance (grey-world)\tK")
+                checkable: true
+                checked: root.wbOn
+                onTriggered: root.wbOn = !root.wbOn
+            }
         }
         Menu {
             title: qsTr("&Session")
@@ -575,6 +606,7 @@ ApplicationWindow {
                       ? strip.currentItem.sPassDims[root.shownPass].w : 0
                 imgH: root.shownPass >= 0 && strip.currentItem
                       ? strip.currentItem.sPassDims[root.shownPass].h : 0
+                wbGain: root.wbGains
                 metaSource: strip.currentItem ? strip.currentItem.sMetaSvg : ""
                 metaX: strip.currentItem ? strip.currentItem.sMetaX : 0.04
                 metaY: strip.currentItem ? strip.currentItem.sMetaY : 0.78
@@ -790,6 +822,22 @@ ApplicationWindow {
                     color: root.inkMuted
                     font.pixelSize: 11
                 }
+                Label {
+                    visible: root.wbAvailable
+                    text: root.wbOn
+                          ? qsTr("wb ×%1 / ×%2").arg(root.wbGains.x.toFixed(2)).arg(root.wbGains.z.toFixed(2))
+                          : qsTr("wb off")
+                    color: root.wbOn ? root.ink : root.inkMuted
+                    font.pixelSize: 11
+                    font.underline: wbMouse.containsMouse
+                    MouseArea {
+                        id: wbMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.wbOn = !root.wbOn
+                    }
+                }
                 Row {
                     spacing: 1
                     visible: strip.currentItem !== null
@@ -933,6 +981,7 @@ ApplicationWindow {
                     required property var passTileBases
                     required property var passDiscarded
                     required property bool merged
+                    required property var passMedians
                     required property string metaSvg
                     required property double metaX
                     required property double metaY
@@ -964,6 +1013,7 @@ ApplicationWindow {
                     readonly property var sPassTileBases: passTileBases
                     readonly property var sPassDiscarded: passDiscarded
                     readonly property bool sMerged: merged
+                    readonly property var sPassMedians: passMedians
                     readonly property string sMetaSvg: metaSvg
                     readonly property double sMetaX: metaX
                     readonly property double sMetaY: metaY

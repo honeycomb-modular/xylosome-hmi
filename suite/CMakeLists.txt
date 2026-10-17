@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
 # Qt >= 6.2 (CI uses 6.8; 6.2 floor keeps stock Ubuntu 22.04 buildable)
-find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 Svg)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 Svg ShaderTools)
 
 if(COMMAND qt_standard_project_setup)
     qt_standard_project_setup()
@@ -96,6 +96,20 @@ qt_add_qml_module(xylosome-suite
     RESOURCES
         assets/hm_logo_black.svg
         assets/icon.png
+)
+
+# Viewer white balance: a per-tile fragment shader, compiled by qsb at build
+# time (qrc:/qt/qml/XylosomeSuite/shaders/wb.frag.qsb).
+qt_add_shaders(xylosome-suite "suite_shaders"
+    PREFIX "/qt/qml/XylosomeSuite"
+    FILES shaders/wb.frag
+)
+
+# Viewer white balance: a per-tile fragment shader, compiled by qsb at build
+# time (qrc:/qt/qml/XylosomeSuite/shaders/wb.frag.qsb).
+qt_add_shaders(xylosome-suite "suite_shaders"
+    PREFIX "/qt/qml/XylosomeSuite"
+    FILES shaders/wb.frag
 )
 
 set_target_properties(xylosome-suite PROPERTIES

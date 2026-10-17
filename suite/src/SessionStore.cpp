@@ -94,6 +94,7 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassTileBasesRole, "passTileBases" },
         { PassDiscardedRole, "passDiscarded" },
         { MergedRole, "merged" },
+        { PassMediansRole, "passMedians" },
         { CreatedRole, "createdWallMs" },
         { MetaSvgRole, "metaSvg" },
         { MetaXRole, "metaX" },
@@ -208,6 +209,15 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
             if (p.filter == QLatin1String("RGB") && !p.file.isEmpty())
                 return true;
         return false;
+    }
+    case PassMediansRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes) {
+            QVariantList m;
+            for (double d : p.medians) m << d;
+            v << QVariant(m);
+        }
+        return v;
     }
     }
     return {};
@@ -418,7 +428,7 @@ void SessionStore::enqueueIngest(const SessionRecord &s, const PassRecord &p)
 void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
                               const QString &previewAbs, int pxW, int pxH,
                               double clipBlackPct, double clipWhitePct,
-                              const QVariantList &hist256)
+                              const QVariantList &hist256, const QVariantList &bandMedians)
 {
     for (int row = 0; row < m_sessions.size(); ++row) {
         SessionRecord &s = m_sessions[row];
@@ -436,6 +446,9 @@ void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
             p.hist256.reserve(hist256.size());
             for (const QVariant &v : hist256)
                 p.hist256 << v.toDouble();
+            p.medians.clear();
+            for (const QVariant &v : bandMedians)
+                p.medians << v.toDouble();
             touchRow(row);
             return;
         }
@@ -496,6 +509,8 @@ void SessionStore::loadExisting()
             p.clipWhitePct = po.value(QStringLiteral("clipWhitePct")).toDouble(-1);
             for (const QJsonValue &hv : po.value(QStringLiteral("hist256")).toArray())
                 p.hist256 << hv.toDouble();
+            for (const QJsonValue &mv : po.value(QStringLiteral("medians")).toArray())
+                p.medians << mv.toDouble();
             s.passes << p;
         }
         if (s.state == QLatin1String("live"))
@@ -521,8 +536,9 @@ void SessionStore::loadExisting()
     for (const SessionRecord &s : m_sessions)
         for (const PassRecord &p : s.passes)
             if (!p.file.isEmpty()
-                && (p.preview.isEmpty() || !QFile::exists(p.preview)))
-                enqueueIngest(s, p);
+                && (p.preview.isEmpty() || !QFile::exists(p.preview)
+                    || (p.filter == QLatin1String("RGB") && p.medians.isEmpty())))
+                enqueueIngest(s, p);   // merged before medians existed: once more
 }
 
 void SessionStore::save(const SessionRecord &s) const
@@ -557,6 +573,11 @@ void SessionStore::save(const SessionRecord &s) const
             QJsonArray h;
             for (double v : p.hist256) h.append(v);
             po.insert(QStringLiteral("hist256"), h);
+        }
+        if (!p.medians.isEmpty()) {
+            QJsonArray m;
+            for (double v : p.medians) m.append(v);
+            po.insert(QStringLiteral("medians"), m);
         }
         passes.append(po);
     }

@@ -35,6 +35,7 @@ struct PassRecord {
     double  clipBlackPct = -1;   // -1 = not computed
     double  clipWhitePct = -1;
     QVector<double> hist256;
+    QVector<double> medians;     // R G B medians (16-bit) of a merged colour image; empty otherwise
 };
 
 struct SessionRecord {
@@ -93,6 +94,7 @@ public:
         PassTileBasesRole,   // QVariantList<QString> — dz base path or ""
         PassDiscardedRole,   // QVariantList<bool> — channel deleted after a colour merge
         MergedRole,          // bool — session has a merged RGB image
+        PassMediansRole,     // QVariantList<QVariantList<double>> — R/G/B medians per pass ([] if mono)
         CreatedRole,         // qint64 wall ms
         MetaSvgRole,         // abs path or "" (white variant if metaWhite)
         MetaXRole,
@@ -191,7 +193,7 @@ private slots:
     void onIngested(const QString &sessionUuid, int passIndex,
                     const QString &previewAbs, int pxW, int pxH,
                     double clipBlackPct, double clipWhitePct,
-                    const QVariantList &hist256);
+                    const QVariantList &hist256, const QVariantList &bandMedians);
 
 private:
     SessionRecord *liveSession();

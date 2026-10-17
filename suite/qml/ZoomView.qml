@@ -18,6 +18,12 @@ Item {
     property int imgW: 0
     property int imgH: 0
 
+    // White balance: per-channel gains applied to every tile by a small
+    // fragment shader (shaders/wb.frag) — live, never touching the proxies or
+    // the TIFF. (1,1,1) = off, no layer, no cost.
+    property vector3d wbGain: Qt.vector3d(1, 1, 1)
+    readonly property bool wbActive: wbGain.x !== 1 || wbGain.y !== 1 || wbGain.z !== 1
+
     // Metadata overlay (Pi SVG) — placement normalized to image size.
     // Drag moves; the corner handle scales; placementChanged fires on release.
     property string metaSource: ""
@@ -179,6 +185,12 @@ Item {
                     source: modelData.url
                     asynchronous: true
                     smooth: view.zoom < 1.5   // crisp pixels past 1:1
+                    layer.enabled: view.wbActive
+                    layer.smooth: view.zoom < 1.5
+                    layer.effect: ShaderEffect {
+                        property vector4d gain: Qt.vector4d(view.wbGain.x, view.wbGain.y, view.wbGain.z, 1)
+                        fragmentShader: "qrc:/qt/qml/XylosomeSuite/shaders/wb.frag.qsb"
+                    }
                 }
             }
 

@@ -174,7 +174,8 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
 
     // ── histogram + clip stats, one pass over the original
     // A merged colour TIFF has three bands; its histogram is taken on green
-    // (hist_find interleaves bands otherwise and the clip stats read garbage).
+    // (hist_find interleaves bands otherwise and the clip stats read garbage),
+    // and each band's median is kept for the viewer's white balance.
     VipsImage *hist = nullptr;
     const int bands = vips_image_get_bands(src);
     const int hr = bands > 1 ? vips_hist_find(src, &hist, "band", 1, nullptr)
@@ -183,6 +184,30 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
         fail("hist_find");
         g_object_unref(src);
         return;
+    }
+    QVariantList bandMedians;
+    if (bands == 3) {
+        for (int b = 0; b < 3; ++b) {
+            VipsImage *bh = nullptr;
+            if (vips_hist_find(src, &bh, "band", b, nullptr)) break;
+            const int n = vips_image_get_width(bh);
+            const bool isUint = vips_image_get_format(bh) == VIPS_FORMAT_UINT;
+            size_t len = 0;
+            void *m = vips_image_write_to_memory(bh, &len);
+            g_object_unref(bh);
+            if (!m) break;
+            auto at = [&](int i) -> double {
+                return isUint ? double(static_cast<quint32 *>(m)[i])
+                              : static_cast<double *>(m)[i];
+            };
+            double tot = 0;
+            for (int i = 0; i < n; ++i) tot += at(i);
+            double acc = 0; int med = 0;
+            for (int i = 0; i < n; ++i) { acc += at(i); if (acc >= tot / 2) { med = i; break; } }
+            g_free(m);
+            bandMedians << double(med);
+        }
+        if (bandMedians.size() != 3) bandMedians.clear();
     }
     g_object_unref(src);
 
@@ -221,7 +246,9 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
             << QStringLiteral("clip %1% / %2%")
                    .arg(clipBlackPct, 0, 'f', 3)
                    .arg(clipWhitePct, 0, 'f', 3);
+    if (!bandMedians.isEmpty())
+        qInfo() << "[vips] band medians R/G/B" << bandMedians;
     emit ingested(sessionUuid, passIndex, previewPath, pxW, pxH,
-                  clipBlackPct, clipWhitePct, hist256);
+                  clipBlackPct, clipWhitePct, hist256, bandMedians);
 #endif
 }

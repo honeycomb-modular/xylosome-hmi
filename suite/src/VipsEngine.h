@@ -10,6 +10,10 @@
 //
 // and computes from one histogram pass over the 16-bit original:
 //   clip black %, clip white %, 256-bin histogram → sidecar JSON.
+// A 3-band (merged colour) TIFF also yields each band's median — the
+// viewer's grey-world white balance is derived from those.
+// A 3-band (merged colour) TIFF also yields each band's median — the
+// viewer's grey-world white balance is derived from those.
 //
 // The TIFF is opened read-only and never modified. Ingest is idempotent:
 // the proxy dir is wiped and rebuilt, so a crash mid-ingest just re-runs.
@@ -42,6 +46,6 @@ signals:
     void ingested(const QString &sessionUuid, int passIndex,
                   const QString &previewAbs, int pxW, int pxH,
                   double clipBlackPct, double clipWhitePct,
-                  const QVariantList &hist256);
+                  const QVariantList &hist256, const QVariantList &bandMedians);
     void failed(const QString &sessionUuid, int passIndex, const QString &error);
 };
