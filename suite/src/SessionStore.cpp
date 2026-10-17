@@ -715,20 +715,27 @@ static QString filterToken(const QString &fileName)
 
 void SessionStore::pairPendingFiles()
 {
-    // Oldest unpaired file → oldest ended, unpaired pass within the window.
-    // FIFO on both sides keeps manual-save order predictable; anything that
-    // can't pair stays visible as "unpaired" (importer fodder, never lost).
-    // Two drift guards: a filter token in the filename must match the pass,
-    // and once the stream pairs past a hole, the hole is sealed — a missed
-    // file must not shift every later file back a slot.
+    // Each unpaired file → the unpaired pass that ended MOST RECENTLY before
+    // the file appeared (within the window). The capture agent writes a pass's
+    // file seconds after its pass_end, so that pass is the one the file
+    // belongs to. It used to be the OLDEST unfilled pass in the window, which
+    // sent a fresh scan's files into an earlier session whose own files never
+    // arrived (agent down, 2026-10-17: scan_2230 landed in session 2113).
+    // Anything that can't pair stays visible as "unpaired" (importer fodder,
+    // never lost). Two drift guards: a filter token in the filename must match
+    // the pass, and once the stream pairs past a hole, the hole is sealed — a
+    // missed file must not shift every later file back a slot.
     bool changed = false;
     for (int f = 0; f < m_unpaired.size(); ) {
         const qint64 mtime = m_unpaired[f].second;
         const QString token = filterToken(QFileInfo(m_unpaired[f].first).fileName());
         bool paired = false;
-        for (int row = 0; row < m_sessions.size() && !paired; ++row) {
-            SessionRecord &s = m_sessions[row];
-            for (PassRecord &p : s.passes) {
+        int bestRow = -1, bestPass = -1;
+        qint64 bestEnd = -1;
+        for (int row = 0; row < m_sessions.size(); ++row) {
+            const SessionRecord &s = m_sessions[row];
+            for (int i = 0; i < s.passes.size(); ++i) {
+                const PassRecord &p = s.passes[i];
                 if (!p.file.isEmpty() || p.sealed || p.wallEndMs < 0)
                     continue;
                 if (mtime < p.wallStartMs - 5000
@@ -736,6 +743,19 @@ void SessionStore::pairPendingFiles()
                     continue;
                 if (!token.isEmpty() && token != p.filter)
                     continue;
+                // Prefer the pass that ended last before the file was written;
+                // a pass that ended after it (file written early, clock skew)
+                // still qualifies but ranks below any that ended before.
+                const qint64 end = p.wallEndMs <= mtime + 5000 ? p.wallEndMs
+                                                               : mtime - (p.wallEndMs - mtime);
+                if (end > bestEnd) { bestEnd = end; bestRow = row; bestPass = i; }
+            }
+        }
+        if (bestRow >= 0) {
+            const int row = bestRow;
+            SessionRecord &s = m_sessions[row];
+            {
+                PassRecord &p = s.passes[bestPass];
                 p.file = QDir(m_captureDir).relativeFilePath(m_unpaired[f].first);
                 qInfo() << "[sessions] paired" << p.file
                         << "→ session" << s.seq << "pass" << p.index << p.filter;
@@ -759,7 +779,6 @@ void SessionStore::pairPendingFiles()
                 }
                 paired = true;
                 changed = true;
-                break;
             }
         }
         if (paired)
