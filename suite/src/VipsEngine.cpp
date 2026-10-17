@@ -173,8 +173,13 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
     if (r) { fail("jpegsave"); g_object_unref(src); return; }
 
     // ── histogram + clip stats, one pass over the original
+    // A merged colour TIFF has three bands; its histogram is taken on green
+    // (hist_find interleaves bands otherwise and the clip stats read garbage).
     VipsImage *hist = nullptr;
-    if (vips_hist_find(src, &hist, nullptr)) {
+    const int bands = vips_image_get_bands(src);
+    const int hr = bands > 1 ? vips_hist_find(src, &hist, "band", 1, nullptr)
+                             : vips_hist_find(src, &hist, nullptr);
+    if (hr) {
         fail("hist_find");
         g_object_unref(src);
         return;

@@ -1,6 +1,11 @@
 """Merge one colour scan's R/G/B passes into a colour image.
 
 usage: python -I rgb_merge.py <capture dir> <seq> <out dir> [--align] [--denoise-blue[=K]]
+       python -I rgb_merge.py --files R.tif G.tif B.tif --out merged.tif [--jpg] [--align] [--denoise-blue[=K]]
+
+The second form is what the Review Suite calls (Session > Merge R/G/B): explicit
+pass files, one output TIFF, no JPEG/preview unless --jpg (the Suite builds its
+own proxies). Prints "wrote <path>" on success.
 
 Example: python -I capture/rgb_merge.py D:/capture 2227 D:/merged --align
 
@@ -24,25 +29,47 @@ K=3; edges above that survive, grain below it is averaged). R and G untouched.
 """
 import glob
 import os
+import re
 import sys
 
 import cv2
 import numpy as np
 import tifffile
 
-src, seq, out = sys.argv[1], sys.argv[2], sys.argv[3]
+argv = sys.argv[1:]
+if "--files" in argv:
+    i = argv.index("--files")
+    files = argv[i + 1:i + 4]
+    out_tif = argv[argv.index("--out") + 1] if "--out" in argv else ""
+    if len(files) != 3 or not out_tif:
+        sys.exit("usage: --files R.tif G.tif B.tif --out merged.tif")
+    paths = dict(zip("RGB", files))
+    m = re.search(r"scan_(\d+)", os.path.basename(files[0]))
+    seq = m.group(1) if m else "merge"
+    out = os.path.dirname(os.path.abspath(out_tif))
+    want_jpg = "--jpg" in argv
+else:
+    pos = [a for a in argv if not a.startswith("--")]
+    if len(pos) < 3:
+        sys.exit(__doc__)
+    src, seq, out = pos[0], pos[1], pos[2]
+    paths = {}
+    for f in "RGB":
+        g = glob.glob(os.path.join(src, f"scan_{seq}_p*_{f}.tif"))
+        if not g:
+            sys.exit(f"missing {f} pass for scan {seq}")
+        paths[f] = g[0]
+    out_tif = os.path.join(out, f"scan_{seq}_RGB16.tif")
+    want_jpg = True
 os.makedirs(out, exist_ok=True)
 
 chan = {}
 for f in "RGB":
-    paths = glob.glob(os.path.join(src, f"scan_{seq}_p*_{f}.tif"))
-    if not paths:
-        sys.exit(f"missing {f} pass for scan {seq}")
-    img = tifffile.imread(paths[0])
+    img = tifffile.imread(paths[f])
     if img.ndim > 2:
         img = img[..., 0]
     chan[f] = img[np.any(img > 0, axis=1)]          # drop unfilled rows
-    print(f"{f}: {os.path.basename(paths[0])} -> {chan[f].shape}")
+    print(f"{f}: {os.path.basename(paths[f])} -> {chan[f].shape}")
 
 rows = min(c.shape[0] for c in chan.values())
 cols = min(c.shape[1] for c in chan.values())
@@ -104,7 +131,13 @@ if dn:
     print(f"B: denoised, grain {mad:.0f} -> {mad2:.0f} counts (sigma {k:g} x grain)")
 
 rgb16 = np.dstack([r, g, b]).astype(np.uint16)
-tifffile.imwrite(os.path.join(out, f"scan_{seq}_RGB16.tif"), rgb16, photometric="rgb")
+tmp = out_tif + ".part"
+tifffile.imwrite(tmp, rgb16, photometric="rgb")
+os.replace(tmp, out_tif)
+if not want_jpg:
+    print(f"merged {rows} x {cols}")
+    print(f"wrote {out_tif}")
+    sys.exit(0)
 
 # Shared white point: the 99.5th percentile over all three channels together.
 white = float(np.percentile(np.stack([r[::8, ::8], g[::8, ::8], b[::8, ::8]]), 99.5))
@@ -121,3 +154,4 @@ w = int(round(ow * h / oh))
 prev = cv2.resize(bgr, (w, h), interpolation=cv2.INTER_AREA)
 cv2.imwrite(os.path.join(out, f"scan_{seq}_RGB_preview.png"), prev)
 print(f"merged {rows} x {cols}, white point {white:.0f}, preview {w} x {h}")
+print(f"wrote {out_tif}")

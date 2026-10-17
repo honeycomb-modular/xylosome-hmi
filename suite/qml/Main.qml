@@ -47,7 +47,26 @@ ApplicationWindow {
 
     function filterColor(name) {
         return name === "R" ? chR : name === "G" ? chG
-             : name === "B" ? chB : name === "C" ? chC : inkFaint
+             : name === "B" ? chB : name === "C" ? chC
+             : name === "RGB" ? ink : inkFaint
+    }
+
+    // Session ▸ Merge R/G/B. The merge is capture/rgb_merge.py run by the
+    // store; the result joins the session as its "RGB" pass. The discard
+    // choice is remembered across runs.
+    property bool discardAfterMerge: false
+    Settings {
+        category: "merge"
+        property alias discardAfterMerge: root.discardAfterMerge
+    }
+    readonly property bool canMergeRGB: {
+        const it = strip.currentItem
+        if (!it || it.sState === "live") return false
+        for (const f of ["R", "G", "B"]) {
+            const i = it.sPassFilters.indexOf(f)
+            if (i < 0 || !it.sPassPaired[i]) return false
+        }
+        return true
     }
 
     function stars(n) { return "★".repeat(n) }
@@ -166,6 +185,15 @@ ApplicationWindow {
     // it reports through the same transient line rather than a modal.
     Connections {
         target: Sessions
+        function onColourMergeStarted(seq) {
+            root.reclaimText = qsTr("merging R/G/B of scan %1 …").arg(root.scanLabel(seq))
+            reclaimTimer.stop()
+        }
+        function onColourMergeFinished(ok, message) {
+            root.reclaimText = (ok ? qsTr("colour merge wrote %1") : qsTr("colour merge failed — %1"))
+                .arg(message)
+            reclaimTimer.restart()
+        }
         function onHdrMergeStarted(brackets, outPath) {
             root.reclaimText = qsTr("merging %1 brackets → %2").arg(brackets).arg(outPath)
             reclaimTimer.stop()          // no timeout while it is still running
@@ -281,6 +309,19 @@ ApplicationWindow {
                          && strip.currentItem !== null
                          && strip.currentItem.sHdrSet !== ""
                 onTriggered: Sessions.mergeHdrSet(strip.currentIndex)
+            }
+            MenuItem {
+                text: Sessions.colourMergeBusy
+                      ? qsTr("Merging R/G/B…")
+                      : qsTr("Merge R/G/B → colour TIFF")
+                enabled: !Sessions.hdrMergeBusy && !Sessions.colourMergeBusy && root.canMergeRGB
+                onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
+            }
+            MenuItem {
+                text: qsTr("Discard R/G/B channel TIFFs after merge")
+                checkable: true
+                checked: root.discardAfterMerge
+                onTriggered: root.discardAfterMerge = !root.discardAfterMerge
             }
             MenuSeparator {}
             MenuItem {
@@ -709,14 +750,32 @@ ApplicationWindow {
                         Label {
                             text: {
                                 if (!strip.currentItem) return ""
+                                if (parent.modelData === "RGB") return qsTr("merged")
                                 const d = strip.currentItem.sPassDurations[parent.index]
                                 const paired = strip.currentItem.sPassPaired[parent.index]
+                                const gone = strip.currentItem.sPassDiscarded[parent.index]
                                 return (d >= 0 ? d.toFixed(1) + " s" : "…")
-                                       + (paired ? "" : " ○")
+                                       + (paired ? "" : gone ? " ·" : " ○")
                             }
                             color: root.inkMuted
                             font.pixelSize: 11
                         }
+                    }
+                }
+                Label {
+                    visible: root.canMergeRGB
+                    text: Sessions.colourMergeBusy ? qsTr("merging…")
+                        : (strip.currentItem && strip.currentItem.sMerged ? qsTr("re-merge rgb") : qsTr("merge rgb"))
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                    font.underline: mergeMouse.containsMouse
+                    MouseArea {
+                        id: mergeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: !Sessions.colourMergeBusy && !Sessions.hdrMergeBusy
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
                     }
                 }
                 Item { Layout.fillWidth: true }
@@ -872,6 +931,8 @@ ApplicationWindow {
                     required property var passClips
                     required property var passDims
                     required property var passTileBases
+                    required property var passDiscarded
+                    required property bool merged
                     required property string metaSvg
                     required property double metaX
                     required property double metaY
@@ -901,6 +962,8 @@ ApplicationWindow {
                     readonly property var sPassClips: passClips
                     readonly property var sPassDims: passDims
                     readonly property var sPassTileBases: passTileBases
+                    readonly property var sPassDiscarded: passDiscarded
+                    readonly property bool sMerged: merged
                     readonly property string sMetaSvg: metaSvg
                     readonly property double sMetaX: metaX
                     readonly property double sMetaY: metaY
@@ -923,10 +986,13 @@ ApplicationWindow {
                             Image {
                                 anchors.fill: parent
                                 source: {
-                                    for (let i = 0; i < cell.passPreviews.length; i++)
-                                        if (cell.passPreviews[i] !== "")
-                                            return "file:///" + cell.passPreviews[i].replace(/^\//, "")
-                                    return ""
+                                    // the merged colour image when there is one, else the first pass
+                                    let pick = -1
+                                    for (let i = 0; i < cell.passPreviews.length; i++) {
+                                        if (cell.passPreviews[i] === "") continue
+                                        if (pick < 0 || cell.passFilters[i] === "RGB") pick = i
+                                    }
+                                    return pick >= 0 ? "file:///" + cell.passPreviews[pick].replace(/^\//, "") : ""
                                 }
                                 sourceSize.height: 60
                                 // Fit, not Crop: cropping forced every scan into

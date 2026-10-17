@@ -91,6 +91,8 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassClipsRole, "passClips" },
         { PassDimsRole, "passDims" },
         { PassTileBasesRole, "passTileBases" },
+        { PassDiscardedRole, "passDiscarded" },
+        { MergedRole, "merged" },
         { CreatedRole, "createdWallMs" },
         { MetaSvgRole, "metaSvg" },
         { MetaXRole, "metaX" },
@@ -194,6 +196,17 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
                       : proxiesDir() + QLatin1Char('/') + s.uuid
                             + QStringLiteral("/pass_%1").arg(p.index));
         return v;
+    }
+    case PassDiscardedRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes) v << p.discarded;
+        return v;
+    }
+    case MergedRole: {
+        for (const PassRecord &p : s.passes)
+            if (p.filter == QLatin1String("RGB") && !p.file.isEmpty())
+                return true;
+        return false;
     }
     }
     return {};
@@ -471,6 +484,8 @@ void SessionStore::loadExisting()
             p.wallStartMs = qint64(po.value(QStringLiteral("wallStartMs")).toDouble(-1));
             p.wallEndMs   = qint64(po.value(QStringLiteral("wallEndMs")).toDouble(-1));
             p.file        = po.value(QStringLiteral("file")).toString();
+            p.discarded   = po.value(QStringLiteral("discarded")).toBool();
+            p.sealed      = p.discarded;   // never pair a stray file into a discarded slot
             const QString prevRel = po.value(QStringLiteral("preview")).toString();
             if (!prevRel.isEmpty())
                 p.preview = m_captureDir + QLatin1Char('/') + prevRel;
@@ -526,6 +541,8 @@ void SessionStore::save(const SessionRecord &s) const
             { QStringLiteral("wallEndMs"),   double(p.wallEndMs) },
             { QStringLiteral("file"),        p.file },
         };
+        if (p.discarded)
+            po.insert(QStringLiteral("discarded"), true);
         if (!p.preview.isEmpty())
             po.insert(QStringLiteral("preview"),
                       QDir(m_captureDir).relativeFilePath(p.preview));
@@ -926,15 +943,18 @@ QVariantList SessionStore::hdrSetRows(int row) const
 // Packaged next to the exe, or in the source tree when running from build-suite.
 // Looked up rather than assumed, because the working directory differs between
 // the two and a wrong guess only shows up at the moment you press merge.
-static QString mergeToolPath()
+static QString toolPath(const QString &name)
 {
     const QString exe = QCoreApplication::applicationDirPath();
-    for (const QString &t : { exe + QStringLiteral("/tools/hdr_merge.py"),
-                              exe + QStringLiteral("/../suite/tools/hdr_merge.py") })
+    for (const QString &t : { exe + QStringLiteral("/tools/") + name,
+                              exe + QStringLiteral("/../suite/tools/") + name,
+                              exe + QStringLiteral("/../capture/") + name })
         if (QFile::exists(t))
             return QFileInfo(t).absoluteFilePath();
     return {};
 }
+
+static QString mergeToolPath() { return toolPath(QStringLiteral("hdr_merge.py")); }
 
 void SessionStore::mergeHdrSet(int row)
 {
@@ -979,6 +999,7 @@ void SessionStore::mergeHdrSet(int row)
         QDir(m_captureDir).absoluteFilePath(QStringLiteral("../hdr-merge")));
 
     m_mergeOut.clear();
+    m_mergeUuid.clear();
     m_merge = new QProcess(this);
     m_merge->setProgram(QStringLiteral("python"));
     m_merge->setArguments(QStringList{ tool } + files
@@ -1027,6 +1048,157 @@ void SessionStore::mergeHdrSet(int row)
     emit hdrMergeBusyChanged();
     qInfo() << "[hdr] merging" << files.size() << "brackets ->" << outDir;
     m_merge->start();
+}
+
+// ── colour merge (R/G/B passes → one 16-bit RGB TIFF) ────────────────────────
+
+void SessionStore::mergeColour(int row, bool discardChannels)
+{
+    if (m_merge) {
+        emit colourMergeFinished(false, QStringLiteral("a merge is already running"));
+        return;
+    }
+    if (row < 0 || row >= m_sessions.size())
+        return;
+    const SessionRecord &s = m_sessions[row];
+    if (s.state == QLatin1String("live")) {
+        emit colourMergeFinished(false, QStringLiteral("session is still scanning"));
+        return;
+    }
+    QString files[3];
+    for (const PassRecord &p : s.passes) {
+        const int k = p.filter == QLatin1String("R") ? 0
+                    : p.filter == QLatin1String("G") ? 1
+                    : p.filter == QLatin1String("B") ? 2 : -1;
+        if (k >= 0 && !p.file.isEmpty() && files[k].isEmpty())
+            files[k] = passAbsPath(p);
+    }
+    for (int k = 0; k < 3; ++k)
+        if (files[k].isEmpty()) {
+            emit colourMergeFinished(false, QStringLiteral("no %1 pass image")
+                                                .arg(QLatin1Char("RGB"[k])));
+            return;
+        }
+    const QString tool = toolPath(QStringLiteral("rgb_merge.py"));
+    if (tool.isEmpty()) {
+        emit colourMergeFinished(false, QStringLiteral("rgb_merge.py not found beside the app"));
+        return;
+    }
+    // A subfolder of the capture folder: the watcher lists only the top level,
+    // so the result is never mistaken for a scan, and the session owns it like
+    // any pass (deleted with the session, counted in its size).
+    const int fseq = data(index(row), FileSeqRole).toInt();
+    const QString outRel = QStringLiteral("merged/scan_%1_RGB16.tif")
+        .arg(fseq >= 0 ? QString::number(fseq).rightJustified(4, QLatin1Char('0'))
+                       : s.uuid.left(8));
+    QDir().mkpath(m_captureDir + QStringLiteral("/merged"));
+    const QString outAbs = m_captureDir + QLatin1Char('/') + outRel;
+
+    m_mergeOut.clear();
+    m_mergeUuid = s.uuid;
+    m_mergeDiscard = discardChannels;
+    m_merge = new QProcess(this);
+    m_merge->setProgram(QStringLiteral("python"));
+    m_merge->setArguments(QStringList{ QStringLiteral("-I"), tool, QStringLiteral("--files"),
+                                       QDir::toNativeSeparators(files[0]),
+                                       QDir::toNativeSeparators(files[1]),
+                                       QDir::toNativeSeparators(files[2]),
+                                       QStringLiteral("--out"), QDir::toNativeSeparators(outAbs),
+                                       QStringLiteral("--align"), QStringLiteral("--denoise-blue") });
+    m_merge->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_merge, &QProcess::readyReadStandardOutput, this, [this] {
+        m_mergeOut += QString::fromLocal8Bit(m_merge->readAllStandardOutput());
+    });
+    const auto done = [this](bool ok, const QString &msg) {
+        if (!m_merge)
+            return;
+        m_merge->deleteLater();
+        m_merge = nullptr;
+        m_mergeUuid.clear();
+        emit hdrMergeBusyChanged();
+        emit colourMergeFinished(ok, msg);
+    };
+    connect(m_merge, &QProcess::errorOccurred, this, [this, done](QProcess::ProcessError e) {
+        done(false, e == QProcess::FailedToStart
+                        ? QStringLiteral("could not run python — is it on PATH?")
+                        : QStringLiteral("merge process error"));
+    });
+    const QString uuid = s.uuid;
+    const bool discard = discardChannels;
+    connect(m_merge, &QProcess::finished, this,
+            [this, done, uuid, outRel, discard](int code, QProcess::ExitStatus st) {
+        m_mergeOut += QString::fromLocal8Bit(m_merge->readAllStandardOutput());
+        qInfo().noquote() << "[rgb]" << m_mergeOut.trimmed();
+        if (st != QProcess::NormalExit || code != 0
+            || !QFile::exists(m_captureDir + QLatin1Char('/') + outRel)) {
+            const QStringList lines = m_mergeOut.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            done(false, lines.isEmpty() ? QStringLiteral("merge failed")
+                                        : lines.last().trimmed());
+            return;
+        }
+        colourMerged(uuid, outRel, discard);
+        done(true, outRel);
+    });
+    emit colourMergeStarted(fseq >= 0 ? fseq : s.seq);
+    emit hdrMergeBusyChanged();
+    qInfo() << "[rgb] merging session" << s.seq << "->" << outRel
+            << (discardChannels ? "(channels will be discarded)" : "");
+    m_merge->start();
+}
+
+void SessionStore::colourMerged(const QString &uuid, const QString &outRel, bool discard)
+{
+    for (int row = 0; row < m_sessions.size(); ++row) {
+        SessionRecord &s = m_sessions[row];
+        if (s.uuid != uuid)
+            continue;
+        const QString proxy = proxiesDir() + QLatin1Char('/') + s.uuid;
+        // One RGB pass per session: a re-merge replaces it (new proxies follow).
+        int slot = -1, maxIdx = -1;
+        for (int i = 0; i < s.passes.size(); ++i) {
+            maxIdx = qMax(maxIdx, s.passes[i].index);
+            if (s.passes[i].filter == QLatin1String("RGB"))
+                slot = i;
+        }
+        if (slot < 0) {
+            PassRecord p;
+            p.index = maxIdx + 1;
+            p.filter = QStringLiteral("RGB");
+            s.passes << p;
+            slot = s.passes.size() - 1;
+        }
+        PassRecord &m = s.passes[slot];
+        m.file = outRel;
+        m.preview.clear();
+        m.pxW = m.pxH = 0;
+        m.clipBlackPct = m.clipWhitePct = -1;
+        m.hist256.clear();
+        m.wallStartMs = m.wallEndMs = QDateTime::currentMSecsSinceEpoch();
+        if (discard) {
+            for (PassRecord &p : s.passes) {
+                if (p.filter != QLatin1String("R") && p.filter != QLatin1String("G")
+                    && p.filter != QLatin1String("B"))
+                    continue;
+                if (p.file.isEmpty())
+                    continue;
+                // Capture-folder files only; archive originals (absolute) stay.
+                if (!QDir::isAbsolutePath(p.file))
+                    QFile::remove(m_captureDir + QLatin1Char('/') + p.file);
+                QDir(proxy + QStringLiteral("/pass_%1_files").arg(p.index)).removeRecursively();
+                QFile::remove(proxy + QStringLiteral("/pass_%1.dzi").arg(p.index));
+                QFile::remove(p.preview);
+                qInfo() << "[rgb] discarded" << p.file << "(session" << s.seq << ")";
+                p.file.clear();
+                p.preview.clear();
+                p.discarded = true;
+                p.sealed = true;
+            }
+        }
+        touchRow(row);
+        enqueueIngest(s, m);
+        refreshDisk();
+        return;
+    }
 }
 
 // ── metadata SVG pairing (Pi MetadataRecorder export) ────────────────────────

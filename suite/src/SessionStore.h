@@ -29,6 +29,7 @@ struct PassRecord {
     qint64  wallEndMs = -1;
     QString file;                // paired TIFF (name relative to capture dir)
     bool    sealed = false;      // transient: hole skipped by the stream, never pair
+    bool    discarded = false;   // channel TIFF deleted after a colour merge (kept for the record)
     QString preview;             // abs path of pass_<i>_preview.jpg ("" = pending)
     int     pxW = 0, pxH = 0;    // original TIFF dimensions (from ingest)
     double  clipBlackPct = -1;   // -1 = not computed
@@ -90,6 +91,8 @@ public:
         PassClipsRole,       // QVariantList<QVariantMap{black,white}> — % or -1
         PassDimsRole,        // QVariantList<QVariantMap{w,h}> — original px
         PassTileBasesRole,   // QVariantList<QString> — dz base path or ""
+        PassDiscardedRole,   // QVariantList<bool> — channel deleted after a colour merge
+        MergedRole,          // bool — session has a merged RGB image
         CreatedRole,         // qint64 wall ms
         MetaSvgRole,         // abs path or "" (white variant if metaWhite)
         MetaXRole,
@@ -152,7 +155,18 @@ public:
     // limit and the per-bracket resample were worked out and verified.
     Q_INVOKABLE void mergeHdrSet(int row);
     Q_PROPERTY(bool hdrMergeBusy READ hdrMergeBusy NOTIFY hdrMergeBusyChanged)
-    bool hdrMergeBusy() const { return m_merge != nullptr; }
+    bool hdrMergeBusy() const { return m_merge != nullptr && m_mergeUuid.isEmpty(); }
+
+    // ── colour merge ──────────────────────────────────────────────────────────
+    // Runs capture/rgb_merge.py over the session's R, G and B passes (destripe,
+    // registration, blue denoise) into <captureDir>/merged/scan_NNNN_RGB16.tif,
+    // then adds it to the session as an "RGB" pass so it is ingested, shown and
+    // deleted like any other image. discardChannels deletes the three channel
+    // TIFFs (and their proxies) once the merge is in; the pass records stay,
+    // marked discarded, so the session's timing history is kept.
+    Q_INVOKABLE void mergeColour(int row, bool discardChannels);
+    Q_PROPERTY(bool colourMergeBusy READ colourMergeBusy NOTIFY hdrMergeBusyChanged)
+    bool colourMergeBusy() const { return m_merge != nullptr && !m_mergeUuid.isEmpty(); }
 
 signals:
     void captureDirChanged();
@@ -163,6 +177,8 @@ signals:
     void hdrMergeBusyChanged();
     void hdrMergeStarted(int brackets, const QString &outPath);
     void hdrMergeFinished(bool ok, const QString &message);
+    void colourMergeStarted(int seq);
+    void colourMergeFinished(bool ok, const QString &message);
 
 private slots:
     void onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs,
@@ -202,8 +218,11 @@ private:
     QString m_captureDir;
     QVector<SessionRecord> m_sessions;
     QVector<QPair<QString, qint64>> m_unpaired;   // absPath, mtimeMs
-    QProcess *m_merge = nullptr;                  // running HDR merge, if any
+    QProcess *m_merge = nullptr;                  // running merge (HDR or colour), if any
     QString m_mergeOut;
+    QString m_mergeUuid;                          // colour merge: session being merged ("" = HDR)
+    bool    m_mergeDiscard = false;
+    void colourMerged(const QString &uuid, const QString &outRel, bool discard);
     int m_nextSeq = 1;
     double m_freeGB = -1;
     int m_sessionsRemaining = -1;
