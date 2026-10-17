@@ -610,8 +610,7 @@ def _max_seq():
 def _save_seq(n):
     try:
         os.makedirs(os.path.dirname(SEQ_FILE), exist_ok=True)
-        with open(SEQ_FILE, "w") as f: f.write("%d
-" % n)
+        with open(SEQ_FILE, "w") as f: f.write(str(n))
     except OSError as e:
         print("seq file:", e)
 
