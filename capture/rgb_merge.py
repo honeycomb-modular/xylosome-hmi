@@ -71,8 +71,21 @@ for f in "RGB":
     chan[f] = img[np.any(img > 0, axis=1)]          # drop unfilled rows
     print(f"{f}: {os.path.basename(paths[f])} -> {chan[f].shape}")
 
-rows = min(c.shape[0] for c in chan.values())
+# Line-count match. A slow (exposure-matched) pass drops lines evenly — the
+# EL2521 frequency step truncates, so blue came back 1.06% short on scan 2233
+# (17835 vs 18026 lines) and its image was compressed along the scan: 25 px
+# off at the start of the frame, 175 px at the end. Trimming every pass to the
+# shortest hid that. The drop is uniform, so the exact correction is to
+# resample each pass along the scan to red's line count; the registration
+# below then only has the odd pixel left to find.
+rowsR = chan["R"].shape[0]
 cols = min(c.shape[1] for c in chan.values())
+for f in "GB":
+    n = chan[f].shape[0]
+    if n != rowsR:
+        print(f"{f}: {n} lines -> resampled to red's {rowsR} ({100.0 * (rowsR - n) / n:+.2f}%)")
+        chan[f] = cv2.resize(chan[f][:, :cols], (cols, rowsR), interpolation=cv2.INTER_LINEAR)
+rows = rowsR
 
 # Destripe: slow passes (the exposure-matched blue) integrate each line for
 # longer, so every sensor column's dark current adds its own offset — stripes
@@ -102,7 +115,10 @@ if "--align" in sys.argv:
         print(align.describe(f"{name}->R before", cx, cy, n_ok, n, rms, H, W))
         # Too few matching tiles (dark, busy or moving scene) or a loose fit:
         # the "correction" would be noise. Keep the channel as captured.
-        if n_ok < max(40, 0.25 * n) or rms > 1.5:
+        # (Was 25% / 1.5 px: with the line counts matched first the residual
+        # is a 2-3 px constant, and a film-set scene full of people still
+        # fits at rms ~1.9 on 170 tiles - plenty for an affine.)
+        if n_ok < max(40, 0.15 * n) or rms > 3.0:
             print(f"{name}->R: alignment unreliable ({n_ok}/{n} tiles, rms {rms:.2f} px) "
                   f"- leaving {name} as captured")
             out_ch.append(mov)
