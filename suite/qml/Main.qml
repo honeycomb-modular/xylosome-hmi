@@ -177,7 +177,10 @@ ApplicationWindow {
         }
     }
 
-    // Index of the pass shown in the image field for the current session
+    // Index of the pass shown in the image field for the current session.
+    // A soloed channel the session does not have (a monochrome scan while B
+    // is soloed) falls back to the auto rule instead of a blank field — the
+    // solo is a preference, not a filter on the strip.
     readonly property int shownPass: {
         const it = strip.currentItem
         if (!it) return -1
@@ -185,7 +188,6 @@ ApplicationWindow {
             for (let i = 0; i < it.sPassFilters.length; i++)
                 if (it.sPassFilters[i] === soloChannel && it.sPassPreviews[i] !== "")
                     return i
-            return -1
         }
         for (let i = it.sPassPreviews.length - 1; i >= 0; i--)
             if (it.sPassPreviews[i] !== "")
@@ -652,10 +654,8 @@ ApplicationWindow {
                 Label {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: strip.currentItem
-                          ? (root.soloChannel !== "auto"
-                             ? qsTr("%1 — no image yet").arg(root.soloChannel)
-                             : strip.currentItem.sState
-                               + (strip.currentItem.sRejected ? qsTr(" · rejected") : ""))
+                          ? strip.currentItem.sState
+                            + (strip.currentItem.sRejected ? qsTr(" · rejected") : "")
                           : ""
                     color: strip.currentItem && strip.currentItem.sState === "partial"
                            ? "#FFFFFF" : "#AAAAAA"

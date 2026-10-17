@@ -54,12 +54,16 @@ Item {
     property real panX: 0
     property real panY: 0
 
-    onTileBaseChanged: { zoom = Qt.binding(() => fitZoom); rebuild() }
-    onZoomChanged: rebuild()
-    onWidthChanged: rebuild()
-    onHeightChanged: rebuild()
-    onImgWChanged: rebuild()   // dims land async after ingest / on session switch
-    onImgHChanged: rebuild()
+    // tileBase, imgW and imgH change one after another on a session switch;
+    // rebuilding on each one asked the NEW pyramid for tiles sized by the OLD
+    // image (log: "Cannot open …/12/13_7.jpg" on a 3-tile-wide scan). Coalesce:
+    // one rebuild once every binding of this event-loop pass has landed.
+    onTileBaseChanged: { zoom = Qt.binding(() => fitZoom); Qt.callLater(rebuild) }
+    onZoomChanged: Qt.callLater(rebuild)
+    onWidthChanged: Qt.callLater(rebuild)
+    onHeightChanged: Qt.callLater(rebuild)
+    onImgWChanged: Qt.callLater(rebuild)   // dims land async after ingest / on session switch
+    onImgHChanged: Qt.callLater(rebuild)
 
     function clampPan() {
         const cw = imgW * zoom, ch = imgH * zoom
