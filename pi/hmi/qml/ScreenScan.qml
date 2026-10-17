@@ -85,9 +85,9 @@ Item {
     }
 
     // ── Multi-pass state ──────────────────────────────────────────────────────
-    // One execute = 4 sequential passes (R / G / B / C), same curve each time.
+    // One execute = 3 sequential passes (R / G / B), same curve each time.
     property bool inMultiPass:  false
-    property int  currentPass:  0             // 0=R  1=G  2=B  3=C
+    property int  currentPass:  0             // 0=R  1=G  2=B
     property bool _seqPassSeen: false         // true once the daemon's first pass_start lands
 
     readonly property var passChannelNames: ["R", "G", "B", "C"]
@@ -796,7 +796,7 @@ Item {
                 var chColors = ["#CC4444", "#44CC44", "#4488CC", "#AAAAAA"]
                 ctx.fillStyle = chColors[root.currentPass]
                 ctx.font      = "13px " + Theme.fontFamilyMono
-                ctx.fillText("PASS " + (root.currentPass + 1) + " / 4  " + chNames[root.currentPass],
+                ctx.fillText("PASS " + (root.currentPass + 1) + " / 3  " + chNames[root.currentPass],
                              bw - 8, ch - 56)
             }
             ctx.restore()
@@ -1302,7 +1302,7 @@ Item {
                 root.blinkVisible = true
                 root.homed        = false
                 root.currentPass  = 0
-                root.inMultiPass  = Motor.colorMode === 0   // color→4 passes, bw→single
+                root.inMultiPass  = Motor.colorMode === 0   // color→3 passes, bw→single
                 Recorder.startSession()    // snapshot curve + boxW + colorMode
                 root._seqPassSeen = false
                 // One profile, three consumers: controller, recorder, and (via
@@ -1409,14 +1409,14 @@ Item {
                     Recorder.endPass(root.currentPass)
                     root.currentPass++
 
-                    if (root.currentPass < 4) {
+                    if (root.currentPass < 3) {
                         // ── Start next pass ───────────────────────────────────
                         Recorder.startPass(root.currentPass)
                         root.playheadX = 0      // reset — same curve, next colour
                         root.scheduleRepaint()
                         // timer keeps running
                     } else {
-                        // ── All 4 passes complete ─────────────────────────────
+                        // ── All 3 passes complete ─────────────────────────────
                         Recorder.commitSession()   // finalise + auto-export SVG
                         root.inMultiPass  = false
                         root.currentPass  = 0

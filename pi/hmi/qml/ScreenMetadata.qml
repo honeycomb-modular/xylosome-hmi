@@ -125,7 +125,7 @@ Item {
     }
 
     // ── Pass rows — read from Recorder.currentPasses ──────────────────────────
-    // Repeater over the 4-element QVariantList.
+    // Repeater over the 3-element QVariantList (R/G/B).
     // Falls back to placeholder text when hasData = false.
 
     Repeater {
@@ -133,8 +133,7 @@ Item {
         model: Recorder.hasData ? Recorder.currentPasses : [
             { passNum: 1, channel: "R", tStartStr: "--:--.---", tEndStr: "--:--.---", durationStr: "---s" },
             { passNum: 2, channel: "G", tStartStr: "--:--.---", tEndStr: "--:--.---", durationStr: "---s" },
-            { passNum: 3, channel: "B", tStartStr: "--:--.---", tEndStr: "--:--.---", durationStr: "---s" },
-            { passNum: 4, channel: "C", tStartStr: "--:--.---", tEndStr: "--:--.---", durationStr: "---s" }
+            { passNum: 3, channel: "B", tStartStr: "--:--.---", tEndStr: "--:--.---", durationStr: "---s" }
         ]
 
         delegate: Item {

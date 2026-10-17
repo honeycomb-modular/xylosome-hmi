@@ -3,9 +3,9 @@
 //
 // Singleton registered in QML as "Recorder" (import XylosomeHMI 1.0).
 //
-// One execute press = 4 sequential passes (R/G/B/C), same curve, same duration.
+// One execute press = 3 sequential passes (R/G/B), same curve, same duration.
 // The recorder captures wall-clock timestamps for each pass, then auto-exports
-// the session SVG when all 4 complete.
+// the session SVG when all 3 complete.
 //
 // Real-time usage (called from ScreenSequences.qml execute logic):
 //   Recorder.startSession()     — on execute press (snapshots curve)
@@ -33,13 +33,16 @@ class MetadataRecorder : public QObject
     Q_PROPERTY(int          triggerCount  READ triggerCount  NOTIFY triggerCountChanged)
     Q_PROPERTY(bool         hasData       READ hasData       NOTIFY triggerCountChanged)
     Q_PROPERTY(QString      lastSummary   READ lastSummary   NOTIFY lastSummaryChanged)
-    // currentPasses: QVariantList of 4 QVariantMaps
+    // currentPasses: QVariantList of kColorPasses QVariantMaps
     //   { passNum, channel, tStart_ms, tEnd_ms, duration_ms }
     // Updated after every simulateTrigger() / handlePassEnd().
     Q_PROPERTY(QVariantList currentPasses READ currentPasses NOTIFY lastSummaryChanged)
 
 public:
     // ── Internal data structures ───────────────────────────────────────────────
+
+    // Colour passes per execute: R/G/B. The half colour wheel has no Clear.
+    static constexpr int kColorPasses = 3;
 
     struct PassRecord {
         qint64 tStart_ms = -1;   // -1 = not yet recorded
@@ -54,10 +57,10 @@ public:
         int          index  = 0;        // 1-based within session
         QVariantList nodes;             // speed curve at trigger time [{nx,ny},...]
         int          boxW   = 520;      // timeline width proxy for duration
-        PassRecord   passes[4];         // 0=R  1=G  2=B  3=C
+        PassRecord   passes[4];         // 0=R  1=G  2=B  (3 unused since Clear was dropped)
         // Scan context (set via setScanContext at execute time) — what was
         // actually commanded, for the JSON sidecar / motosome verification.
-        int          colorMode  = 0;    // 0 color (4-pass), 1 BW
+        int          colorMode  = 0;    // 0 color (3-pass), 1 BW
         double       hand1Deg   = 0.0;  // arc start, output degrees
         double       hand2Deg   = 0.0;  // arc end
         double       maxVelDegS = 0.0;
@@ -86,7 +89,7 @@ public:
     Q_INVOKABLE void commitSession();       // finalise + auto-export SVG + JSON sidecar
 
     // ── Test / manual ─────────────────────────────────────────────────────────
-    // Simulate a complete 4-pass session instantly (no real execute needed).
+    // Simulate a complete 3-pass session instantly (no real execute needed).
     Q_INVOKABLE void simulateTrigger();
 
     // Re-export the last committed session to the given directory.

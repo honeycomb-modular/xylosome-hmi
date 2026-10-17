@@ -28,7 +28,7 @@ QString MetadataRecorder::lastSummary() const
     return QString("trigger %1  —  %2  —  %3 passes")
         .arg(t.index)
         .arg(t.capturedAt.toString("hh:mm:ss"))
-        .arg(4);
+        .arg(kColorPasses);
 }
 
 QVariantList MetadataRecorder::currentPasses() const
@@ -41,7 +41,7 @@ QVariantList MetadataRecorder::currentPasses() const
 
     const char *chNames[4]  = { "R", "G", "B", "C" };
     QVariantList out;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < kColorPasses; i++) {
         QVariantMap m;
         m["passNum"]     = i + 1;
         m["channel"]     = QString(chNames[i]);
@@ -83,13 +83,13 @@ void MetadataRecorder::setScanContext(double hand1Deg, double hand2Deg,
 
 void MetadataRecorder::startPass(int pass)
 {
-    if (pass < 0 || pass > 3) return;
+    if (pass < 0 || pass >= kColorPasses) return;
     m_current.passes[pass].tStart_ms = QDateTime::currentMSecsSinceEpoch();
 }
 
 void MetadataRecorder::endPass(int pass)
 {
-    if (pass < 0 || pass > 3) return;
+    if (pass < 0 || pass >= kColorPasses) return;
     m_current.passes[pass].tEnd_ms = QDateTime::currentMSecsSinceEpoch();
 }
 
@@ -120,7 +120,7 @@ void MetadataRecorder::simulateTrigger()
     const double gap_ms     =   57.0;  // inter-pass gap
 
     qint64 t = rec.capturedAt.toMSecsSinceEpoch();
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < kColorPasses; i++) {
         rec.passes[i].tStart_ms = t;
         rec.passes[i].tEnd_ms   = t + static_cast<qint64>(baseDur_ms);
         t += static_cast<qint64>(baseDur_ms + gap_ms);
@@ -237,7 +237,7 @@ QString MetadataRecorder::buildJson() const
     root[QStringLiteral("version")]     = 1;
     root[QStringLiteral("capturedAt")]  = t.capturedAt.toString(Qt::ISODateWithMs);
     root[QStringLiteral("index")]       = t.index;
-    root[QStringLiteral("colorMode")]   = t.colorMode;     // 0 = color 4-pass, 1 = BW
+    root[QStringLiteral("colorMode")]   = t.colorMode;     // 0 = color 3-pass, 1 = BW
     root[QStringLiteral("boxW")]        = t.boxW;
     root[QStringLiteral("arcStartDeg")] = t.hand1Deg;
     root[QStringLiteral("arcEndDeg")]   = t.hand2Deg;
@@ -258,10 +258,10 @@ QString MetadataRecorder::buildJson() const
 
     // Pass timing — absolute epoch ms + relative to first recorded pass start.
     qint64 t0 = -1;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < kColorPasses; i++)
         if (t.passes[i].tStart_ms >= 0) { t0 = t.passes[i].tStart_ms; break; }
     QJsonArray passes;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < kColorPasses; i++) {
         const PassRecord &p = t.passes[i];
         if (p.tStart_ms < 0) continue;                     // BW: only pass 0 present
         passes.append(QJsonObject{
@@ -442,7 +442,7 @@ QString MetadataRecorder::buildSvg() const
     rule(0, yMain + vpad + fz + 4, tblW);
 
     // Data rows
-    for (int pi = 0; pi < 4; pi++) {
+    for (int pi = 0; pi < kColorPasses; pi++) {
         const PassRecord &pr = tr.passes[pi];
         const int ry = yMain + vpad + fz + 4 + (pi + 1) * lh;
 
