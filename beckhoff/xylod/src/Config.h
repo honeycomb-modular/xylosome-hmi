@@ -58,6 +58,10 @@ struct Config {
     // A colour pass runs at 2^-(stops - min stops) of full speed: same arc and
     // line count, each line integrated longer. 0 0 0 = no correction.
     double colourStops[4]  = {0.0, 0.0, 0.0, 0.0};
+    // Runtime override of the three stops above ("r g b"), written by the
+    // {"cmd":"colour_stops"} command so the HMI's calibration page can set them
+    // without root. Wins over the conf values when present.
+    std::string colourStopsFile = "/var/lib/xylod/colour_stops";
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     double el2521BaseHz = 50000.0;           // CoE 0x8001:02 base frequency 1

@@ -118,8 +118,9 @@ struct ScanJob {
 
 struct SeqCommand {
     enum Type { Enable, Disable, Home, Jog, MoveTo, Filter, Execute,
-                Pause, Resume, Stop, FaultReset, SetHome } type;
+                Pause, Resume, Stop, FaultReset, SetHome, ColourStops } type;
     double  a = 0.0, b = 0.0;      // vel / pos arguments
+    double  stops[3] = {0.0, 0.0, 0.0};   // ColourStops: R G B
     int     slot = 0;
     ScanJob job;
 };
@@ -134,11 +135,13 @@ struct SeqStatus {
     int    filterSlot = -1;
     uint16_t driveSw = 0, driveFault = 0;
     int32_t  echo = 0;
+    int    halts = 0;              // xerox: halts logged in pass 0 (replayed by later passes)
+    double colourStops[3] = {0.0, 0.0, 0.0};   // R G B, stops of extra exposure
 };
 
 class Sequencer {
 public:
-    Sequencer(const Config &cfg, IBackend &bk) : m_cfg(cfg), m_bk(bk) {}
+    Sequencer(const Config &cfg, IBackend &bk);
 
     // ── server-thread API ────────────────────────────────────────────────────
     void post(const SeqCommand &c) { std::lock_guard<std::mutex> l(m_mx); m_cmds.push_back(c); }
@@ -167,6 +170,7 @@ private:
     void enterPass(int pass);
     double passArcStart() const;              // arcStartDeg shifted by the pass offset
     double passVelScale() const;              // this pass's speed multiplier
+    void loadColourStops();                   // conf values, then the runtime file
     double profileAt(double x) const;         // linear interp; samples may be signed
     double delayLine(double hz);              // trigger rate, delayed by line_lag_ms
     void planRunup();                         // run-up / run-out for this pass
@@ -228,6 +232,18 @@ private:
     double m_haltLines = 0.0;
     double m_haltBudgetLines = 0.0;
     bool   m_haltSpent = false;     // budget gone: halts are refused for the rest of the job
+    // Xerox in colour: the artist halts pass 0 (R) by hand; G and B must put
+    // the same stripes in the same places. Each halt is logged by WHERE along
+    // the arc it landed and how long it was held, and replayed there by the
+    // later passes. Those run slower by their exposure match, so the hold (and
+    // the ramp) are stretched by the same factor: distance per ramp, lines per
+    // ramp and lines per halt then all equal pass 0, and the three images are
+    // geometrically identical. BTN1 is ignored while a replay pass runs.
+    struct Halt { double arcS, holdS; };
+    std::vector<Halt> m_halts;
+    size_t m_replayIdx  = 0;        // next halt to fire in a replay pass
+    double m_replayLeft = 0.0;      // hold time remaining in the current replayed halt, s
+    double m_colourStops[4] = {0.0, 0.0, 0.0, 0.0};   // R G B C, live copy (see loadColourStops)
     double m_indexPulseLeft = 0.0;  // pass_index pulse timer, s
     bool   m_estopLatched = false;
     double m_faultResetHoldS = 0.0; // ignore the drive's fault bit while a reset lands

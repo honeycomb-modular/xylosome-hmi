@@ -16,6 +16,7 @@ using json = nlohmann::json;
 #include <cstring>
 #include <cstdlib>
 #include <chrono>
+#include <fstream>
 
 bool TcpServer::listen() {
     m_listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -73,6 +74,8 @@ std::string TcpServer::statusJson() {
         {"posDeg", s.posDeg}, {"velDegS", s.velDegS},
         {"filterSlot", s.filterSlot}, {"lineHz", s.lineHz},
         {"plannedLines", s.plannedLines},
+        {"halts", s.halts},
+        {"colourStops", {s.colourStops[0], s.colourStops[1], s.colourStops[2]}},
         {"estopOk", s.estopOk},
         {"drive", {{"sw", s.driveSw}, {"fault", s.driveFault}}},
         {"echo", s.echo},
@@ -107,6 +110,32 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
                                  sc.b = req.value("velDegS", 20.0); }
     else if (cmd == "filter")  { sc.type = SeqCommand::Filter; sc.slot = req.value("slot", 3); }
     else if (cmd == "set_home") sc.type = SeqCommand::SetHome;
+    else if (cmd == "colour_stops") {
+        // {"cmd":"colour_stops","r":0,"g":0.75,"b":2.1} — stops of extra
+        // exposure per filter, applied to the next colour job and persisted
+        // (colour_stops_file) so they survive a restart. Without r/g/b it
+        // just acks with the current values.
+        const SeqStatus cur = m_seq.status();
+        if (req.contains("r") || req.contains("g") || req.contains("b")) {
+            sc.type = SeqCommand::ColourStops;
+            sc.stops[0] = req.value("r", cur.colourStops[0]);
+            sc.stops[1] = req.value("g", cur.colourStops[1]);
+            sc.stops[2] = req.value("b", cur.colourStops[2]);
+            bool inRange = true;
+            for (double v : sc.stops) if (!(v >= 0.0 && v <= 4.0)) inRange = false;
+            if (!inRange) { ack["ok"] = false; ack["err"] = "stops out of range (0..4)"; post = false; }
+            else {
+                std::ofstream f(m_cfg.colourStopsFile);
+                f << sc.stops[0] << ' ' << sc.stops[1] << ' ' << sc.stops[2] << '\n';
+                if (!f) { LOGW("colour_stops: cannot write %s", m_cfg.colourStopsFile.c_str());
+                          ack["persisted"] = false; }
+                ack["r"] = sc.stops[0]; ack["g"] = sc.stops[1]; ack["b"] = sc.stops[2];
+            }
+        } else {
+            ack["r"] = cur.colourStops[0]; ack["g"] = cur.colourStops[1]; ack["b"] = cur.colourStops[2];
+            post = false;
+        }
+    }
     else if (cmd == "execute") {
         sc.type = SeqCommand::Execute;
         ScanJob &j = sc.job;

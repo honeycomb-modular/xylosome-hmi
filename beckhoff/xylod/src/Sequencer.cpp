@@ -4,8 +4,29 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <fstream>
 
 static const char *kFilterNames[4] = {"R", "G", "B", "C"};
+
+Sequencer::Sequencer(const Config &cfg, IBackend &bk) : m_cfg(cfg), m_bk(bk) {
+    loadColourStops();
+}
+
+// The conf file's stops are the defaults; the runtime file (written by the
+// colour_stops command, i.e. the HMI's calibration page) wins when present.
+void Sequencer::loadColourStops() {
+    for (int i = 0; i < 4; i++) m_colourStops[i] = m_cfg.colourStops[i];
+    std::ifstream f(m_cfg.colourStopsFile);
+    double r, g, b;
+    if (f && (f >> r >> g >> b)) {
+        m_colourStops[0] = r; m_colourStops[1] = g; m_colourStops[2] = b;
+        LOGI("seq: colour stops from %s — R %.2f G %.2f B %.2f",
+             m_cfg.colourStopsFile.c_str(), r, g, b);
+    } else {
+        LOGI("seq: colour stops from conf — R %.2f G %.2f B %.2f",
+             m_colourStops[0], m_colourStops[1], m_colourStops[2]);
+    }
+}
 
 long long Sequencer::nowMs() const {
     using namespace std::chrono;
@@ -154,6 +175,10 @@ void Sequencer::openPass() {
     m_lagN   = 0;
     LOGI("seq: pass %d begin — scale %.3f, rate %.0f Hz intended",
          m_pass, passVelScale(), m_job.lineBaseHz * passVelScale());
+    m_replayIdx = 0; m_replayLeft = 0.0;
+    if (m_job.xerox && m_pass > 0 && !m_halts.empty())
+        LOGI("seq: pass %d replays %zu halt(s) from pass 0, time x%.2f",
+             m_pass, m_halts.size(), 1.0 / passVelScale());
     m_st = St::SeqRun;
 }
 
@@ -271,6 +296,11 @@ void Sequencer::cycle(double dt) {
         switch (c.type) {
         case SeqCommand::Enable:     m_bk.axisEnable(true);  break;
         case SeqCommand::Disable:    m_bk.axisEnable(false); m_st = St::Idle; break;
+        case SeqCommand::ColourStops:
+            for (int i = 0; i < 3; i++) m_colourStops[i] = c.stops[i];
+            LOGI("seq: colour stops set — R %.2f G %.2f B %.2f",
+                 c.stops[0], c.stops[1], c.stops[2]);
+            break;
         case SeqCommand::FaultReset:
             m_bk.axisFaultReset();
             if (din.estopOk) m_estopLatched = false;
@@ -463,13 +493,17 @@ void Sequencer::cycle(double dt) {
             // colour pass runs slower by its filter's correction — the bracketing
             // mechanism, so geometry and line count are unchanged and nothing on
             // the camera moves. Only the plain R/G/B walk: explicit brackets and
-            // stacks, pinned filters, static holds (exposure set by duration) and
-            // time-indexed profiles are left exactly as they were.
+            // stacks and pinned filters are left exactly as they were. Every
+            // kind of pass takes the scale the same way — the pass runs in
+            // dilated time (velocity, line rate and the clock all x scale), so
+            // a static hold lasts longer at a lower rate, a time-indexed
+            // profile traces the same path more slowly, and a xerox halt is
+            // held longer. Same lines, same geometry, each line exposed longer.
             if (m_job.colorMode == 0 && m_job.passCount <= 0 && m_job.filterSlot < 0 &&
-                m_job.passVelScale.empty() && !m_job.staticHold && !m_job.timeProfile) {
+                m_job.passVelScale.empty()) {
                 double st[4], lo = 1e9;
                 for (int p = 0; p < m_passCount; p++) {
-                    st[p] = std::max(0.0, std::min(4.0, m_cfg.colourStops[std::min(3, p)]));
+                    st[p] = std::max(0.0, std::min(4.0, m_colourStops[std::min(3, p)]));
                     lo = std::min(lo, st[p]);
                 }
                 bool any = false;
@@ -486,6 +520,7 @@ void Sequencer::cycle(double dt) {
             m_pauseRamp = 1.0; m_pausing = false;
             m_pauseRampS = 0.25;
             m_haltLines = 0.0; m_haltBudgetLines = 0.0; m_haltSpent = false;
+            m_halts.clear(); m_replayIdx = 0; m_replayLeft = 0.0;
             if (m_job.xerox) {
                 // The halt ramp is a linear slew of the velocity, i.e. a constant
                 // decel of maxVel / rampS. The artist picks how hard; the accel
@@ -507,10 +542,21 @@ void Sequencer::cycle(double dt) {
         case SeqCommand::Pause:
             // A xerox halt past its budget would run the frame out before the
             // FOV is done, so it is refused rather than truncating the image.
-            if (m_st == St::SeqRun && !m_haltSpent) { m_pausing = true; m_st = St::SeqPaused; }
+            // Replay passes take their halts from the log, not the button.
+            if (m_job.xerox && m_pass > 0) break;
+            if (m_st == St::SeqRun && !m_haltSpent) {
+                m_pausing = true; m_st = St::SeqPaused;
+                if (m_job.xerox && m_pass == 0) m_halts.push_back({m_arcS, 0.0});
+            }
             break;
         case SeqCommand::Resume:
-            if (m_st == St::SeqPaused) { m_pausing = false; m_st = St::SeqRun; }
+            if (m_job.xerox && m_pass > 0) break;
+            if (m_st == St::SeqPaused) {
+                m_pausing = false; m_st = St::SeqRun;
+                if (m_job.xerox && m_pass == 0 && !m_halts.empty())
+                    LOGI("seq: xerox halt %zu logged at %.2f deg into the arc, held %.2f s",
+                         m_halts.size(), m_halts.back().arcS, m_halts.back().holdS);
+            }
             break;
         default: break;
         }
@@ -623,10 +669,27 @@ void Sequencer::cycle(double dt) {
 
     case St::SeqPaused:
     case St::SeqRun: {
+        const double sc = passVelScale();   // exposure match: this pass runs at x sc
+        if (m_job.xerox && m_pass > 0 && m_drainLeft < 0) {
+            // Replay pass 0's halts at the same arc positions, held 1/sc as long.
+            if (m_st == St::SeqPaused) {
+                m_replayLeft -= dt;
+                if (m_replayLeft <= 0.0) m_st = St::SeqRun;
+            } else if (m_replayIdx < m_halts.size() && m_arcS >= m_halts[m_replayIdx].arcS) {
+                m_replayLeft = m_halts[m_replayIdx].holdS / sc;
+                m_replayIdx++;
+                m_st = St::SeqPaused;
+                LOGI("seq: replaying halt %zu at %.2f deg into the arc, holding %.2f s",
+                     m_replayIdx, m_arcS, m_replayLeft);
+            }
+        } else if (m_job.xerox && m_pass == 0 && m_st == St::SeqPaused && !m_halts.empty()) {
+            m_halts.back().holdS += dt;     // the hand-held halt, as it happens
+        }
         // pause ramp: slew 1→0 (paused) or 0→1 (running) in ~250 ms (xerox: its
-        // own brake ramp, see Execute)
+        // own brake ramp, see Execute), stretched like everything else in a
+        // scaled pass so the ramp covers the same distance and lines.
         const double rampTarget = (m_st == St::SeqPaused) ? 0.0 : 1.0;
-        const double dr = dt / m_pauseRampS;
+        const double dr = dt * sc / m_pauseRampS;
         m_pauseRamp += std::max(-dr, std::min(dr, rampTarget - m_pauseRamp));
 
         double lineHzNow  = 0.0;   // rate the COMMANDED motion implies this cycle
@@ -647,8 +710,8 @@ void Sequencer::cycle(double dt) {
             // Paused time does not count, so a pause lengthens the wall-clock
             // capture without shortening the image.
             m_setpoint = m_job.arcStartDeg;
-            lineHzNow  = m_job.lineBaseHz * m_pauseRamp;
-            m_dwellS  += dt * m_pauseRamp;
+            lineHzNow  = m_job.lineBaseHz * sc * m_pauseRamp;
+            m_dwellS  += dt * m_pauseRamp * sc;     // dilated: held 1/sc longer at sc the rate
             motionDone = m_dwellS >= m_job.durationS;
         } else if (m_job.timeProfile) {
             // Reversible sweep. The profile is indexed by TIME and its samples
@@ -660,9 +723,11 @@ void Sequencer::cycle(double dt) {
             // position-indexed sweep stalling forever at v=0, but here the pass
             // ends on the clock, and forcing a minimum would make the turnaround
             // impossible — the axis could never pass through zero.
-            m_dwellS += dt * m_pauseRamp;
+            // Dilated time: the profile is walked at sc the pace and the axis
+            // moves at sc the speed, so the path is the one the artist drew.
+            m_dwellS += dt * m_pauseRamp * sc;
             const double x = m_dwellS / std::max(1e-6, m_job.durationS);
-            const double v = profileAt(x) * m_job.maxVelDegS * m_pauseRamp;  // signed
+            const double v = profileAt(x) * m_job.maxVelDegS * sc * m_pauseRamp;  // signed
             m_setpoint += v * dt;
             // No arc bounds the travel here, so the soft limits are the only
             // thing that does. Clamp every cycle: a profile whose mean is not
@@ -671,7 +736,7 @@ void Sequencer::cycle(double dt) {
 
             lineHzNow = m_job.lineCurve
                 ? m_job.lineBaseHz * (std::fabs(v) / std::max(1e-6, m_job.maxVelDegS))
-                : (m_st == St::SeqRun ? m_job.lineBaseHz : 0.0);
+                : (m_st == St::SeqRun ? m_job.lineBaseHz * sc : 0.0);
             // TDI runs one way only — see ScanJob::lineForwardOnly. The axis
             // still travels the return stroke; it just is not scanned.
             if (m_job.lineForwardOnly && v <= 0.0) lineHzNow = 0.0;
@@ -686,7 +751,6 @@ void Sequencer::cycle(double dt) {
             // slower pass delivers the same lines over the same arc, each one
             // integrated for longer. Scaling only one of the two would change
             // the image instead of its exposure.
-            const double sc      = passVelScale();
             const double effMax  = m_job.maxVelDegS * sc;
             const double effBase = m_job.lineBaseHz * sc;
             const double vProf = std::max(m_job.minVelDegS * sc,
@@ -707,11 +771,12 @@ void Sequencer::cycle(double dt) {
             vSigned    = arc > 0 ? v : -v;
             motionDone = m_arcS >= arcAbs;
 
-            if (m_job.xerox && m_drainLeft < 0) {
+            if (m_job.xerox && m_drainLeft < 0 && m_pass == 0) {
                 // Lines the motion did not earn: the stationary fraction of the
                 // rate, so a ramp counts by how much of it the axis stood still.
                 // When the frame's spare room is gone the halt is released here
                 // and further presses are refused — the FOV always completes.
+                // Pass 0 only: a replay repeats halts that already fit.
                 m_haltLines += effBase * dt * (1.0 - m_pauseRamp);
                 if (!m_haltSpent && m_haltLines >= m_haltBudgetLines) {
                     m_haltSpent = true;
@@ -822,6 +887,8 @@ void Sequencer::publish() {
     s.driveSw    = d.statusword;
     s.driveFault = d.errorCode;
     s.echo       = m_bk.echoCounts();
+    s.halts      = m_job.xerox ? int(m_halts.size()) : 0;
+    for (int i = 0; i < 3; i++) s.colourStops[i] = m_colourStops[i];
     if (m_st == St::SeqRun || m_st == St::SeqPaused) {
         if (m_job.staticHold) {
             s.progress = std::min(1.0, m_dwellS / std::max(1e-6, m_job.durationS));
