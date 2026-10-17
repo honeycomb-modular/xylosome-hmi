@@ -106,7 +106,13 @@ void BeckhoffLink::handleMessage(const QJsonObject &m) {
         m_velDegS    = m.value(QStringLiteral("velDegS")).toDouble();
         m_lineHz     = m.value(QStringLiteral("lineHz")).toDouble();
         m_filterSlot = m.value(QStringLiteral("filterSlot")).toInt(-1);
+        m_halts      = m.value(QStringLiteral("halts")).toInt(0);
         emit statusChanged();
+        const QJsonArray cs = m.value(QStringLiteral("colourStops")).toArray();
+        if (cs.size() == 3) {
+            const QVariantList v{cs.at(0).toDouble(), cs.at(1).toDouble(), cs.at(2).toDouble()};
+            if (v != m_colourStops) { m_colourStops = v; emit colourStopsChanged(); }
+        }
         if (pass != m_pass)     { m_pass = pass;     emit passIndexChanged(); }
         if (prog != m_progress) { m_progress = prog; emit progressChanged(); }
     }
@@ -389,6 +395,10 @@ void BeckhoffLink::stop()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("
 void BeckhoffLink::home()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("home")}}); }
 void BeckhoffLink::setHome(){ sendJson({{QStringLiteral("cmd"), QStringLiteral("set_home")}}); }
 void BeckhoffLink::faultReset() { sendJson({{QStringLiteral("cmd"), QStringLiteral("fault_reset")}}); }
+void BeckhoffLink::setColourStops(double r, double g, double b) {
+    sendJson({{QStringLiteral("cmd"), QStringLiteral("colour_stops")},
+              {QStringLiteral("r"), r}, {QStringLiteral("g"), g}, {QStringLiteral("b"), b}});
+}
 
 void BeckhoffLink::enable(bool on) {
     sendJson({{QStringLiteral("cmd"), on ? QStringLiteral("enable")

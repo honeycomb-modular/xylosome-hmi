@@ -15,7 +15,7 @@ Item {
 
     FocusController {
         id: setFocus
-        targets: [rowNetwork, rowCamera, rowAxis, rowCalibration, rowDisplay, rowSystem, backBtn]
+        targets: [rowNetwork, rowCamera, rowAxis, rowCalibration, rowColour, rowDisplay, rowSystem, backBtn]
         onActivated: function(item) { item.clicked() }
     }
 
@@ -57,16 +57,23 @@ Item {
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCalibration.qml"))
     }
     NavRow {
-        id: rowDisplay
+        id: rowColour
         controller: setFocus
         x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 4; width: Theme.contentW
+        rowName: "colour";        rowDesc: "filter exposure match · R/G/B stops · measure"
+        onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenColour.qml"))
+    }
+    NavRow {
+        id: rowDisplay
+        controller: setFocus
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 5; width: Theme.contentW
         rowName: "display";       rowDesc: "brightness · blanking"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenDisplay.qml"))
     }
     NavRow {
         id: rowSystem
         controller: setFocus
-        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 5; width: Theme.contentW
+        x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 6; width: Theme.contentW
         rowName: "system";        rowDesc: "firmware · platform"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenSystem.qml"))
     }

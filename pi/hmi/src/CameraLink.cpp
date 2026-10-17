@@ -103,6 +103,13 @@ void CameraLink::handleMessage(const QJsonObject &m) {
         m_clm       = m.value(QStringLiteral("clm")).toString();
         emit stateChanged();
     }
+    else if (ev == QLatin1String("pass_stats")) {
+        emit passStats(m.value(QStringLiteral("pass")).toInt(-1),
+                       m.value(QStringLiteral("filter")).toString(),
+                       m.value(QStringLiteral("median")).toDouble(),
+                       m.value(QStringLiteral("p99")).toDouble(),
+                       m.value(QStringLiteral("lines")).toInt());
+    }
     else if (ev == QLatin1String("welcome")) {
         m_model = m.value(QStringLiteral("camera")).toString();
         qInfo() << "[camera] agent" << m.value(QStringLiteral("version")).toString() << m_model;

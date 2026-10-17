@@ -55,6 +55,10 @@ signals:
     void hostChanged();
     void portChanged();
     void stateChanged();
+    // Per-pass brightness the agent measures on every saved pass (median and
+    // 99th percentile of the 16-bit data). settings ▸ colour uses it to
+    // equalise the filters; everything else ignores it.
+    void passStats(int pass, const QString &filter, double median, double p99, int lines);
 
 private slots:
     void onConnected();

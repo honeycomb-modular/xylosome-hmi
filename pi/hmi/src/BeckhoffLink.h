@@ -33,6 +33,10 @@ class BeckhoffLink : public QObject
     Q_PROPERTY(double  velocityDegS READ velocityDegS NOTIFY statusChanged)
     Q_PROPERTY(double  lineHz      READ lineHz      NOTIFY statusChanged)
     Q_PROPERTY(int     filterSlot  READ filterSlot  NOTIFY statusChanged)
+    Q_PROPERTY(int     halts       READ halts       NOTIFY statusChanged)   // xerox: halts logged in pass 0
+    // Colour exposure match, stops of extra exposure per filter [R, G, B]. Lives
+    // in xylod (persisted there); this is the mirror from status.
+    Q_PROPERTY(QVariantList colourStops READ colourStops NOTIFY colourStopsChanged)
     Q_PROPERTY(QString faultText   READ faultText   NOTIFY faultTextChanged)
     Q_PROPERTY(QString xylodVersion READ xylodVersion NOTIFY xylodVersionChanged) // "0.1 797ef7fe8" from welcome
 
@@ -56,6 +60,8 @@ public:
     double  velocityDegS() const { return m_velDegS; }
     double  lineHz()       const { return m_lineHz; }
     int     filterSlot()   const { return m_filterSlot; }
+    int     halts()        const { return m_halts; }
+    QVariantList colourStops() const { return m_colourStops; }
     QString faultText()    const { return m_faultText; }
     QString xylodVersion() const { return m_xylodVersion; }
 
@@ -154,6 +160,9 @@ public:
     Q_INVOKABLE void    setLineMode(const QString &mode);   // "curve" | "fixed"
     Q_INVOKABLE QString lineMode() const;
     Q_INVOKABLE void faultReset();
+    // Colour exposure match: xylod applies these to every R/G/B job and keeps
+    // them across restarts. settings ▸ colour writes them.
+    Q_INVOKABLE void setColourStops(double r, double g, double b);
 
 signals:
     void connectedChanged();
@@ -164,6 +173,7 @@ signals:
     void progressChanged();
     void faultTextChanged();
     void xylodVersionChanged();
+    void colourStopsChanged();
 
     // sequence events — drive ScreenScan + MetadataRecorder when connected
     void passStarted(int pass, qint64 tMs);
@@ -192,7 +202,8 @@ private:
     bool    m_connected = false;
     QString m_state = QStringLiteral("offline");
     bool    m_enabled = false, m_homed = false, m_estopOk = true;
-    int     m_pass = -1, m_filterSlot = -1;
+    int     m_pass = -1, m_filterSlot = -1, m_halts = 0;
+    QVariantList m_colourStops{0.0, 0.0, 0.0};
     double  m_progress = 0.0, m_posDeg = 0.0, m_velDegS = 0.0, m_lineHz = 0.0;
     QString m_faultText;
     QString m_xylodVersion;

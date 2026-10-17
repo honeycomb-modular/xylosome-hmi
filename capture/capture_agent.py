@@ -779,6 +779,16 @@ def xylod_client():
                             print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
                                   % (name, motion_ms, lines, img.shape[0],
                                      int(img[:lines].max()), over))
+                            # Brightness of the pass, for the HMI's colour match
+                            # (settings > colour): median and p99 of a subsample,
+                            # broadcast on the camera bus as pass_stats.
+                            try:
+                                sub = img[:lines][::max(1, lines // 2000), ::4]
+                                _bcast({"ev": "pass_stats", "seq": seq, "pass": p, "filter": str(filt),
+                                        "lines": int(lines), "median": float(np.median(sub)),
+                                        "p99": float(np.percentile(sub, 99))})
+                            except Exception as e:
+                                print("pass_stats failed:", e)
                         except Exception as e:
                             print("capture save failed:", e)
                 elif ev == "seq_done":

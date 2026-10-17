@@ -87,6 +87,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenCamera.qml
         qml/ScreenAxis.qml
         qml/ScreenCalibration.qml
+        qml/ScreenColour.qml
         qml/ScreenDisplay.qml
         qml/ScreenSystem.qml
         # ── Menu targets ──

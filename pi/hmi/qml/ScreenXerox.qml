@@ -13,8 +13,13 @@
 //   Timeline   — the crawl time for the FOV (the image's exposure, in effect)
 //   [brake]    — how hard each halt stops: hard · medium · soft
 //
-// Single continuous pass (bw). Needs xylod's `xerox` execute flag and the
-// pendant's BTN1 release edge (PendantReader forwards BTN1 UP).
+// [monochrome]: one pass. [color]: three passes R / G / B through the colour
+// wheel. The artist halts the RED pass by hand; xylod logs each halt by its
+// position along the arc and its hold time and REPLAYS them in G and B, held
+// longer by each filter's exposure match, so the three images put the same
+// stripes in the same places. BTN1 does nothing during a replay pass.
+// Needs xylod's `xerox` execute flag and the pendant's BTN1 release edge
+// (PendantReader forwards BTN1 UP).
 
 import QtCore
 import QtQuick
@@ -31,7 +36,20 @@ Item {
         property alias hand2Angle:  root.hand2Angle
         property alias durationSec: root.durationSec
         property alias brakeIdx:    root.brakeIdx
+        property alias xeroxColor:  root.xeroxColor
     }
+
+    // Colour: 3 passes R/G/B (xylod colorMode 0). Pass 0 is halted by hand,
+    // passes 1 and 2 replay those halts.
+    property bool xeroxColor: false
+    readonly property int  passCount: root.xeroxColor ? 3 : 1
+    readonly property var  passNames: ["R", "G", "B"]
+    readonly property int  passIdx:   Math.max(0, Math.min(root.passCount - 1, Beckhoff.passIndex))
+    readonly property bool replaying: root.xeroxColor && root.execState !== "idle"
+                                      && Beckhoff.connected && Beckhoff.passIndex > 0
+    // The axis is halted: by the button (pass 0) or by the replay (later passes).
+    readonly property bool haltShown: root.execState === "halted"
+                                      || (root.replaying && Beckhoff.state === "paused")
 
     // ── Scan definition ─────────────────────────────────────────────────────────
     property real hand1Angle: -45     // FOV start (deg)
@@ -109,7 +127,7 @@ Item {
 
     FocusController {
         id: xeroxFocus
-        targets: [fovCircle, timelineProxy, brakeBtn, settingsBtn, modesBtn]
+        targets: [fovCircle, timelineProxy, colorBtn, brakeBtn, settingsBtn, modesBtn]
                  .concat(faultChip.focusTargets)
                  .concat(root.execState !== "idle" ? [abortBtn] : [])
                  .concat([homeBtn])
@@ -136,6 +154,7 @@ Item {
             if (root.arcDeg < 1 || root.durationSec < 1) return
             root.startRun()
         } else if (root.execState === "running") {
+            if (root.replaying) return          // G/B halts come from the log
             if (Beckhoff.connected) Beckhoff.pause()
             root.execState = "halted"
             root.blinkVisible = true
@@ -219,7 +238,8 @@ Item {
         root.homed        = false
         clock.start()
         if (Beckhoff.connected) {
-            Beckhoff.executeXerox(1, root.hand1Angle, root.hand2Angle, root.velDegS,
+            Beckhoff.executeXerox(root.xeroxColor ? 0 : 1,
+                                  root.hand1Angle, root.hand2Angle, root.velDegS,
                                   root.plannedLines, root.brakes[root.brakeIdx].ms,
                                   root.haltBudgetS)
         } else {
@@ -254,7 +274,7 @@ Item {
         interval: 250; repeat: true; running: false
         onTriggered: {
             root.elapsedSec += 0.25
-            if (root.execState === "halted") root.haltedSec += 0.25
+            if (root.haltShown) root.haltedSec += 0.25
         }
     }
     // Offline sim — fills only while not halted.
@@ -269,7 +289,7 @@ Item {
         }
     }
     Timer {
-        interval: 500; repeat: true; running: root.execState === "halted"
+        interval: 500; repeat: true; running: root.haltShown
         onTriggered: root.blinkVisible = !root.blinkVisible
     }
     Timer {
@@ -287,6 +307,12 @@ Item {
         function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
         function onFaulted(text)        { root.abortRun() }
         function onConnectedChanged()   { if (!Beckhoff.connected && root.execState !== "idle") root.abortRun() }
+        // Pass 0 ended while the button was still held: the replay passes
+        // halt on their own, so the page is simply running again.
+        function onPassIndexChanged() {
+            if (root.execState === "halted" && root.xeroxColor && Beckhoff.passIndex > 0)
+                root.execState = "running"
+        }
     }
 
     // ── Header ────────────────────────────────────────────────────────────────
@@ -444,7 +470,12 @@ Item {
         spacing: 2
         Text {
             anchors.right: parent.right
-            text: root.execState === "idle" ? "crawl" : "elapsed  ·  halted"
+            text: root.execState === "idle"
+                  ? (root.xeroxColor ? "crawl per pass" : "crawl")
+                  : (root.xeroxColor
+                     ? "pass " + (root.passIdx + 1) + "/3 " + root.passNames[root.passIdx]
+                       + "  ·  elapsed  ·  halted"
+                     : "elapsed  ·  halted")
             color: Theme.colorTextDim
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }
@@ -454,7 +485,7 @@ Item {
                   ? root.fmtDuration(root.durationSec)
                   : root.fmtDuration(root.elapsedSec) + "  ·  " + root.fmtDuration(root.haltedSec)
             color: root.execState === "idle" ? Theme.colorText
-                 : root.execState === "halted" ? Theme.danger : Theme.accent
+                 : root.haltShown ? Theme.danger : Theme.accent
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH1 }
         }
         Text {
@@ -471,6 +502,18 @@ Item {
                    ? Theme.danger : Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }
+    }
+
+    // ── Colour / monochrome — under the clock, flush right ───────────────────────
+    TerminalButton {
+        id: colorBtn
+        controller: xeroxFocus
+        anchors { right: parent.right; rightMargin: Theme.marginX }
+        y: 282
+        width: 116; height: 26
+        fontSize: Theme.fontMonoS
+        label: root.xeroxColor ? "[color]" : "[monochrome]"
+        onClicked: if (root.execState === "idle") root.xeroxColor = !root.xeroxColor
     }
 
     // ── Timeline ────────────────────────────────────────────────────────────────
@@ -511,20 +554,21 @@ Item {
                 visible: root.execState !== "idle"
                 x: 1; y: 1; height: parent.height - 2
                 width: Math.max(0, root.progressFrac * (parent.width - 2))
-                color: root.execState === "halted" ? "#6B2020" : Theme.accentDim; radius: 2
+                color: root.haltShown ? "#6B2020" : Theme.accentDim; radius: 2
             }
             Rectangle {
                 visible: root.execState !== "idle"
                 width: 2; height: parent.height - 2; y: 1
-                color: root.execState === "halted" ? Theme.danger : Theme.accent
+                color: root.haltShown ? Theme.danger : Theme.accent
                 x: Math.max(1, Math.min(parent.width - 3, root.progressFrac * (parent.width - 2)))
             }
 
             Text {
                 anchors.centerIn: parent
                 visible: root.execState !== "idle"
-                text: root.execState === "halted" ? "HALTED" : Math.round(root.progressFrac * 100) + "%"
-                color: root.execState === "halted" ? Theme.danger : Theme.colorText
+                text: root.haltShown ? (root.replaying ? "REPLAY HALT" : "HALTED")
+                                     : Math.round(root.progressFrac * 100) + "%"
+                color: root.haltShown ? Theme.danger : Theme.colorText
                 font { family: Theme.fontFamilyMono; pixelSize: Theme.fontH2 }
             }
             Text {
@@ -562,7 +606,12 @@ Item {
             anchors { horizontalCenter: parent.horizontalCenter; top: parent.bottom; topMargin: 4 }
             text: root.execState === "idle"
                   ? "drag / turn to set the crawl   ·   ≈ " + root.fmtLines(root.plannedLines) + " lines"
+                    + (root.xeroxColor ? "  ·  R/G/B, halts replayed" : "")
+                  : root.replaying
+                  ? "pass " + (root.passIdx + 1) + "/3 " + root.passNames[root.passIdx]
+                    + " — replaying " + Beckhoff.halts + " halt" + (Beckhoff.halts === 1 ? "" : "s")
                   : "hold [execute] to halt — " + Math.round(root.arcDeg) + "\xB0 field"
+                    + (root.xeroxColor ? "  ·  pass 1/3 R" : "")
             color: Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }
@@ -627,10 +676,11 @@ Item {
         anchors { right: parent.right; rightMargin: 18; bottom: parent.bottom; bottomMargin: 18 }
         width: 130; height: 45
         label: root.execState === "idle"    ? "[execute]" :
+               root.replaying                ? "[replay]" :
                root.execState === "running" ? "[hold=halt]" : "[halted]"
         borderColor: Theme.danger
-        fillColor: (root.execState === "running" ||
-                    (root.execState === "halted" && root.blinkVisible)) ? "#6B2020" : Theme.panel
+        fillColor: ((root.execState === "running" && !root.haltShown) ||
+                    (root.haltShown && root.blinkVisible)) ? "#6B2020" : Theme.panel
         onClicked: if (root.execState === "idle") root.btn1Execute()
     }
 
