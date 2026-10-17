@@ -1,6 +1,6 @@
 """Merge one colour scan's R/G/B passes into a colour image.
 
-usage: python -I rgb_merge.py <capture dir> <seq> <out dir> [--align]
+usage: python -I rgb_merge.py <capture dir> <seq> <out dir> [--align] [--denoise-blue[=K]]
 
 Example: python -I capture/rgb_merge.py D:/capture 2227 D:/merged --align
 
@@ -15,6 +15,12 @@ differ by a few lines). Writes:
 --align registers G and B onto R (rgb_align.py): slow passes drop lines
 evenly (EL2521 frequency step, 2026-10-16), so blue can be ~1% short along
 the scan. The 16-bit TIFF stays in raw capture orientation.
+
+--denoise-blue smooths the blue pass's grain: it integrates ~4x longer than
+red, so dark-current shot noise makes it visibly grainier (scan 2233: same
+~250-count grain as R/G but on a channel half as bright). An edge-preserving
+bilateral filter in linear 16-bit, sigma = K x the measured grain (default
+K=3; edges above that survive, grain below it is averaged). R and G untouched.
 """
 import glob
 import os
@@ -79,6 +85,23 @@ if "--align" in sys.argv:
         print(align.describe(f"{name}->R after ", cx2, cy2, n2, nn2, rms2, H, W))
         out_ch.append(warped)
     g, b = out_ch
+
+# Blue denoise (see the docstring). Grain is measured as the MAD of the
+# residual after a 5x5 median, in the middle of the frame.
+dn = [a for a in sys.argv if a.startswith("--denoise-blue")]
+if dn:
+    k = float(dn[0].split("=")[1]) if "=" in dn[0] else 3.0
+    bf = b.astype(np.float32)
+    H, W = bf.shape
+    t = bf[H // 2 - 512:H // 2 + 512, W // 2 - 512:W // 2 + 512]
+    res = t - cv2.medianBlur(t, 5)
+    mad = 1.4826 * float(np.median(np.abs(res - np.median(res))))
+    bf = cv2.bilateralFilter(bf, 9, k * mad, 3.0)
+    res2 = bf[H // 2 - 512:H // 2 + 512, W // 2 - 512:W // 2 + 512]
+    res2 = res2 - cv2.medianBlur(res2, 5)
+    mad2 = 1.4826 * float(np.median(np.abs(res2 - np.median(res2))))
+    b = np.clip(bf, 0, 65535).astype(np.uint16)
+    print(f"B: denoised, grain {mad:.0f} -> {mad2:.0f} counts (sigma {k:g} x grain)")
 
 rgb16 = np.dstack([r, g, b]).astype(np.uint16)
 tifffile.imwrite(os.path.join(out, f"scan_{seq}_RGB16.tif"), rgb16, photometric="rgb")
