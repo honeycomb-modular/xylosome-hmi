@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QStorageInfo>
 #include <QTimer>
 #include <QUuid>
@@ -956,6 +957,21 @@ static QString toolPath(const QString &name)
 
 static QString mergeToolPath() { return toolPath(QStringLiteral("hdr_merge.py")); }
 
+// The interpreter the merge tools run under. start-suite.ps1 puts msys2's bin
+// first on PATH for the Qt/vips DLLs, and msys2 ships its own python without
+// numpy/cv2/tifffile — so a bare "python" found the wrong one (2026-10-17:
+// "No module named 'cv2'"). The Windows launcher resolves the real install.
+// merge/python in the settings overrides it.
+static QStringList pythonCommand()
+{
+    const QString custom = QSettings().value(QStringLiteral("merge/python")).toString();
+    if (!custom.isEmpty())
+        return { custom };
+    if (!QStandardPaths::findExecutable(QStringLiteral("py")).isEmpty())
+        return { QStringLiteral("py"), QStringLiteral("-3") };
+    return { QStringLiteral("python") };
+}
+
 void SessionStore::mergeHdrSet(int row)
 {
     if (m_merge) {
@@ -1001,8 +1017,9 @@ void SessionStore::mergeHdrSet(int row)
     m_mergeOut.clear();
     m_mergeUuid.clear();
     m_merge = new QProcess(this);
-    m_merge->setProgram(QStringLiteral("python"));
-    m_merge->setArguments(QStringList{ tool } + files
+    QStringList py = pythonCommand();
+    m_merge->setProgram(py.takeFirst());
+    m_merge->setArguments(py + QStringList{ tool } + files
                           + QStringList{ QStringLiteral("--out"),
                                          QDir::toNativeSeparators(outDir) });
     m_merge->setProcessChannelMode(QProcess::MergedChannels);
@@ -1098,8 +1115,9 @@ void SessionStore::mergeColour(int row, bool discardChannels)
     m_mergeUuid = s.uuid;
     m_mergeDiscard = discardChannels;
     m_merge = new QProcess(this);
-    m_merge->setProgram(QStringLiteral("python"));
-    m_merge->setArguments(QStringList{ QStringLiteral("-I"), tool, QStringLiteral("--files"),
+    QStringList py = pythonCommand();
+    m_merge->setProgram(py.takeFirst());
+    m_merge->setArguments(py + QStringList{ QStringLiteral("-I"), tool, QStringLiteral("--files"),
                                        QDir::toNativeSeparators(files[0]),
                                        QDir::toNativeSeparators(files[1]),
                                        QDir::toNativeSeparators(files[2]),
