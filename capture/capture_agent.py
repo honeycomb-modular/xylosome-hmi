@@ -134,15 +134,28 @@ def field(text, label):
         if m: return m.group(1).strip()
     return None
 
+_state_cache = None   # last read_state(); the capture path uses this, never the serial port
+
 def read_state():
+    global _state_cache
     g = cam_cmd("gcp")
     sync = field(g, "SYNC Frequency"); gain = field(g, "Analog Gain (dB)"); st = field(g, "Stage Selection")
-    return {"line.rate": float(re.sub(r"[^\d.]", "", sync)) if sync else None,
+    _state_cache = {"line.rate": float(re.sub(r"[^\d.]", "", sync)) if sync else None,
             "tdi.stages": int(st) if st else None,
             "gain": gain.split()[0] if gain else None,
             "scan.dir": field(g, "CCD Direction") or "",
             "model": field(g, "Camera Model No."),
             "clm": field(g, "Camera Link Mode")}
+    return _state_cache
+
+def cached_state():
+    # Every `set` on the camera bus re-reads the camera (and so refreshes this),
+    # and the per-pass gain is tracked separately, so inside a sequence the
+    # cache is the truth. A gcp over COM3 at 9600 baud takes a second or more,
+    # and a second spent here while xylod streams status at 25 Hz is a second
+    # of stale events: the arm then lands after the pass has started and the
+    # lines before it are lost (2026-10-17, scans 2263..2266).
+    return dict(_state_cache) if _state_cache else read_state()
 
 def set_cam_external(on):
     # Camera exposure mode over COM3: 3 = external EXSYNC (the grabber, paced by
@@ -587,6 +600,54 @@ def cam_client(conn, addr):
         _clients.discard(conn); conn.close()
 
 # ---------- :5510 xylod client -> per-pass capture ----------
+def _xylod_lines(sock):
+    # Lines from xylod, with buffered STATUS lines coalesced: whatever has
+    # piled up while the loop was busy, only the newest status is delivered,
+    # and every event line (pass_start, pass_end, seq_done, ...) in order. So
+    # the loop never arms on a settle that ended seconds ago.
+    buf = b""
+    while True:
+        chunk = sock.recv(1 << 16)
+        if not chunk: return
+        buf += chunk
+        if b"\n" not in buf: continue
+        *ls, buf = buf.split(b"\n")
+        batch = [l.decode(errors="replace").strip() for l in ls]
+        batch = [l for l in batch if l]
+        last_status = None
+        for l in batch:
+            if '"ev":"status"' in l: last_status = l
+            else: yield l
+        if last_status is not None: yield last_status
+
+import queue
+_saver = queue.Queue()
+def _saver_thread():
+    while True:
+        name, img, lines, motion_ms, over, settings, seq, p, filt, gain_db = _saver.get()
+        tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
+        try:
+            tifffile.imwrite(tmp, img[:lines], metadata={"camera": settings, "bits": CAM_BITS})
+            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
+            # peak is in left-justified 16-bit: full scale is 65535 whatever
+            # CAM_BITS is. A peak stuck at/below 255 means the data never left
+            # the low byte — .ccf Pixel Mask or clm.
+            print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
+                  % (name, motion_ms, lines, img.shape[0], int(img[:lines].max()), over))
+            # Brightness of the pass, for the HMI's colour match (settings >
+            # colour): median and p99 of a subsample, broadcast as pass_stats.
+            try:
+                sub = img[:lines][::max(1, lines // 2000), ::4]
+                _bcast({"ev": "pass_stats", "seq": seq, "pass": p, "filter": filt,
+                        "lines": int(lines), "median": float(np.median(sub)),
+                        "p99": float(np.percentile(sub, 99)), "gainDb": gain_db})
+            except Exception as e:
+                print("pass_stats failed:", e)
+        except Exception as e:
+            print("capture save failed:", e)
+        finally:
+            _saver.task_done()
+
 SEQ_FILE = os.path.join(CAPTURE_DIR, ".xylosome", "scan_seq")
 
 def _max_seq():
@@ -680,9 +741,15 @@ def xylod_client():
         # with the only print at the far end a stall looked exactly like "the agent
         # never received the event" — which cost a whole diagnosis on 2026-07-24.
         print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines, note))
-        nonlocal base_gain
-        try: base_gain = float(read_state().get("gain") or 0.0)
-        except Exception: base_gain = None
+        # ONE serial read per sequence, here, before anything is armed: the
+        # camera is read over COM3 at 9600 baud and a gcp dump takes a while.
+        # It used to be read again at pass_start, i.e. during the acquisition.
+        nonlocal base_gain, scan_settings
+        try:
+            scan_settings = cached_state()
+            base_gain = float(scan_settings.get("gain") or 0.0)
+        except Exception:
+            base_gain = None
         pass_gain.clear()
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
         # A scan outranks a focus session: if LIVE has stranded the board, ask the
@@ -723,12 +790,10 @@ def xylod_client():
 
     while True:
         try:
-            c = socket.create_connection((XYLOD_HOST, XYLOD_PORT)); f = c.makefile("r")
+            c = socket.create_connection((XYLOD_HOST, XYLOD_PORT))
             c.sendall(b'{"cmd":"hello","client":"capture"}\n')
             print("xylod connected %s:%d" % (XYLOD_HOST, XYLOD_PORT))
-            for line in f:
-                line = line.strip()
-                if not line: continue
+            for line in _xylod_lines(c):
                 m = json.loads(line); ev = m.get("ev")
                 if ev == "status":
                     # EXT_SYNC pre-roll (status is broadcast at 25 Hz). Every pre-pass
@@ -749,8 +814,8 @@ def xylod_client():
                         try:
                             set_pass_gain(p, m.get("gainStops", 0))
                             t_arm = time.monotonic(); grab.arm(); armed = p
-                            print("armed pass %d during settle (%dms)"
-                                  % (p, (time.monotonic() - t_arm) * 1000))
+                            print("%s armed pass %d during settle (%dms)"
+                                  % (time.strftime("%H:%M:%S"), p, (time.monotonic() - t_arm) * 1000))
                         except Exception as e: print("capture: arm failed:", e)
                     if in_seq and p < 0 and st in ("idle", "fault", "estop"):
                         close_board()   # stop / fault mid-scan: no seq_done ever comes
@@ -766,8 +831,7 @@ def xylod_client():
                         if grab and armed is None:
                             try: grab.arm(); armed = p; print("capture: late arm at pass_start (settle missed)")
                             except Exception as e: print("capture: arm failed:", e)
-                        if p == 0 and grab:
-                            scan_settings = read_state()
+                        print("%s pass_start %d" % (time.strftime("%H:%M:%S"), p))
                     else:
                         # freerun fallback: grab a generous free-run frame at motion
                         # start, HOLD it to pass_end, crop to the sweep by time.
@@ -795,8 +859,9 @@ def xylod_client():
                             img = grab.collect(400, abort=True)
                             pending[p] = (img, pass_filter.get(p, p))
                             ext_lines[p] = filled_lines(img)
-                            print("collected pass %d: %d lines%s"
-                                  % (p, ext_lines[p], "" if grab.full else " (frame not filled)"))
+                            print("%s collected pass %d: %d lines%s"
+                                  % (time.strftime("%H:%M:%S"), p, ext_lines[p],
+                                     "" if grab.full else " (frame not filled)"))
                         except Exception as e:
                             print("capture collect failed:", e)
                         armed = None
@@ -816,30 +881,11 @@ def xylod_client():
                             lines = max(1, min(img.shape[0], want))
                             over = " (sweep exceeded frame — lower line rate)" if want > img.shape[0] else ""
                         name = "scan_%04d_p%d_%s.tif" % (seq, p, filt)
-                        tmp = os.path.join(CAPTURE_DIR, "." + name + ".part")
-                        try:
-                            tifffile.imwrite(tmp, img[:lines],
-                                             metadata={"camera": scan_settings, "bits": CAM_BITS})
-                            os.replace(tmp, os.path.join(CAPTURE_DIR, name))
-                            # peak is in left-justified 16-bit: full scale is 65535
-                            # whatever CAM_BITS is. A peak stuck at/below 255 means the
-                            # data never left the low byte — .ccf Pixel Mask or clm.
-                            print("saved %s | motion %dms -> %d/%d lines | peak %d/65535%s"
-                                  % (name, motion_ms, lines, img.shape[0],
-                                     int(img[:lines].max()), over))
-                            # Brightness of the pass, for the HMI's colour match
-                            # (settings > colour): median and p99 of a subsample,
-                            # broadcast on the camera bus as pass_stats.
-                            try:
-                                sub = img[:lines][::max(1, lines // 2000), ::4]
-                                _bcast({"ev": "pass_stats", "seq": seq, "pass": p, "filter": str(filt),
-                                        "lines": int(lines), "median": float(np.median(sub)),
-                                        "p99": float(np.percentile(sub, 99)),
-                                        "gainDb": pass_gain.get(p, base_gain if base_gain is not None else 0.0)})
-                            except Exception as e:
-                                print("pass_stats failed:", e)
-                        except Exception as e:
-                            print("capture save failed:", e)
+                        # Written on the saver thread: the event loop must stay
+                        # current with xylod (see cached_state). The TIFF is
+                        # still complete on disk before the next pass's file.
+                        _saver.put((name, img, lines, motion_ms, over, dict(scan_settings), seq, p,
+                                    str(filt), pass_gain.get(p, base_gain if base_gain is not None else 0.0)))
                 elif ev == "seq_done":
                     close_board()
         except OSError as e:
@@ -853,6 +899,7 @@ def main():
           "fallback %d" % (CAM_WIDTH, CAP_LINES))
     apply_startup_defaults()
     print("camera:", read_state())
+    threading.Thread(target=_saver_thread, daemon=True).start()
     threading.Thread(target=cam_server, daemon=True).start()
     threading.Thread(target=live_server, daemon=True).start()
     threading.Thread(target=xylod_client, daemon=True).start()
