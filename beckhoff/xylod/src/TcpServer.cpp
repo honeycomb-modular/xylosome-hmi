@@ -65,13 +65,18 @@ void TcpServer::broadcast(const std::string &j) {
     for (auto &c : m_clients) if (c.fd >= 0) sendTo(c, j);
 }
 
+// The capture agent says hello as "capture". Without it a scan moves the
+// axis and records nothing; the HMI refuses execute on this flag, and with it
+// the sequencer holds each pass's settle for that client's "armed".
+bool TcpServer::captureAttached() const {
+    for (const auto &c : m_clients)
+        if (c.fd >= 0 && c.name == "capture") return true;
+    return false;
+}
+
 std::string TcpServer::statusJson() {
     const SeqStatus s = m_seq.status();
-    // The capture agent says hello as "capture". Without it a scan moves the
-    // axis and records nothing; the HMI refuses execute on this flag.
-    bool capture = false;
-    for (const auto &c : m_clients)
-        if (c.fd >= 0 && c.name == "capture") capture = true;
+    const bool capture = captureAttached();
     json j = {
         {"ev", "status"},
         {"state", s.state}, {"op", s.operational}, {"enabled", s.enabled},
@@ -118,6 +123,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
     else if (cmd == "filter")  { sc.type = SeqCommand::Filter; sc.slot = req.value("slot", 3); }
     else if (cmd == "set_home") sc.type = SeqCommand::SetHome;
     else if (cmd == "line_dither") { sc.type = SeqCommand::LineDither; sc.a = req.value("on", true) ? 1.0 : 0.0; }
+    else if (cmd == "armed")   { sc.type = SeqCommand::Armed; sc.slot = req.value("pass", -1); }
     else if (cmd == "colour_stops") {
         // {"cmd":"colour_stops","r":0,"g":0.75,"b":2.1} — stops of extra
         // exposure per filter, applied to the next colour job and persisted
@@ -170,6 +176,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
         j.xerox         = req.value("xerox", false);
         j.haltRampS     = req.value("haltRampMs", 0.0) * 1e-3;
         j.haltBudgetS   = req.value("haltBudgetS", 0.0);
+        j.waitArm       = captureAttached();
         // Xerox is defined by its flat rate; whatever line.mode the client's
         // saved setting says, the sequencer must not follow the velocity.
         if (j.xerox) j.lineCurve = false;

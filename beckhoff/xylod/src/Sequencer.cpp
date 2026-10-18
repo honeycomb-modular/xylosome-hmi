@@ -225,6 +225,8 @@ bool Sequencer::stepMove(double dt) {
 
 void Sequencer::enterPass(int pass) {
     m_pass = pass;
+    m_armed = false;
+    m_armWaitS = 0.0;
     m_st = St::SeqFilter;
     // A pinned slot wins; otherwise BW → Clear and colour walks R/G/B/C. With an
     // explicit pass count the walk can run past the wheel, so clamp — an 8-pass
@@ -296,6 +298,9 @@ void Sequencer::cycle(double dt) {
         switch (c.type) {
         case SeqCommand::Enable:     m_bk.axisEnable(true);  break;
         case SeqCommand::Disable:    m_bk.axisEnable(false); m_st = St::Idle; break;
+        case SeqCommand::Armed:
+            if (c.slot == m_pass) m_armed = true;
+            break;
         case SeqCommand::LineDither:
             m_bk.setLineDither(c.a > 0.5);
             LOGI("seq: EL2521 word dither %s", c.a > 0.5 ? "ON" : "OFF (truncation)");
@@ -646,7 +651,16 @@ void Sequencer::cycle(double dt) {
 
     case St::SeqSettle:
         m_settleLeft -= dt;
+        if (m_settleLeft <= 0.0 && m_job.waitArm && !m_armed) {
+            // Hold for the capture side's arm; it is a wait on a real event,
+            // bounded so a silent agent cannot stall the sequence forever.
+            m_armWaitS += dt;
+            if (m_armWaitS < 5.0) break;
+            LOGW("seq: pass %d — capture client never said armed in 5 s, opening anyway", m_pass);
+        }
         if (m_settleLeft <= 0.0) {
+            if (m_job.waitArm && m_armWaitS > 0.0)
+                LOGI("seq: pass %d — settle held %.2f s for the capture arm", m_pass, m_armWaitS);
             if (m_runupDist > 0.0) {
                 m_runupVel = 0.0;
                 m_runupS   = 0.0;

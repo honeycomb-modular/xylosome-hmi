@@ -814,6 +814,7 @@ def xylod_client():
                         try:
                             set_pass_gain(p, m.get("gainStops", 0))
                             t_arm = time.monotonic(); grab.arm(); armed = p
+                            c.sendall((json.dumps({"cmd": "armed", "pass": p}) + "\n").encode())
                             print("%s armed pass %d during settle (%dms)"
                                   % (time.strftime("%H:%M:%S"), p, (time.monotonic() - t_arm) * 1000))
                         except Exception as e: print("capture: arm failed:", e)
@@ -829,7 +830,9 @@ def xylod_client():
                         if not in_seq:
                             in_seq = True; open_board()
                         if grab and armed is None:
-                            try: grab.arm(); armed = p; print("capture: late arm at pass_start (settle missed)")
+                            try:
+                                grab.arm(); armed = p; print("capture: late arm at pass_start (settle missed)")
+                                c.sendall((json.dumps({"cmd": "armed", "pass": p}) + "\n").encode())
                             except Exception as e: print("capture: arm failed:", e)
                         print("%s pass_start %d" % (time.strftime("%H:%M:%S"), p))
                     else:

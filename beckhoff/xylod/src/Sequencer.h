@@ -114,11 +114,18 @@ struct ScanJob {
                                    // it adds go into plannedLines so the capture side
                                    // sizes the frame; once spent, halts are refused so the
                                    // FOV is never cut off.
+    // ── arm handshake ────────────────────────────────────────────────────────
+    // Set by the server when a capture client is attached: the settle before
+    // each pass is then held until that client says {"cmd":"armed","pass":N}
+    // (up to armWaitMaxS), instead of guessing how long its board takes to
+    // open. The first pass's open (serial + Sapera) outran a 1.2 s settle and
+    // the lines before the late arm were lost (2026-10-17, scans 2263..2267).
+    bool   waitArm     = false;
 };
 
 struct SeqCommand {
     enum Type { Enable, Disable, Home, Jog, MoveTo, Filter, Execute,
-                Pause, Resume, Stop, FaultReset, SetHome, ColourStops, LineDither } type;
+                Pause, Resume, Stop, FaultReset, SetHome, ColourStops, LineDither, Armed } type;
     double  a = 0.0, b = 0.0;      // vel / pos arguments
     double  stops[3] = {0.0, 0.0, 0.0};   // ColourStops: R G B
     int     slot = 0;
@@ -200,6 +207,8 @@ private:
     double m_moveAcc = 0.0;        // accel for the current point-to-point move (set by startMove)
     double m_jogVel = 0.0;
     double m_settleLeft = 0.0;
+    bool   m_armed = false;         // capture side armed for m_pass (arm handshake)
+    double m_armWaitS = 0.0;        // settle held past its time waiting for the arm, s
     // Per-pass trigger accounting, for diagnosing lines that leave here but
     // never reach the sensor. Accumulated unconditionally — m_lineCount is
     // gated on line_blink_div and cannot be trusted for this.

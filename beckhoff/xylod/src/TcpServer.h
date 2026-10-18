@@ -22,6 +22,7 @@ private:
     void sendTo(Client &c, const std::string &json);
     void broadcast(const std::string &json);
     std::string statusJson();
+    bool captureAttached() const;     // a client that said hello as "capture"
 
     const Config &m_cfg;
     Sequencer &m_seq;
