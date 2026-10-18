@@ -81,6 +81,7 @@ std::string TcpServer::statusJson() {
         {"plannedLines", s.plannedLines},
         {"halts", s.halts},
         {"capture", capture},
+        {"gainStops", s.gainStops},
         {"colourStops", {s.colourStops[0], s.colourStops[1], s.colourStops[2]}},
         {"estopOk", s.estopOk},
         {"drive", {{"sw", s.driveSw}, {"fault", s.driveFault}}},

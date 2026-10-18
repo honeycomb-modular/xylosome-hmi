@@ -36,10 +36,14 @@ After every saved pass the agent broadcasts its brightness, so the HMI's
 colour match (settings ▸ colour) can equalise the filters:
 
 ```
-{"ev":"pass_stats","seq":2231,"pass":1,"filter":"G","lines":26726,"median":18342.0,"p99":41020.0}
+{"ev":"pass_stats","seq":2231,"pass":1,"filter":"G","lines":26726,"median":18342.0,"p99":41020.0,"gainDb":0.0}
 ```
 
-(16-bit left-justified values, median and 99th percentile of a subsample.)
+(16-bit left-justified values, median and 99th percentile of a subsample.
+`gainDb` is the camera gain the pass ran at: xylod's `gainStops` in status
+says how many stops its line-rate floor left to gain, and the agent sets
+base + 6.02 dB per stop before arming the pass, restoring the base gain when
+the sequence closes.)
 
 A `state` event is broadcast to **every** connected client after any successful
 `set`, so the HMI and Suite stay in sync without polling.

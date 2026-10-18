@@ -108,7 +108,8 @@ void CameraLink::handleMessage(const QJsonObject &m) {
                        m.value(QStringLiteral("filter")).toString(),
                        m.value(QStringLiteral("median")).toDouble(),
                        m.value(QStringLiteral("p99")).toDouble(),
-                       m.value(QStringLiteral("lines")).toInt());
+                       m.value(QStringLiteral("lines")).toInt(),
+                       m.value(QStringLiteral("gainDb")).toDouble(0.0));
     }
     else if (ev == QLatin1String("welcome")) {
         m_model = m.value(QStringLiteral("camera")).toString();

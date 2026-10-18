@@ -37,6 +37,7 @@ Item {
     property var    measStops: [0, 0, 0]   // stops in force when the scan started
     property var    medians:   [0, 0, 0]
     property var    p99s:      [0, 0, 0]
+    property var    gainsDb:   [0, 0, 0]   // camera gain each pass ran at (agent pass_stats)
     property var    gotPass:   [false, false, false]
     property var    proposed:  [0, 0, 0]
     property bool   haveProposal: false
@@ -60,6 +61,7 @@ Item {
         root.gotPass   = [false, false, false]
         root.medians   = [0, 0, 0]
         root.p99s      = [0, 0, 0]
+        root.gainsDb   = [0, 0, 0]
         root.haveProposal = false
         root.measState = "running"
         root.measNote  = "scanning R/G/B — " + root.measArcDeg + "° from here"
@@ -86,7 +88,10 @@ Item {
         var lo = Math.min(root.measStops[0], root.measStops[1], root.measStops[2])
         var raw = [0, 0, 0], best = 0, dark = false, sat = false
         for (var i = 0; i < 3; i++) {
+            // Undo the time compensation AND the per-pass camera gain the pass
+            // ran with, relative to the red pass, to get the filter's own light.
             var scale = Math.pow(2, -(root.measStops[i] - lo))
+                      * Math.pow(10, (root.gainsDb[i] - root.gainsDb[0]) / 20)
             raw[i] = Math.max(1, root.medians[i]) / scale
             best = Math.max(best, raw[i])
             if (root.medians[i] < 400)   dark = true
@@ -113,12 +118,12 @@ Item {
 
     Connections {
         target: Camera
-        function onPassStats(pass, filter, median, p99, lines) {
+        function onPassStats(pass, filter, median, p99, lines, gainDb) {
             if (root.measState !== "running" && root.measState !== "waiting") return
             if (pass < 0 || pass > 2) return
-            var m = root.medians.slice(), q = root.p99s.slice(), g = root.gotPass.slice()
-            m[pass] = median; q[pass] = p99; g[pass] = true
-            root.medians = m; root.p99s = q; root.gotPass = g
+            var m = root.medians.slice(), q = root.p99s.slice(), g = root.gotPass.slice(), d = root.gainsDb.slice()
+            m[pass] = median; q[pass] = p99; g[pass] = true; d[pass] = gainDb
+            root.medians = m; root.p99s = q; root.gotPass = g; root.gainsDb = d
             if (g[0] && g[1] && g[2]) root.finishMeasure()
         }
     }

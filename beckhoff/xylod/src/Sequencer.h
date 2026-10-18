@@ -136,6 +136,7 @@ struct SeqStatus {
     uint16_t driveSw = 0, driveFault = 0;
     int32_t  echo = 0;
     int    halts = 0;              // xerox: halts logged in pass 0 (replayed by later passes)
+    double gainStops = 0.0;        // this pass: stops the line-rate floor could not give (camera gain)
     double colourStops[3] = {0.0, 0.0, 0.0};   // R G B, stops of extra exposure
 };
 
@@ -244,6 +245,7 @@ private:
     size_t m_replayIdx  = 0;        // next halt to fire in a replay pass
     double m_replayLeft = 0.0;      // hold time remaining in the current replayed halt, s
     double m_colourStops[4] = {0.0, 0.0, 0.0, 0.0};   // R G B C, live copy (see loadColourStops)
+    double m_passGainStops[4] = {0.0, 0.0, 0.0, 0.0}; // per pass: exposure the floor left to camera gain
     double m_indexPulseLeft = 0.0;  // pass_index pulse timer, s
     bool   m_estopLatched = false;
     double m_faultResetHoldS = 0.0; // ignore the drive's fault bit while a reset lands

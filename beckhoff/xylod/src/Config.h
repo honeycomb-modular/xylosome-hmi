@@ -58,6 +58,12 @@ struct Config {
     // A colour pass runs at 2^-(stops - min stops) of full speed: same arc and
     // line count, each line integrated longer. 0 0 0 = no correction.
     double colourStops[4]  = {0.0, 0.0, 0.0, 0.0};
+    // Floor for the slowed colour passes. Below ~100 Hz the sensor's dark
+    // current beats the light (scan 2241: 12 000 counts of dark at 27 Hz, the
+    // picture 1 400 on top), so a pass is never slowed past this rate; the
+    // stops it could not deliver are reported as gainStops and the capture
+    // agent makes them up with camera gain. 0 = no floor.
+    double lineMinHz       = 100.0;
     // Runtime override of the three stops above ("r g b"), written by the
     // {"cmd":"colour_stops"} command so the HMI's calibration page can set them
     // without root. Wins over the conf values when present.

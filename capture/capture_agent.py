@@ -622,6 +622,32 @@ def xylod_client():
     in_seq = False # a sequence is in flight (board opened, or the open was refused)
     armed = None   # pass index whose EXSYNC snap is running, awaiting collect
     planned = 0    # lines xylod last said a pass will deliver (status, 25 Hz)
+    # Per-pass camera gain. xylod slows a colour pass for its filter's stops
+    # but never below line_min_hz; the stops it could not give arrive in status
+    # as gainStops, and this adds them as analog gain (6.02 dB per stop) before
+    # the pass is armed. The gain the camera had at sequence start is restored
+    # when the board closes. pass_gain is reported with pass_stats.
+    base_gain = None   # dB at sequence start
+    cur_gain = None    # dB the camera is set to now (None = untouched)
+    pass_gain = {}     # pass -> dB used
+
+    def set_pass_gain(p, stops):
+        nonlocal cur_gain
+        if base_gain is None: return
+        g = max(-10.0, min(10.0, round(base_gain + 6.02 * float(stops or 0), 1)))
+        pass_gain[p] = g
+        have_now = base_gain if cur_gain is None else cur_gain
+        if abs(have_now - g) < 0.05: return
+        ok, note = apply_set("gain", g)
+        print("pass %d camera gain %.1f dB (+%.2f stops) -> %s" % (p, g, float(stops or 0), note))
+        if ok: cur_gain = g
+
+    def restore_gain():
+        nonlocal cur_gain
+        if cur_gain is not None and base_gain is not None and abs(cur_gain - base_gain) >= 0.05:
+            ok, note = apply_set("gain", base_gain)
+            print("camera gain restored to %.1f dB (%s)" % (base_gain, note))
+        cur_gain = None
 
     def open_board():
         nonlocal seq, grab, have
@@ -654,6 +680,10 @@ def xylod_client():
         # with the only print at the far end a stall looked exactly like "the agent
         # never received the event" — which cost a whole diagnosis on 2026-07-24.
         print("CAPTURE seq %d opening (%s) %d lines%s" % (seq, CAP_SYNC, lines, note))
+        nonlocal base_gain
+        try: base_gain = float(read_state().get("gain") or 0.0)
+        except Exception: base_gain = None
+        pass_gain.clear()
         if EXT_SYNC: set_cam_external(True)   # camera -> external EXSYNC for the scan
         # A scan outranks a focus session: if LIVE has stranded the board, ask the
         # stalled holder to let go and try once more, rather than silently
@@ -677,6 +707,7 @@ def xylod_client():
 
     def close_board():
         nonlocal grab, have, in_seq, armed
+        restore_gain()
         if grab:
             try: grab.close()
             except Exception: pass
@@ -716,6 +747,7 @@ def xylod_client():
                         # it, so log what it cost — if this approaches 300 the clear has
                         # to go and the tail crop needs another source.
                         try:
+                            set_pass_gain(p, m.get("gainStops", 0))
                             t_arm = time.monotonic(); grab.arm(); armed = p
                             print("armed pass %d during settle (%dms)"
                                   % (p, (time.monotonic() - t_arm) * 1000))
@@ -802,7 +834,8 @@ def xylod_client():
                                 sub = img[:lines][::max(1, lines // 2000), ::4]
                                 _bcast({"ev": "pass_stats", "seq": seq, "pass": p, "filter": str(filt),
                                         "lines": int(lines), "median": float(np.median(sub)),
-                                        "p99": float(np.percentile(sub, 99))})
+                                        "p99": float(np.percentile(sub, 99)),
+                                        "gainDb": pass_gain.get(p, base_gain if base_gain is not None else 0.0)})
                             except Exception as e:
                                 print("pass_stats failed:", e)
                         except Exception as e:

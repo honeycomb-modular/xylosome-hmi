@@ -390,6 +390,7 @@ void Sequencer::cycle(double dt) {
             // profile, because lineHzNow is derived from the same v that is
             // integrated into the arc.
             const double arcAbs = std::max(1e-6, std::fabs(m_job.arcEndDeg - m_job.arcStartDeg));
+            for (double &g : m_passGainStops) g = 0.0;
             // A time-indexed profile spends part of the pass stationary or
             // turning around, so its mean magnitude — not its peak — is what
             // decides how far it travels and how many lines it delivers.
@@ -506,14 +507,29 @@ void Sequencer::cycle(double dt) {
                     st[p] = std::max(0.0, std::min(4.0, m_colourStops[std::min(3, p)]));
                     lo = std::min(lo, st[p]);
                 }
-                bool any = false;
+                // Line-rate floor (line_min_hz): a pass is never slowed below
+                // it. What the slowdown then cannot deliver is handed to the
+                // capture agent as gainStops, which it turns into camera gain
+                // for that pass (6.02 dB per stop).
+                const double minScale = (m_cfg.lineMinHz > 0.0 && m_job.lineBaseHz > 0.0)
+                                      ? std::min(1.0, m_cfg.lineMinHz / m_job.lineBaseHz) : 0.0;
+                bool any = false, floored = false;
                 for (int p = 0; p < m_passCount; p++) {
-                    m_job.passVelScale.push_back(std::pow(2.0, -(st[p] - lo)));
+                    const double want = std::pow(2.0, -(st[p] - lo));
+                    const double sc   = std::max(want, minScale);
+                    m_job.passVelScale.push_back(sc);
+                    m_passGainStops[p] = std::log2(sc / want);
                     if (st[p] - lo > 1e-3) any = true;
+                    if (sc > want + 1e-9) floored = true;
                 }
                 if (any && m_passCount == 3)
                     LOGI("seq: colour exposure match — R/G/B at x%.3f / x%.3f / x%.3f speed",
                          m_job.passVelScale[0], m_job.passVelScale[1], m_job.passVelScale[2]);
+                if (floored && m_passCount == 3)
+                    LOGW("seq: line-rate floor %.0f Hz (base %.0f Hz) — camera gain to add "
+                         "R/G/B %.2f / %.2f / %.2f stops",
+                         m_cfg.lineMinHz, m_job.lineBaseHz,
+                         m_passGainStops[0], m_passGainStops[1], m_passGainStops[2]);
                 if (!any) m_job.passVelScale.clear();
             }
             m_bk.axisEnable(true);
@@ -888,6 +904,7 @@ void Sequencer::publish() {
     s.driveFault = d.errorCode;
     s.echo       = m_bk.echoCounts();
     s.halts      = m_job.xerox ? int(m_halts.size()) : 0;
+    s.gainStops  = (m_pass >= 0 && m_pass < 4) ? m_passGainStops[m_pass] : 0.0;
     for (int i = 0; i < 3; i++) s.colourStops[i] = m_colourStops[i];
     if (m_st == St::SeqRun || m_st == St::SeqPaused) {
         if (m_job.staticHold) {
