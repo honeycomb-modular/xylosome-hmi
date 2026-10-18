@@ -43,9 +43,12 @@ public slots:
 
 signals:
     // previewRel/dziRel are relative to proxyDir's parent (the proxies root).
+    // proxyGamma: the encoding of the tiles and preview (2.2 = gamma-encoded,
+    // 1.0 = the old linear proxies); the viewer decodes with it.
     void ingested(const QString &sessionUuid, int passIndex,
                   const QString &previewAbs, int pxW, int pxH,
                   double clipBlackPct, double clipWhitePct,
-                  const QVariantList &hist256, const QVariantList &bandMedians);
+                  const QVariantList &hist256, const QVariantList &bandMedians,
+                  double proxyGamma);
     void failed(const QString &sessionUuid, int passIndex, const QString &error);
 };

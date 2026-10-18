@@ -451,6 +451,11 @@ ApplicationWindow {
                 onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
             }
             MenuItem {
+                text: qsTr("Rebuild proxies (gamma tiles)")
+                enabled: strip.currentItem !== null && strip.currentItem.sState !== "live"
+                onTriggered: Sessions.rebuildProxies(strip.currentIndex)
+            }
+            MenuItem {
                 text: qsTr("Open in Photoshop\tP")
                 enabled: root.canPhotoshop
                 onTriggered: root.openInPhotoshop()
@@ -716,6 +721,8 @@ ApplicationWindow {
                 colourMatrix: root.viewMatrix
                 pedestal: root.viewPedestal
                 gammaOn: root.cpActive
+                gammaIn: (strip.currentItem && root.shownPass >= 0)
+                         ? strip.currentItem.sPassProxyGamma[root.shownPass] : 1.0
                 colourActive: root.viewActive
                 metaSource: strip.currentItem ? strip.currentItem.sMetaSvg : ""
                 metaX: strip.currentItem ? strip.currentItem.sMetaX : 0.04
@@ -1122,6 +1129,7 @@ ApplicationWindow {
                     required property var passDiscarded
                     required property bool merged
                     required property var passMedians
+                    required property var passProxyGamma
                     required property string metaSvg
                     required property double metaX
                     required property double metaY
@@ -1154,6 +1162,7 @@ ApplicationWindow {
                     readonly property var sPassDiscarded: passDiscarded
                     readonly property bool sMerged: merged
                     readonly property var sPassMedians: passMedians
+                    readonly property var sPassProxyGamma: passProxyGamma
                     readonly property string sMetaSvg: metaSvg
                     readonly property double sMetaX: metaX
                     readonly property double sMetaY: metaY

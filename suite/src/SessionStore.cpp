@@ -95,6 +95,7 @@ QHash<int, QByteArray> SessionStore::roleNames() const
         { PassDiscardedRole, "passDiscarded" },
         { MergedRole, "merged" },
         { PassMediansRole, "passMedians" },
+        { PassProxyGammaRole, "passProxyGamma" },
         { CreatedRole, "createdWallMs" },
         { MetaSvgRole, "metaSvg" },
         { MetaXRole, "metaX" },
@@ -209,6 +210,11 @@ QVariant SessionStore::data(const QModelIndex &idx, int role) const
             if (p.filter == QLatin1String("RGB") && !p.file.isEmpty())
                 return true;
         return false;
+    }
+    case PassProxyGammaRole: {
+        QVariantList v;
+        for (const PassRecord &p : s.passes) v << p.proxyGamma;
+        return v;
     }
     case PassMediansRole: {
         QVariantList v;
@@ -428,7 +434,8 @@ void SessionStore::enqueueIngest(const SessionRecord &s, const PassRecord &p)
 void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
                               const QString &previewAbs, int pxW, int pxH,
                               double clipBlackPct, double clipWhitePct,
-                              const QVariantList &hist256, const QVariantList &bandMedians)
+                              const QVariantList &hist256, const QVariantList &bandMedians,
+                              double proxyGamma)
 {
     for (int row = 0; row < m_sessions.size(); ++row) {
         SessionRecord &s = m_sessions[row];
@@ -449,6 +456,7 @@ void SessionStore::onIngested(const QString &sessionUuid, int passIndex,
             p.medians.clear();
             for (const QVariant &v : bandMedians)
                 p.medians << v.toDouble();
+            p.proxyGamma = proxyGamma;
             touchRow(row);
             return;
         }
@@ -511,6 +519,7 @@ void SessionStore::loadExisting()
                 p.hist256 << hv.toDouble();
             for (const QJsonValue &mv : po.value(QStringLiteral("medians")).toArray())
                 p.medians << mv.toDouble();
+            p.proxyGamma  = po.value(QStringLiteral("proxyGamma")).toDouble(1.0);
             s.passes << p;
         }
         if (s.state == QLatin1String("live"))
@@ -537,8 +546,9 @@ void SessionStore::loadExisting()
         for (const PassRecord &p : s.passes)
             if (!p.file.isEmpty()
                 && (p.preview.isEmpty() || !QFile::exists(p.preview)
-                    || (p.filter == QLatin1String("RGB") && p.medians.isEmpty())))
-                enqueueIngest(s, p);   // merged before medians existed: once more
+                    || (p.filter == QLatin1String("RGB")
+                        && (p.medians.isEmpty() || p.proxyGamma == 1.0))))
+                enqueueIngest(s, p);   // merged before medians / gamma tiles: once more
 }
 
 void SessionStore::save(const SessionRecord &s) const
@@ -579,6 +589,8 @@ void SessionStore::save(const SessionRecord &s) const
             for (double v : p.medians) m.append(v);
             po.insert(QStringLiteral("medians"), m);
         }
+        if (p.proxyGamma != 1.0)
+            po.insert(QStringLiteral("proxyGamma"), p.proxyGamma);
         passes.append(po);
     }
     QJsonObject o{
@@ -1241,6 +1253,17 @@ void SessionStore::colourMerged(const QString &uuid, const QString &outRel, bool
         refreshDisk();
         return;
     }
+}
+
+void SessionStore::rebuildProxies(int row)
+{
+    if (row < 0 || row >= m_sessions.size())
+        return;
+    const SessionRecord &s = m_sessions[row];
+    int n = 0;
+    for (const PassRecord &p : s.passes)
+        if (!p.file.isEmpty()) { enqueueIngest(s, p); ++n; }
+    qInfo() << "[sessions] rebuilding" << n << "proxies of session" << s.seq;
 }
 
 // ── viewing colour profile ────────────────────────────────────────────────────

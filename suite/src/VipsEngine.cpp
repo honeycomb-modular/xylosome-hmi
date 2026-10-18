@@ -61,6 +61,14 @@ bool VipsEngine::available()
 // takes the legacy branch and comes out wrong. That needs a peak below 0.4% of
 // full scale — a black frame either way. The TIFF's "bits" metadata would settle
 // it if this ever stops being theoretical.
+// Tiles carry the 16-bit linear data GAMMA-ENCODED (exponent 2.2) in 8 bits.
+// A plain >> 8 kept only 2-3 codes for anything under 1% of full scale, and
+// the viewer's sRGB curve then spread those codes into visible steps and
+// "lines" in every shadow (2026-10-18, the chart scan). Encoded, the shadows
+// keep ~12 bits' worth of steps; the viewer decodes with the same exponent
+// before any colour maths and re-encodes for the screen.
+static const double kProxyGamma = 2.2;
+
 static VipsImage *to8(VipsImage *in)
 {
     double maxval = 0;
@@ -73,10 +81,16 @@ static VipsImage *to8(VipsImage *in)
         return out;
     }
 
+    VipsImage *enc = nullptr;                   // in^(1/2.2), still 16-bit full range
+    if (vips_gamma(in, &enc, "exponent", kProxyGamma, nullptr))
+        return nullptr;
     VipsImage *shifted = nullptr;
     double c = 8;
-    if (vips_boolean_const(in, &shifted, VIPS_OPERATION_BOOLEAN_RSHIFT, &c, 1, nullptr))
+    if (vips_boolean_const(enc, &shifted, VIPS_OPERATION_BOOLEAN_RSHIFT, &c, 1, nullptr)) {
+        g_object_unref(enc);
         return nullptr;
+    }
+    g_object_unref(enc);
     if (vips_cast(shifted, &out, VIPS_FORMAT_UCHAR, nullptr)) {
         g_object_unref(shifted);
         return nullptr;
@@ -249,6 +263,6 @@ void VipsEngine::ingest(const QString &sessionUuid, int passIndex,
     if (!bandMedians.isEmpty())
         qInfo() << "[vips] band medians R/G/B" << bandMedians;
     emit ingested(sessionUuid, passIndex, previewPath, pxW, pxH,
-                  clipBlackPct, clipWhitePct, hist256, bandMedians);
+                  clipBlackPct, clipWhitePct, hist256, bandMedians, kProxyGamma);
 #endif
 }

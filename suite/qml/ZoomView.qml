@@ -25,6 +25,7 @@ Item {
     property matrix4x4 colourMatrix: Qt.matrix4x4()
     property vector4d pedestal: Qt.vector4d(0, 0, 0, 0)
     property bool gammaOn: false
+    property real gammaIn: 1.0          // the tile's encoding exponent (2.2 new, 1.0 old)
     property bool colourActive: false
 
     // Metadata overlay (Pi SVG) — placement normalized to image size.
@@ -194,6 +195,7 @@ Item {
                         property matrix4x4 cm: view.colourMatrix
                         property vector4d pedestal: view.pedestal
                         property real gammaOn: view.gammaOn ? 1.0 : 0.0
+                        property real gammaIn: view.gammaIn
                         fragmentShader: "qrc:/qt/qml/XylosomeSuite/shaders/wb.frag.qsb"
                     }
                 }

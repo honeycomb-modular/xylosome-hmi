@@ -36,6 +36,7 @@ struct PassRecord {
     double  clipWhitePct = -1;
     QVector<double> hist256;
     QVector<double> medians;     // R G B medians (16-bit) of a merged colour image; empty otherwise
+    double  proxyGamma = 1.0;    // encoding of this pass's tiles: 2.2 since 2026-10-18, 1.0 = old linear
 };
 
 struct SessionRecord {
@@ -95,6 +96,7 @@ public:
         PassDiscardedRole,   // QVariantList<bool> — channel deleted after a colour merge
         MergedRole,          // bool — session has a merged RGB image
         PassMediansRole,     // QVariantList<QVariantList<double>> — R/G/B medians per pass ([] if mono)
+        PassProxyGammaRole,  // QVariantList<double> — tile encoding exponent per pass
         CreatedRole,         // qint64 wall ms
         MetaSvgRole,         // abs path or "" (white variant if metaWhite)
         MetaXRole,
@@ -176,6 +178,8 @@ public:
     // gain[3], exposure, pedestal[3] (counts of 65535), matrix[3][3]. Empty
     // map when there is none.
     Q_INVOKABLE QVariantMap colourProfile() const;
+    // Rebuild every proxy of a session (old linear tiles -> gamma-encoded).
+    Q_INVOKABLE void rebuildProxies(int row);
     Q_INVOKABLE bool photoshopAvailable() const;
     Q_PROPERTY(bool colourMergeBusy READ colourMergeBusy NOTIFY hdrMergeBusyChanged)
     bool colourMergeBusy() const { return m_merge != nullptr && !m_mergeUuid.isEmpty(); }
@@ -203,7 +207,8 @@ private slots:
     void onIngested(const QString &sessionUuid, int passIndex,
                     const QString &previewAbs, int pxW, int pxH,
                     double clipBlackPct, double clipWhitePct,
-                    const QVariantList &hist256, const QVariantList &bandMedians);
+                    const QVariantList &hist256, const QVariantList &bandMedians,
+                    double proxyGamma);
 
 private:
     SessionRecord *liveSession();
