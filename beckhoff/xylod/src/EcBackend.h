@@ -47,6 +47,7 @@ public:
     }
 
     void setLineHz(double hz) override;
+    void setLineDither(bool on) override { m_lineDither = on; }
     double lineHz() const override { return m_lineHzCmd; }
 
     DigitalIn din() const override { return m_din; }
@@ -112,6 +113,7 @@ private:
     bool   m_passActive = false, m_passIndex = false, m_lineBlink = false;
     double m_lineHzCmd  = 0.0;
     double m_freqAcc    = 0.0;            // EL2521 word dither carry (see writeOutputs)
+    bool   m_lineDither = true;
 
     // filter wheel
     bool   m_fwBusy = false;

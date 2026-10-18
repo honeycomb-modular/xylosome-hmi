@@ -296,6 +296,10 @@ void Sequencer::cycle(double dt) {
         switch (c.type) {
         case SeqCommand::Enable:     m_bk.axisEnable(true);  break;
         case SeqCommand::Disable:    m_bk.axisEnable(false); m_st = St::Idle; break;
+        case SeqCommand::LineDither:
+            m_bk.setLineDither(c.a > 0.5);
+            LOGI("seq: EL2521 word dither %s", c.a > 0.5 ? "ON" : "OFF (truncation)");
+            break;
         case SeqCommand::ColourStops:
             for (int i = 0; i < 3; i++) m_colourStops[i] = c.stops[i];
             LOGI("seq: colour stops set — R %.2f G %.2f B %.2f",

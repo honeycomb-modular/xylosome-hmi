@@ -56,6 +56,9 @@ public:
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     virtual void setLineHz(double hz) = 0;
     virtual double lineHz() const = 0;
+    // EL2521 frequency-word dither on/off at runtime ({"cmd":"line_dither"}),
+    // for isolating line loss at the grabber. Default on; no-op in sim.
+    virtual void setLineDither(bool) {}
 
     // ── digital I/O ──────────────────────────────────────────────────────────
     virtual DigitalIn din() const = 0;

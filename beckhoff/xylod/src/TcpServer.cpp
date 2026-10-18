@@ -117,6 +117,7 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
                                  sc.b = req.value("velDegS", 20.0); }
     else if (cmd == "filter")  { sc.type = SeqCommand::Filter; sc.slot = req.value("slot", 3); }
     else if (cmd == "set_home") sc.type = SeqCommand::SetHome;
+    else if (cmd == "line_dither") { sc.type = SeqCommand::LineDither; sc.a = req.value("on", true) ? 1.0 : 0.0; }
     else if (cmd == "colour_stops") {
         // {"cmd":"colour_stops","r":0,"g":0.75,"b":2.1} — stops of extra
         // exposure per filter, applied to the next colour job and persisted

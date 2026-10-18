@@ -748,6 +748,8 @@ void EcBackend::writeOutputs() {
         if (want <= 0.0) {
             m_freqAcc = 0.0;
             m_ltRx->freqVal = 0;
+        } else if (!m_lineDither) {
+            m_ltRx->freqVal = int16_t(std::min(32767, int(want)));   // plain truncation
         } else {
             m_freqAcc += want;
             const int word = int(m_freqAcc);          // floor: acc stays in [0, 1)

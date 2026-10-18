@@ -118,7 +118,7 @@ struct ScanJob {
 
 struct SeqCommand {
     enum Type { Enable, Disable, Home, Jog, MoveTo, Filter, Execute,
-                Pause, Resume, Stop, FaultReset, SetHome, ColourStops } type;
+                Pause, Resume, Stop, FaultReset, SetHome, ColourStops, LineDither } type;
     double  a = 0.0, b = 0.0;      // vel / pos arguments
     double  stops[3] = {0.0, 0.0, 0.0};   // ColourStops: R G B
     int     slot = 0;
