@@ -98,6 +98,18 @@ ApplicationWindow {
     Shortcut { enabled: root.keysLive; sequences: ["]"]; onActivated: root.cpTrimThirds = Math.min(9, root.cpTrimThirds + 1) }
     Shortcut { enabled: root.keysLive; sequences: ["\\"]; onActivated: root.cpTrimThirds = 0 }
     readonly property real cpTrim: Math.pow(2, root.cpTrimThirds / 3)
+    // Black trim: a linear black point lifted in steps of 0.5% of full scale
+    // ({ and }, | resets), subtracted before the matrix with the white point
+    // held, so shadows deepen without the highlights moving.
+    property int cpBlackSteps: 0
+    Settings {
+        category: "view"
+        property alias cpBlackSteps: root.cpBlackSteps
+    }
+    Shortcut { enabled: root.keysLive; sequences: ["{"]; onActivated: root.cpBlackSteps = Math.max(0, root.cpBlackSteps - 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["}"]; onActivated: root.cpBlackSteps = Math.min(20, root.cpBlackSteps + 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["|"]; onActivated: root.cpBlackSteps = 0 }
+    readonly property real cpBlack: root.cpBlackSteps * 0.005
     function fmtTrim() {
         const t = root.cpTrimThirds
         if (t === 0) return "0"
@@ -119,7 +131,7 @@ ApplicationWindow {
     readonly property matrix4x4 viewMatrix: {
         if (root.cpActive) {
             const p = root.colourProfile
-            const g = p.gain, e = p.exposure * root.cpTrim, M = p.matrix
+            const g = p.gain, e = p.exposure * root.cpTrim / (1 - root.cpBlack), M = p.matrix
             return Qt.matrix4x4(
                 M[0][0] * g[0] * e, M[0][1] * g[1] * e, M[0][2] * g[2] * e, 0,
                 M[1][0] * g[0] * e, M[1][1] * g[1] * e, M[1][2] * g[2] * e, 0,
@@ -130,8 +142,9 @@ ApplicationWindow {
         return Qt.matrix4x4(w.x, 0, 0, 0,  0, w.y, 0, 0,  0, 0, w.z, 0,  0, 0, 0, 1)
     }
     readonly property vector4d viewPedestal: root.cpActive
-        ? Qt.vector4d(root.colourProfile.pedestal[0] / 65535, root.colourProfile.pedestal[1] / 65535,
-                      root.colourProfile.pedestal[2] / 65535, 0)
+        ? Qt.vector4d(root.colourProfile.pedestal[0] / 65535 + root.cpBlack / Math.max(0.01, root.colourProfile.gain[0] * root.colourProfile.exposure),
+                      root.colourProfile.pedestal[1] / 65535 + root.cpBlack / Math.max(0.01, root.colourProfile.gain[1] * root.colourProfile.exposure),
+                      root.colourProfile.pedestal[2] / 65535 + root.cpBlack / Math.max(0.01, root.colourProfile.gain[2] * root.colourProfile.exposure), 0)
         : Qt.vector4d(0, 0, 0, 0)
     readonly property bool viewActive: root.cpActive
         || (root.wbGains.x !== 1 || root.wbGains.y !== 1 || root.wbGains.z !== 1)
@@ -397,6 +410,11 @@ ApplicationWindow {
                 text: qsTr("Profile exposure %1 stop\t[ ]   \\ resets").arg(root.fmtTrim())
                 enabled: root.cpAvailable
                 onTriggered: root.cpTrimThirds = 0
+            }
+            MenuItem {
+                text: qsTr("Profile black +%1%\t{ }   | resets").arg((root.cpBlack * 100).toFixed(1))
+                enabled: root.cpAvailable
+                onTriggered: root.cpBlackSteps = 0
             }
         }
         Menu {
@@ -931,6 +949,7 @@ ApplicationWindow {
                 Label {
                     visible: root.cpAvailable && root.shownIsRGB
                     text: root.cpOn ? qsTr("profile · sRGB") + (root.cpTrimThirds !== 0 ? " · " + root.fmtTrim() + " stop" : "")
+                                      + (root.cpBlackSteps !== 0 ? " · black +" + (root.cpBlack * 100).toFixed(1) + "%" : "")
                                     : qsTr("profile off")
                     color: root.cpOn ? root.ink : root.inkMuted
                     font.pixelSize: 11
