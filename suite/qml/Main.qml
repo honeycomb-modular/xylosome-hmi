@@ -89,10 +89,17 @@ ApplicationWindow {
     // brighter than the old linear view; this is the knob to taste without
     // touching the fit.
     property int cpTrimThirds: 0
+    // Exposure as captured (default): the scan is shown at the exposure it was
+    // given, only colour-corrected and display-encoded, so it can be judged
+    // photographically. "To chart" instead scales it so the chart's neutral 8
+    // reads its reference value, which is how the fit was checked, not how
+    // the picture was exposed.
+    property bool cpAsCaptured: true
     Settings {
         category: "view"
         property alias cpOn: root.cpOn
         property alias cpTrimThirds: root.cpTrimThirds
+        property alias cpAsCaptured: root.cpAsCaptured
     }
     Shortcut { enabled: root.keysLive; sequences: ["["]; onActivated: root.cpTrimThirds = Math.max(-9, root.cpTrimThirds - 1) }
     Shortcut { enabled: root.keysLive; sequences: ["]"]; onActivated: root.cpTrimThirds = Math.min(9, root.cpTrimThirds + 1) }
@@ -131,7 +138,8 @@ ApplicationWindow {
     readonly property matrix4x4 viewMatrix: {
         if (root.cpActive) {
             const p = root.colourProfile
-            const g = p.gain, e = p.exposure * root.cpTrim / (1 - root.cpBlack), M = p.matrix
+            const g = p.gain, M = p.matrix
+            const e = (root.cpAsCaptured ? 1.0 : p.exposure) * root.cpTrim / (1 - root.cpBlack)
             return Qt.matrix4x4(
                 M[0][0] * g[0] * e, M[0][1] * g[1] * e, M[0][2] * g[2] * e, 0,
                 M[1][0] * g[0] * e, M[1][1] * g[1] * e, M[1][2] * g[2] * e, 0,
@@ -405,6 +413,11 @@ ApplicationWindow {
                 checked: root.cpOn
                 enabled: root.cpAvailable
                 onTriggered: { root.reloadProfile(); root.cpOn = !root.cpOn }
+            }
+            MenuItem {
+                text: root.cpAsCaptured ? qsTr("Exposure: as captured") : qsTr("Exposure: normalised to chart")
+                enabled: root.cpAvailable
+                onTriggered: root.cpAsCaptured = !root.cpAsCaptured
             }
             MenuItem {
                 text: qsTr("Profile exposure %1 stop\t[ ]   \\ resets").arg(root.fmtTrim())
@@ -955,7 +968,8 @@ ApplicationWindow {
                 }
                 Label {
                     visible: root.cpAvailable && root.shownIsRGB
-                    text: root.cpOn ? qsTr("profile · sRGB") + (root.cpTrimThirds !== 0 ? " · " + root.fmtTrim() + " stop" : "")
+                    text: root.cpOn ? qsTr("profile · sRGB") + (root.cpAsCaptured ? "" : qsTr(" · to chart"))
+                                      + (root.cpTrimThirds !== 0 ? " · " + root.fmtTrim() + " stop" : "")
                                       + (root.cpBlackSteps !== 0 ? " · black +" + (root.cpBlack * 100).toFixed(1) + "%" : "")
                                     : qsTr("profile off")
                     color: root.cpOn ? root.ink : root.inkMuted
