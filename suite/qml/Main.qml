@@ -84,9 +84,25 @@ ApplicationWindow {
     // curve. Applies to merged RGB images only; single channels are shown as
     // they are. Takes precedence over the grey-world balance when both are on.
     property bool cpOn: false
+    // Exposure trim on the profile, in thirds of a stop ([ and ], \ resets).
+    // The fit anchors the chart's neutral 8 at its true value, which reads
+    // brighter than the old linear view; this is the knob to taste without
+    // touching the fit.
+    property int cpTrimThirds: 0
     Settings {
         category: "view"
         property alias cpOn: root.cpOn
+        property alias cpTrimThirds: root.cpTrimThirds
+    }
+    Shortcut { enabled: root.keysLive; sequences: ["["]; onActivated: root.cpTrimThirds = Math.max(-9, root.cpTrimThirds - 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["]"]; onActivated: root.cpTrimThirds = Math.min(9, root.cpTrimThirds + 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["\\"]; onActivated: root.cpTrimThirds = 0 }
+    readonly property real cpTrim: Math.pow(2, root.cpTrimThirds / 3)
+    function fmtTrim() {
+        const t = root.cpTrimThirds
+        if (t === 0) return "0"
+        const w = Math.trunc(Math.abs(t) / 3), f = Math.abs(t) % 3
+        return (t < 0 ? "\u2212" : "+") + (w > 0 ? w : "") + (f === 1 ? "\u2153" : f === 2 ? "\u2154" : "")
     }
     property var colourProfile: ({})
     function reloadProfile() { root.colourProfile = Sessions.colourProfile() }
@@ -103,7 +119,7 @@ ApplicationWindow {
     readonly property matrix4x4 viewMatrix: {
         if (root.cpActive) {
             const p = root.colourProfile
-            const g = p.gain, e = p.exposure, M = p.matrix
+            const g = p.gain, e = p.exposure * root.cpTrim, M = p.matrix
             return Qt.matrix4x4(
                 M[0][0] * g[0] * e, M[0][1] * g[1] * e, M[0][2] * g[2] * e, 0,
                 M[1][0] * g[0] * e, M[1][1] * g[1] * e, M[1][2] * g[2] * e, 0,
@@ -376,6 +392,11 @@ ApplicationWindow {
                 checked: root.cpOn
                 enabled: root.cpAvailable
                 onTriggered: { root.reloadProfile(); root.cpOn = !root.cpOn }
+            }
+            MenuItem {
+                text: qsTr("Profile exposure %1 stop\t[ ]   \\ resets").arg(root.fmtTrim())
+                enabled: root.cpAvailable
+                onTriggered: root.cpTrimThirds = 0
             }
         }
         Menu {
@@ -909,7 +930,8 @@ ApplicationWindow {
                 }
                 Label {
                     visible: root.cpAvailable && root.shownIsRGB
-                    text: root.cpOn ? qsTr("profile · sRGB") : qsTr("profile off")
+                    text: root.cpOn ? qsTr("profile · sRGB") + (root.cpTrimThirds !== 0 ? " · " + root.fmtTrim() + " stop" : "")
+                                    : qsTr("profile off")
                     color: root.cpOn ? root.ink : root.inkMuted
                     font.pixelSize: 11
                     font.underline: cpMouse.containsMouse
