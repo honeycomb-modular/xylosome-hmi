@@ -171,6 +171,11 @@ public:
     // passPos is the position in the session's pass list (what the UI shows).
     // external/photoshop in the settings overrides the install lookup.
     Q_INVOKABLE bool openInPhotoshop(int row, int passPos);
+    // The viewing colour profile fitted from a ColorChecker scan
+    // (capture/colour_profile.py -> <captureDir>/.xylosome/colour_profile.json):
+    // gain[3], exposure, pedestal[3] (counts of 65535), matrix[3][3]. Empty
+    // map when there is none.
+    Q_INVOKABLE QVariantMap colourProfile() const;
     Q_INVOKABLE bool photoshopAvailable() const;
     Q_PROPERTY(bool colourMergeBusy READ colourMergeBusy NOTIFY hdrMergeBusyChanged)
     bool colourMergeBusy() const { return m_merge != nullptr && !m_mergeUuid.isEmpty(); }

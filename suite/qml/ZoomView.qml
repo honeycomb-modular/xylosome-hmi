@@ -18,11 +18,14 @@ Item {
     property int imgW: 0
     property int imgH: 0
 
-    // White balance: per-channel gains applied to every tile by a small
-    // fragment shader (shaders/wb.frag) — live, never touching the proxies or
-    // the TIFF. (1,1,1) = off, no layer, no cost.
-    property vector3d wbGain: Qt.vector3d(1, 1, 1)
-    readonly property bool wbActive: wbGain.x !== 1 || wbGain.y !== 1 || wbGain.z !== 1
+    // Viewer colour pipeline, applied to every tile by a small fragment shader
+    // (shaders/wb.frag) — live, never touching the proxies or the TIFF:
+    // out = srgb?( cm * max(in - pedestal, 0) ). cm carries white balance,
+    // the chart-fitted 3x3 and exposure; identity + no gamma = off, no layer.
+    property matrix4x4 colourMatrix: Qt.matrix4x4()
+    property vector4d pedestal: Qt.vector4d(0, 0, 0, 0)
+    property bool gammaOn: false
+    property bool colourActive: false
 
     // Metadata overlay (Pi SVG) — placement normalized to image size.
     // Drag moves; the corner handle scales; placementChanged fires on release.
@@ -185,10 +188,12 @@ Item {
                     source: modelData.url
                     asynchronous: true
                     smooth: view.zoom < 1.5   // crisp pixels past 1:1
-                    layer.enabled: view.wbActive
+                    layer.enabled: view.colourActive
                     layer.smooth: view.zoom < 1.5
                     layer.effect: ShaderEffect {
-                        property vector4d gain: Qt.vector4d(view.wbGain.x, view.wbGain.y, view.wbGain.z, 1)
+                        property matrix4x4 cm: view.colourMatrix
+                        property vector4d pedestal: view.pedestal
+                        property real gammaOn: view.gammaOn ? 1.0 : 0.0
                         fragmentShader: "qrc:/qt/qml/XylosomeSuite/shaders/wb.frag.qsb"
                     }
                 }

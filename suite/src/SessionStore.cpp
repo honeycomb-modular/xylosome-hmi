@@ -1243,6 +1243,19 @@ void SessionStore::colourMerged(const QString &uuid, const QString &outRel, bool
     }
 }
 
+// ── viewing colour profile ────────────────────────────────────────────────────
+
+QVariantMap SessionStore::colourProfile() const
+{
+    QFile f(m_captureDir + QStringLiteral("/.xylosome/colour_profile.json"));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    if (!o.contains(QStringLiteral("matrix")))
+        return {};
+    return o.toVariantMap();
+}
+
 // ── open in Photoshop ─────────────────────────────────────────────────────────
 
 static QString photoshopPath()

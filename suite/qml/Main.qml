@@ -28,6 +28,7 @@ ApplicationWindow {
         property alias fullScreen: root.fullScreen
     }
     Component.onCompleted: {
+        root.reloadProfile()
         if (Qt.application.arguments.indexOf("--fullscreen") >= 0)
             root.fullScreen = true
     }
@@ -76,6 +77,48 @@ ApplicationWindow {
         if (!m || m.length !== 3 || m[0] <= 0 || m[1] <= 0 || m[2] <= 0) return Qt.vector3d(1, 1, 1)
         return Qt.vector3d(m[1] / m[0], 1, m[1] / m[2])
     }
+
+    // View ▸ Colour profile (P… no: C is taken, use "J"): the chart-fitted
+    // profile from <captureDir>/.xylosome/colour_profile.json — white balance
+    // for the light it was shot under, the 3x3 matrix, exposure, and the sRGB
+    // curve. Applies to merged RGB images only; single channels are shown as
+    // they are. Takes precedence over the grey-world balance when both are on.
+    property bool cpOn: false
+    Settings {
+        category: "view"
+        property alias cpOn: root.cpOn
+    }
+    property var colourProfile: ({})
+    function reloadProfile() { root.colourProfile = Sessions.colourProfile() }
+    Connections { target: Sessions; function onCaptureDirChanged() { root.reloadProfile() } }
+    // loaded once the folder is known: see Component.onCompleted at the top
+    readonly property bool cpAvailable: !!root.colourProfile && !!root.colourProfile.matrix
+    readonly property bool shownIsRGB: strip.currentItem !== null && root.shownPass >= 0
+                                       && strip.currentItem.sPassFilters[root.shownPass] === "RGB"
+    readonly property bool cpActive: root.cpOn && root.cpAvailable && root.shownIsRGB
+    Shortcut { enabled: root.keysLive; sequences: ["J"]; onActivated: { root.reloadProfile(); root.cpOn = !root.cpOn } }
+
+    // The matrix the viewer applies: profile (M · diag(gain) · exposure) or the
+    // grey-world gains on the diagonal, or identity.
+    readonly property matrix4x4 viewMatrix: {
+        if (root.cpActive) {
+            const p = root.colourProfile
+            const g = p.gain, e = p.exposure, M = p.matrix
+            return Qt.matrix4x4(
+                M[0][0] * g[0] * e, M[0][1] * g[1] * e, M[0][2] * g[2] * e, 0,
+                M[1][0] * g[0] * e, M[1][1] * g[1] * e, M[1][2] * g[2] * e, 0,
+                M[2][0] * g[0] * e, M[2][1] * g[1] * e, M[2][2] * g[2] * e, 0,
+                0, 0, 0, 1)
+        }
+        const w = root.wbGains
+        return Qt.matrix4x4(w.x, 0, 0, 0,  0, w.y, 0, 0,  0, 0, w.z, 0,  0, 0, 0, 1)
+    }
+    readonly property vector4d viewPedestal: root.cpActive
+        ? Qt.vector4d(root.colourProfile.pedestal[0] / 65535, root.colourProfile.pedestal[1] / 65535,
+                      root.colourProfile.pedestal[2] / 65535, 0)
+        : Qt.vector4d(0, 0, 0, 0)
+    readonly property bool viewActive: root.cpActive
+        || (root.wbGains.x !== 1 || root.wbGains.y !== 1 || root.wbGains.z !== 1)
     readonly property bool wbAvailable: {
         const it = strip.currentItem
         if (!it || root.shownPass < 0) return false
@@ -325,6 +368,14 @@ ApplicationWindow {
                 checkable: true
                 checked: root.wbOn
                 onTriggered: root.wbOn = !root.wbOn
+            }
+            MenuItem {
+                text: root.cpAvailable ? qsTr("Colour profile (chart, sRGB)\tJ")
+                                       : qsTr("Colour profile — none in this folder")
+                checkable: true
+                checked: root.cpOn
+                enabled: root.cpAvailable
+                onTriggered: { root.reloadProfile(); root.cpOn = !root.cpOn }
             }
         }
         Menu {
@@ -623,7 +674,10 @@ ApplicationWindow {
                       ? strip.currentItem.sPassDims[root.shownPass].w : 0
                 imgH: root.shownPass >= 0 && strip.currentItem
                       ? strip.currentItem.sPassDims[root.shownPass].h : 0
-                wbGain: root.wbGains
+                colourMatrix: root.viewMatrix
+                pedestal: root.viewPedestal
+                gammaOn: root.cpActive
+                colourActive: root.viewActive
                 metaSource: strip.currentItem ? strip.currentItem.sMetaSvg : ""
                 metaX: strip.currentItem ? strip.currentItem.sMetaX : 0.04
                 metaY: strip.currentItem ? strip.currentItem.sMetaY : 0.78
@@ -854,7 +908,21 @@ ApplicationWindow {
                     font.pixelSize: 11
                 }
                 Label {
-                    visible: root.wbAvailable
+                    visible: root.cpAvailable && root.shownIsRGB
+                    text: root.cpOn ? qsTr("profile · sRGB") : qsTr("profile off")
+                    color: root.cpOn ? root.ink : root.inkMuted
+                    font.pixelSize: 11
+                    font.underline: cpMouse.containsMouse
+                    MouseArea {
+                        id: cpMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { root.reloadProfile(); root.cpOn = !root.cpOn }
+                    }
+                }
+                Label {
+                    visible: root.wbAvailable && !root.cpActive
                     text: root.wbOn
                           ? qsTr("wb ×%1 / ×%2").arg(root.wbGains.x.toFixed(2)).arg(root.wbGains.z.toFixed(2))
                           : qsTr("wb off")
