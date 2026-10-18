@@ -147,6 +147,10 @@ profile = {
     "source": src, "chart": "ColorChecker Classic", "illuminant": "5600 K",
     "gain": gain.tolist(), "exposure": float(exposure),
     "pedestal": (ped * 65535).tolist(),
+    # the chart's black patch as the camera saw it (counts): the viewer's
+    # "black = chart black" option puts the black point here, so the patch
+    # renders as black and everything darker simply stays black
+    "chartBlack": (cam[23] * 65535).tolist(),
     "matrix": M.tolist(),
     "errorRmsSrgb8": {"raw": float(e_raw), "wb": float(e_wb), "fit": float(e_fit)},
 }

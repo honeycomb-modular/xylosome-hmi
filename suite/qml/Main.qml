@@ -95,11 +95,17 @@ ApplicationWindow {
     // reads its reference value, which is how the fit was checked, not how
     // the picture was exposed.
     property bool cpAsCaptured: true
+    // Black point at the chart's black patch (default): the patch renders as
+    // black and everything darker stays black, as a print would. Off = the
+    // sensor's own zero, which shows what the camera recorded below the
+    // patch (floor, curtain) as lifted dark greys.
+    property bool cpChartBlack: true
     Settings {
         category: "view"
         property alias cpOn: root.cpOn
         property alias cpTrimThirds: root.cpTrimThirds
         property alias cpAsCaptured: root.cpAsCaptured
+        property alias cpChartBlack: root.cpChartBlack
     }
     Shortcut { enabled: root.keysLive; sequences: ["["]; onActivated: root.cpTrimThirds = Math.max(-9, root.cpTrimThirds - 1) }
     Shortcut { enabled: root.keysLive; sequences: ["]"]; onActivated: root.cpTrimThirds = Math.min(9, root.cpTrimThirds + 1) }
@@ -149,11 +155,15 @@ ApplicationWindow {
         const w = root.wbGains
         return Qt.matrix4x4(w.x, 0, 0, 0,  0, w.y, 0, 0,  0, 0, w.z, 0,  0, 0, 0, 1)
     }
-    readonly property vector4d viewPedestal: root.cpActive
-        ? Qt.vector4d(root.colourProfile.pedestal[0] / 65535 + root.cpBlack / Math.max(0.01, root.colourProfile.gain[0] * root.colourProfile.exposure),
-                      root.colourProfile.pedestal[1] / 65535 + root.cpBlack / Math.max(0.01, root.colourProfile.gain[1] * root.colourProfile.exposure),
-                      root.colourProfile.pedestal[2] / 65535 + root.cpBlack / Math.max(0.01, root.colourProfile.gain[2] * root.colourProfile.exposure), 0)
-        : Qt.vector4d(0, 0, 0, 0)
+    readonly property vector4d viewPedestal: {
+        if (!root.cpActive) return Qt.vector4d(0, 0, 0, 0)
+        const p = root.colourProfile
+        const base = (root.cpChartBlack && p.chartBlack) ? p.chartBlack : p.pedestal
+        const e = root.cpAsCaptured ? 1.0 : p.exposure
+        return Qt.vector4d(base[0] / 65535 + root.cpBlack / Math.max(0.01, p.gain[0] * e),
+                           base[1] / 65535 + root.cpBlack / Math.max(0.01, p.gain[1] * e),
+                           base[2] / 65535 + root.cpBlack / Math.max(0.01, p.gain[2] * e), 0)
+    }
     readonly property bool viewActive: root.cpActive
         || (root.wbGains.x !== 1 || root.wbGains.y !== 1 || root.wbGains.z !== 1)
     readonly property bool wbAvailable: {
@@ -413,6 +423,11 @@ ApplicationWindow {
                 checked: root.cpOn
                 enabled: root.cpAvailable
                 onTriggered: { root.reloadProfile(); root.cpOn = !root.cpOn }
+            }
+            MenuItem {
+                text: root.cpChartBlack ? qsTr("Black point: chart black patch") : qsTr("Black point: sensor zero")
+                enabled: root.cpAvailable && !!root.colourProfile.chartBlack
+                onTriggered: root.cpChartBlack = !root.cpChartBlack
             }
             MenuItem {
                 text: root.cpAsCaptured ? qsTr("Exposure: as captured") : qsTr("Exposure: normalised to chart")
