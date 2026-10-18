@@ -36,12 +36,12 @@ Item {
         property alias hand2Angle:  root.hand2Angle
         property alias durationSec: root.durationSec
         property alias brakeIdx:    root.brakeIdx
-        property alias xeroxColor:  root.xeroxColor
     }
 
     // Colour: 3 passes R/G/B (xylod colorMode 0). Pass 0 is halted by hand,
     // passes 1 and 2 replay those halts.
-    property bool xeroxColor: false
+    // The HMI-wide colour choice (Motor.colorMode, shared with every other mode).
+    readonly property bool xeroxColor: Motor.colorMode === 0
     readonly property int  passCount: root.xeroxColor ? 3 : 1
     readonly property var  passNames: ["R", "G", "B"]
     readonly property int  passIdx:   Math.max(0, Math.min(root.passCount - 1, Beckhoff.passIndex))
@@ -82,7 +82,7 @@ Item {
     // agent's LINE_MAX); everything above the FOV's own lines is stop time at
     // the flat rate. xylod sizes plannedLines to FOV + budget and refuses halts
     // once it is spent, so the FOV is never cut off.
-    readonly property int  frameMaxLines: 65000
+    readonly property int  frameMaxLines: Calib.frameMaxLines
     readonly property real haltBudgetS: root.lineHz > 0
         ? Math.max(0, root.frameMaxLines - root.plannedLines) / root.lineHz : 0
 
@@ -513,7 +513,7 @@ Item {
         width: 116; height: 26
         fontSize: Theme.fontMonoS
         label: root.xeroxColor ? "[color]" : "[monochrome]"
-        onClicked: if (root.execState === "idle") root.xeroxColor = !root.xeroxColor
+        onClicked: if (root.execState === "idle") Motor.colorMode = (root.xeroxColor ? 1 : 0)
     }
 
     // ── Timeline ────────────────────────────────────────────────────────────────

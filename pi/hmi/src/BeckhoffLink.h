@@ -201,7 +201,7 @@ private:
     QTimer     m_reconnect;
     QByteArray m_rx;
 
-    QString m_host = QStringLiteral("192.168.10.20");
+    QString m_host = QStringLiteral("192.168.2.2");   // the C6920 (NETWORK.md); beckhoff/host overrides
     int     m_port = 5510;
 
     bool    m_connected = false;

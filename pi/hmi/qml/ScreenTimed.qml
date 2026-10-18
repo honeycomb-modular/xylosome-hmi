@@ -32,7 +32,6 @@ Item {
         property alias hand1Angle:  root.hand1Angle
         property alias hand2Angle:  root.hand2Angle
         property alias durationSec: root.durationSec
-        property alias timedColor:  root.timedColor
     }
 
     // ── Scan definition ─────────────────────────────────────────────────────────
@@ -48,7 +47,8 @@ Item {
     property int  durationSec: 3600   // default 1 h
 
     // Colour: 3 passes R/G/B (xylod colorMode 0), each a full crawl over the span.
-    property bool timedColor: false
+    // The HMI-wide colour choice (Motor.colorMode, shared with every other mode).
+    readonly property bool timedColor: Motor.colorMode === 0
     readonly property int  passCount:  root.timedColor ? 3 : 1
     readonly property var  passNames:  ["R", "G", "B"]
     // Each colour pass runs slower by its exposure match (xylod colour stops,
@@ -457,7 +457,7 @@ Item {
         width: 116; height: 26
         fontSize: Theme.fontMonoS
         label: root.timedColor ? "[color]" : "[monochrome]"
-        onClicked: if (root.execState === "idle") root.timedColor = !root.timedColor
+        onClicked: if (root.execState === "idle") Motor.colorMode = (root.timedColor ? 1 : 0)
     }
 
     // ── Duration clock — big readout, mirrors the span ──────────────────────────

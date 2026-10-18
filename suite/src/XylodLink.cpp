@@ -117,8 +117,6 @@ void XylodLink::handleMessage(const QJsonObject &m) {
     const QString ev = m.value(QStringLiteral("ev")).toString();
     const qint64 wallMs = QDateTime::currentMSecsSinceEpoch();
 
-    static const char *kFilters[] = { "R", "G", "B", "C" };
-
     if (ev == QLatin1String("status")) {
         const int    pass = m.value(QStringLiteral("pass")).toInt(-1);
         const double prog = m.value(QStringLiteral("progress")).toDouble();
@@ -136,8 +134,7 @@ void XylodLink::handleMessage(const QJsonObject &m) {
         emit statusChanged();
         if (pass != m_pass) {
             m_pass = pass;
-            m_filterName = (pass >= 0 && pass < 4) ? QLatin1String(kFilters[pass])
-                                                   : QString();
+            if (pass < 0) m_filterName.clear();   // pass_start names the filter; nothing to guess before it
             emit passIndexChanged();
         }
         if (prog != m_progress) { m_progress = prog; emit progressChanged(); }

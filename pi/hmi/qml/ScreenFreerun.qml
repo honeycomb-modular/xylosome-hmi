@@ -92,7 +92,7 @@ Item {
     readonly property int  lines:    Math.round(root.lineHz * root.durationSec)
     // The grabber frame tops out here (capture_agent LINE_MAX); asking for more
     // does not fail, it just stops filling.
-    readonly property int  linesMax: 65000
+    readonly property int  linesMax: Calib.frameMaxLines
     readonly property real ar:       root.lines / 8192.0
 
     // Auto-fit: the profile's integral must equal the arc, so

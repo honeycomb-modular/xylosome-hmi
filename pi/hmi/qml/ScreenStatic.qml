@@ -39,7 +39,7 @@ Item {
     // The grabber frame tops out at 65000 lines (capture_agent LINE_MAX). Asking
     // for more than the capture side can hold does not give a taller image, so
     // don't let the frame promise one.
-    readonly property int linesMax: 65000
+    readonly property int linesMax: Calib.frameMaxLines
     property int lines: 22200
 
     // Span: 1 s … 24 h on a log scale, same as ScreenTimed.
