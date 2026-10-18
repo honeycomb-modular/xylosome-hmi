@@ -107,6 +107,7 @@ void BeckhoffLink::handleMessage(const QJsonObject &m) {
         m_lineHz     = m.value(QStringLiteral("lineHz")).toDouble();
         m_filterSlot = m.value(QStringLiteral("filterSlot")).toInt(-1);
         m_halts      = m.value(QStringLiteral("halts")).toInt(0);
+        m_captureConnected = m.value(QStringLiteral("capture")).toBool(true);
         emit statusChanged();
         const QJsonArray cs = m.value(QStringLiteral("colourStops")).toArray();
         if (cs.size() == 3) {
@@ -157,6 +158,7 @@ void BeckhoffLink::executeScan(int colorMode,
                                const QVariantList &profile,
                                const QString &tag)
 {
+    if (!captureGuard()) return;
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
 
@@ -206,6 +208,7 @@ void BeckhoffLink::executeScan(int colorMode,
 void BeckhoffLink::executeStatic(int colorMode, double holdDeg,
                                  double durationSec, int targetLines)
 {
+    if (!captureGuard()) return;
     QSettings s;
     // Fixed rate: the daemon works it out as lines ÷ duration and clamps it to
     // line_max_hz, reporting the real total back as plannedLines.
@@ -233,6 +236,7 @@ void BeckhoffLink::executeReversing(int colorMode, double arcStartDeg,
                                     int targetLines, const QVariantList &profile,
                                     bool lineForwardOnly)
 {
+    if (!captureGuard()) return;
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
 
@@ -266,6 +270,7 @@ void BeckhoffLink::executeFreerun(int colorMode, double arcStartDeg,
                                   double peakVelDegS, double durationSec,
                                   double lineHz, const QVariantList &profile)
 {
+    if (!captureGuard()) return;
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
 
@@ -302,6 +307,7 @@ void BeckhoffLink::executeStack(int passes, int filterSlot, double passOffsetDeg
                                 int targetLines, const QVariantList &profile,
                                 const QVariantList &passVelScale)
 {
+    if (!captureGuard()) return;
     QJsonArray prof;
     for (const QVariant &v : profile) prof.append(v.toDouble());
     QJsonArray scales;
@@ -359,6 +365,7 @@ void BeckhoffLink::executeXerox(int colorMode, double arcStartDeg, double arcEnd
                                 double velDegS, int targetLines,
                                 int haltRampMs, double haltBudgetS)
 {
+    if (!captureGuard()) return;
     QSettings s;
     // Flat crawl: min = max so the daemon floor cannot override. The rate is
     // xylod's to derive from the line count (it knows the clamp) and to hold
@@ -395,6 +402,17 @@ void BeckhoffLink::stop()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("
 void BeckhoffLink::home()   { sendJson({{QStringLiteral("cmd"), QStringLiteral("home")}}); }
 void BeckhoffLink::setHome(){ sendJson({{QStringLiteral("cmd"), QStringLiteral("set_home")}}); }
 void BeckhoffLink::faultReset() { sendJson({{QStringLiteral("cmd"), QStringLiteral("fault_reset")}}); }
+
+// Refuse to start a scan nobody will record. Routed through faulted() so every
+// screen's existing onFaulted → abortRun() handles it, and FaultChip says why.
+bool BeckhoffLink::captureGuard() {
+    if (!m_connected || m_captureConnected) return true;
+    m_faultText = QStringLiteral("no capture agent on the grabber PC");
+    emit faultTextChanged();
+    emit faulted(m_faultText);
+    qWarning() << "[beckhoff] execute refused: no capture agent attached to xylod";
+    return false;
+}
 void BeckhoffLink::setColourStops(double r, double g, double b) {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("colour_stops")},
               {QStringLiteral("r"), r}, {QStringLiteral("g"), g}, {QStringLiteral("b"), b}});

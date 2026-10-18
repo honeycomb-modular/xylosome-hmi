@@ -181,12 +181,30 @@ Item {
         onTriggered: root.blinkVisible = !root.blinkVisible
     }
 
+    // Colour = three holds R/G/B, G and B longer by their exposure match
+    // (xylod colour stops, mirrored in Beckhoff.colourStops).
+    readonly property var  passScale: {
+        if (Motor.colorMode !== 0) return [1]
+        var st = Beckhoff.colourStops
+        if (!st || st.length < 3) return [1, 1, 1]
+        var lo = Math.min(st[0], st[1], st[2])
+        return [Math.pow(2, st[0] - lo), Math.pow(2, st[1] - lo), Math.pow(2, st[2] - lo)]
+    }
+    readonly property real totalFactor: root.passScale.reduce(function(a, b) { return a + b }, 0)
+    readonly property int  totalSec:   Math.round(root.durationSec * root.totalFactor)
+    function elapsedAt(pass, prog) {
+        var e = 0
+        for (var i = 0; i < pass && i < root.passScale.length; i++) e += root.passScale[i]
+        return (e + prog * root.passScale[Math.min(pass, root.passScale.length - 1)]) * root.durationSec
+    }
+
     Connections {
         target: Beckhoff
         function onProgressChanged() {
             if (root.execState === "running" && Beckhoff.connected) {
-                root.progressFrac = Beckhoff.progress
-                root.elapsedSec   = Beckhoff.progress * root.durationSec
+                var p = Math.max(0, Math.min(root.passScale.length - 1, Beckhoff.passIndex))
+                root.elapsedSec   = root.elapsedAt(p, Beckhoff.progress)
+                root.progressFrac = Math.min(1, root.elapsedSec / Math.max(1, root.totalSec))
             }
         }
         function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
@@ -343,11 +361,12 @@ Item {
         }
         Text {
             anchors.right: parent.right
-            // Colour runs the span FOUR times (one pass per filter), so say what
-            // the capture will actually cost rather than showing one span.
+            // Colour holds the span three times (R, then G and B longer by their
+            // stops), so say what the capture will actually cost.
             text: Motor.colorMode === 0
-                  ? "4-pass r/g/b/c — total " + root.fmtDuration(root.durationSec * 4)
-                  : "single bw pass — motor stationary"
+                  ? "3-pass r/g/b — total " + root.fmtDuration(root.totalSec)
+                    + " (G ×" + root.passScale[1].toFixed(1) + ", B ×" + root.passScale[2].toFixed(1) + ")"
+                  : "single pass — motor stationary"
             color: Theme.colorTextFaint
             font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
         }

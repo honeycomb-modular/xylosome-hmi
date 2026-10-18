@@ -16,19 +16,24 @@ Row {
     property var controller: null
 
     readonly property bool faulted: Beckhoff.connected && Beckhoff.state === "fault"
+    // No capture agent attached to xylod: the axis would move and nothing would
+    // be recorded, so BeckhoffLink refuses execute and this says why.
+    readonly property bool noCapture: Beckhoff.connected && !Beckhoff.captureConnected
     readonly property var  focusTargets: chip.faulted ? [bClear] : []
 
-    visible: chip.faulted
+    visible: chip.faulted || chip.noCapture
     spacing: 8
 
     Text {
         anchors.verticalCenter: parent.verticalCenter
-        text:  Beckhoff.faultText + " — alarm no. on the drive panel"
+        text:  chip.faulted ? Beckhoff.faultText + " — alarm no. on the drive panel"
+                            : "no capture agent on the grabber PC — [execute] blocked"
         color: Theme.danger
         font { family: Theme.fontFamilyMono; pixelSize: Theme.fontMonoS }
     }
     TerminalButton {
         id: bClear; controller: chip.controller
+        visible: chip.faulted
         width: 116; height: 26; fontSize: Theme.fontMonoS
         label: "[clear fault]"
         textColor:   Theme.danger

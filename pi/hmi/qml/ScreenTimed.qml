@@ -51,7 +51,22 @@ Item {
     property bool timedColor: false
     readonly property int  passCount:  root.timedColor ? 3 : 1
     readonly property var  passNames:  ["R", "G", "B"]
-    readonly property int  totalSec:   root.durationSec * root.passCount
+    // Each colour pass runs slower by its exposure match (xylod colour stops,
+    // mirrored in Beckhoff.colourStops): G and B take 2^stops times the span.
+    readonly property var  passScale: {
+        if (!root.timedColor) return [1]
+        var st = Beckhoff.colourStops
+        if (!st || st.length < 3) return [1, 1, 1]
+        var lo = Math.min(st[0], st[1], st[2])
+        return [Math.pow(2, st[0] - lo), Math.pow(2, st[1] - lo), Math.pow(2, st[2] - lo)]
+    }
+    readonly property real totalFactor: root.passScale.reduce(function(a, b) { return a + b }, 0)
+    readonly property int  totalSec:   Math.round(root.durationSec * root.totalFactor)
+    function elapsedAt(pass, prog) {
+        var e = 0
+        for (var i = 0; i < pass && i < root.passScale.length; i++) e += root.passScale[i]
+        return (e + prog * root.passScale[Math.min(pass, root.passScale.length - 1)]) * root.durationSec
+    }
 
     // "lines scanned" is an estimate until the capture pipeline defines a real
     // slow-scan line rate — scaled from the FOV arc by a nominal constant.
@@ -264,10 +279,11 @@ Item {
         target: Beckhoff
         function onProgressChanged() {
             if (root.execState === "running" && Beckhoff.connected) {
-                // progress is per pass; fold the pass index in for the whole run
+                // progress is per pass; fold the pass index in, weighted by
+                // each pass's real length, for the whole run
                 var p = Math.max(0, Math.min(root.passCount - 1, Beckhoff.passIndex))
-                root.progressFrac = (p + Beckhoff.progress) / root.passCount
-                root.elapsedSec   = root.progressFrac * root.totalSec
+                root.elapsedSec   = root.elapsedAt(p, Beckhoff.progress)
+                root.progressFrac = Math.min(1, root.elapsedSec / Math.max(1, root.totalSec))
             }
         }
         function onSequenceDone(passes) { if (root.execState !== "idle") root.finishRun() }
@@ -453,7 +469,10 @@ Item {
         Text {
             anchors.right: parent.right
             text: root.execState === "idle"
-                  ? (root.timedColor ? "span per pass" : "span")
+                  ? (root.timedColor
+                     ? "red pass  ·  R/G/B total " + root.fmtDuration(root.totalSec)
+                       + " (G ×" + root.passScale[1].toFixed(1) + ", B ×" + root.passScale[2].toFixed(1) + ")"
+                     : "span")
                   : (root.timedColor
                      ? "pass " + (Math.max(0, Beckhoff.passIndex) + 1) + "/3 "
                        + root.passNames[Math.max(0, Math.min(2, Beckhoff.passIndex))]

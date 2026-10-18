@@ -67,6 +67,11 @@ void TcpServer::broadcast(const std::string &j) {
 
 std::string TcpServer::statusJson() {
     const SeqStatus s = m_seq.status();
+    // The capture agent says hello as "capture". Without it a scan moves the
+    // axis and records nothing; the HMI refuses execute on this flag.
+    bool capture = false;
+    for (const auto &c : m_clients)
+        if (c.fd >= 0 && c.name == "capture") capture = true;
     json j = {
         {"ev", "status"},
         {"state", s.state}, {"op", s.operational}, {"enabled", s.enabled},
@@ -75,6 +80,7 @@ std::string TcpServer::statusJson() {
         {"filterSlot", s.filterSlot}, {"lineHz", s.lineHz},
         {"plannedLines", s.plannedLines},
         {"halts", s.halts},
+        {"capture", capture},
         {"colourStops", {s.colourStops[0], s.colourStops[1], s.colourStops[2]}},
         {"estopOk", s.estopOk},
         {"drive", {{"sw", s.driveSw}, {"fault", s.driveFault}}},

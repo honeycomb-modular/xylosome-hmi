@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QLockFile>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QStandardPaths>
@@ -18,6 +19,9 @@
 #include "SessionStore.h"
 #include "XylodLink.h"
 #include "gitrev.h"
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 // Log file from day one (plan → Foundations #5): everything qInfo/qWarning
 // also lands in <AppData>/suite.log, timestamped.
@@ -49,6 +53,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationName("Xylosome Suite");
     QGuiApplication::setApplicationVersion("0.1.0+" GIT_REV);
 
+
     // Basic style: identical rendering on all three platforms; the suite
     // draws its own design language on top.
     QQuickStyle::setStyle("Basic");
@@ -63,6 +68,20 @@ int main(int argc, char *argv[])
     g_logFile.open(QIODevice::Append | QIODevice::Text);
     g_prevHandler = qInstallMessageHandler(logHandler);
     qInfo() << "[suite] start — log at" << g_logFile.fileName();
+
+    // One Suite at a time. Two instances (2026-10-17: a stale one from dist and
+    // a fresh one from build-suite) both watched the folder and both wrote
+    // sidecars and proxies: duplicated sessions, torn pyramids, a zeroed
+    // sidecar. QLockFile releases on exit or crash (dead-PID detection).
+    QLockFile lock(QDir::temp().filePath(QStringLiteral("xylosome-suite.lock")));
+    if (!lock.tryLock(500)) {
+        qWarning() << "[suite] another Xylosome Suite is already running — not starting a second";
+#ifdef Q_OS_WIN
+        MessageBoxW(nullptr, L"Xylosome Suite is already running.\nUse the open window.",
+                    L"Xylosome Suite", MB_OK | MB_ICONINFORMATION);
+#endif
+        return 0;
+    }
 
     auto *xylod = new XylodLink(&app);
     qmlRegisterSingletonInstance("XylosomeSuite.Link", 1, 0, "Xylod", xylod);

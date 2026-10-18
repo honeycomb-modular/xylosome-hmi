@@ -777,8 +777,11 @@ void SessionStore::pairPendingFiles()
                 const PassRecord &p = s.passes[i];
                 if (!p.file.isEmpty() || p.sealed || p.wallEndMs < 0)
                     continue;
+                // The file lands seconds after pass_end, so the window runs
+                // from the END. From the start it capped a pass at 30 minutes,
+                // and a colour timed scan's blue pass runs 7x the span.
                 if (mtime < p.wallStartMs - 5000
-                    || mtime - p.wallStartMs > kPairWindowMs)
+                    || mtime - p.wallEndMs > kPairWindowMs)
                     continue;
                 if (!token.isEmpty() && token != p.filter)
                     continue;

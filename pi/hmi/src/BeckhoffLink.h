@@ -34,6 +34,9 @@ class BeckhoffLink : public QObject
     Q_PROPERTY(double  lineHz      READ lineHz      NOTIFY statusChanged)
     Q_PROPERTY(int     filterSlot  READ filterSlot  NOTIFY statusChanged)
     Q_PROPERTY(int     halts       READ halts       NOTIFY statusChanged)   // xerox: halts logged in pass 0
+    // The capture agent is attached to xylod (status "capture"). Every execute
+    // is refused while it is not: a scan with nobody recording is lost motion.
+    Q_PROPERTY(bool    captureConnected READ captureConnected NOTIFY statusChanged)
     // Colour exposure match, stops of extra exposure per filter [R, G, B]. Lives
     // in xylod (persisted there); this is the mirror from status.
     Q_PROPERTY(QVariantList colourStops READ colourStops NOTIFY colourStopsChanged)
@@ -61,6 +64,7 @@ public:
     double  lineHz()       const { return m_lineHz; }
     int     filterSlot()   const { return m_filterSlot; }
     int     halts()        const { return m_halts; }
+    bool    captureConnected() const { return m_captureConnected; }
     QVariantList colourStops() const { return m_colourStops; }
     QString faultText()    const { return m_faultText; }
     QString xylodVersion() const { return m_xylodVersion; }
@@ -191,6 +195,7 @@ private slots:
 private:
     void sendJson(const QJsonObject &obj);
     void handleMessage(const QJsonObject &msg);
+    bool captureGuard();        // false (and faulted() emitted) when no agent is attached
 
     QTcpSocket m_sock;
     QTimer     m_reconnect;
@@ -203,6 +208,7 @@ private:
     QString m_state = QStringLiteral("offline");
     bool    m_enabled = false, m_homed = false, m_estopOk = true;
     int     m_pass = -1, m_filterSlot = -1, m_halts = 0;
+    bool    m_captureConnected = true;   // true until a status says otherwise (old xylod: always)
     QVariantList m_colourStops{0.0, 0.0, 0.0};
     double  m_progress = 0.0, m_posDeg = 0.0, m_velDegS = 0.0, m_lineHz = 0.0;
     QString m_faultText;
