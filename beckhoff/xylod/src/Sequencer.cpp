@@ -522,10 +522,22 @@ void Sequencer::cycle(double dt) {
                 // for that pass (6.02 dB per stop).
                 const double minScale = (m_cfg.lineMinHz > 0.0 && m_job.lineBaseHz > 0.0)
                                       ? std::min(1.0, m_cfg.lineMinHz / m_job.lineBaseHz) : 0.0;
+                // Each pass's rate is snapped to the EL2521 word grid (1.53 Hz
+                // steps) by nudging its scale, so a flat colour pass runs on a
+                // constant word: the dither otherwise alternates the line
+                // period by one step, 0.3% at 470 Hz, a faint band on every
+                // other line once the shadows are lifted (scan 2283). The
+                // nudge is under one step of rate; velocity scales with it, so
+                // geometry and line count are untouched.
+                const double wordHz = m_cfg.el2521BaseHz / 32767.0;
                 bool any = false, floored = false;
                 for (int p = 0; p < m_passCount; p++) {
                     const double want = std::pow(2.0, -(st[p] - lo));
-                    const double sc   = std::max(want, minScale);
+                    double sc = std::max(want, minScale);
+                    if (m_job.lineBaseHz > 0.0 && wordHz > 0.0) {
+                        const double q = std::round(m_job.lineBaseHz * sc / wordHz) * wordHz;
+                        if (q > 0.0 && q <= m_job.lineBaseHz) sc = q / m_job.lineBaseHz;
+                    }
                     m_job.passVelScale.push_back(sc);
                     m_passGainStops[p] = std::log2(sc / want);
                     if (st[p] - lo > 1e-3) any = true;

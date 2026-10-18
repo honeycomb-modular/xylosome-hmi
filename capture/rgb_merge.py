@@ -1,7 +1,7 @@
 """Merge one colour scan's R/G/B passes into a colour image.
 
 usage: python -I rgb_merge.py <capture dir> <seq> <out dir> [--align] [--denoise-blue[=K]]
-       python -I rgb_merge.py --files R.tif G.tif B.tif --out merged.tif [--jpg] [--align] [--denoise-blue[=K]]
+       python -I rgb_merge.py --files R.tif G.tif B.tif --out merged.tif [--jpg] [--align] [--denoise-blue[=K]] [--denoise-chroma[=K]]
 
 The second form is what the Review Suite calls (Session > Merge R/G/B): explicit
 pass files, one output TIFF, no JPEG/preview unless --jpg (the Suite builds its
@@ -20,6 +20,20 @@ differ by a few lines). Writes:
 --align registers G and B onto R (rgb_align.py): slow passes drop lines
 evenly (EL2521 frequency step, 2026-10-16), so blue can be ~1% short along
 the scan. The 16-bit TIFF stays in raw capture orientation.
+
+--deband-rows removes line-to-line exposure jitter: every scan line is one
+trigger period, and a period that alternates by one EL2521 step (the word
+dither at low rates, 0.3% at 470 Hz) or a late trigger shows as a faint
+horizontal band once the shadows are lifted. Each row is scaled by the ratio
+of its mean to the mean smoothed over its 9 neighbours (clamped to +-3%), per
+channel, which is blind to the subject (a row-wide change) and removes only
+what differs between a line and its neighbours.
+
+--denoise-chroma smooths the COLOUR DIFFERENCE of all three channels and leaves
+luminance alone: the sensor's grain (~190 counts on R and G) then reads as
+monochrome grain instead of red/green speckle, and edges keep their
+sharpness because luminance is untouched. Edge-preserving (bilateral) on each
+chroma plane, threshold K x the measured chroma grain (default K=3).
 
 --denoise-blue smooths the blue pass's grain: it integrates ~4x longer than
 red, so dark-current shot noise makes it visibly grainier (scan 2233: same
@@ -120,31 +134,84 @@ for f in "RGB":
 
 r, g, b = (chan[f] for f in "RGB")
 
+if "--deband-rows" in sys.argv:
+    outs = []
+    for name, c in (("R", r), ("G", g), ("B", b)):
+        cf = c.astype(np.float32)
+        rm = cf.mean(axis=1)
+        sm = cv2.blur(rm.reshape(-1, 1), (1, 9)).ravel()
+        gain = np.clip(sm / np.maximum(rm, 1.0), 0.97, 1.03)
+        outs.append(np.clip(cf * gain[:, None], 0, 65535).astype(np.uint16))
+        print(f"{name}: row banding p5..p95 {100 * (np.percentile(gain, 5) - 1):+.2f}%..{100 * (np.percentile(gain, 95) - 1):+.2f}% removed")
+    r, g, b = outs
+
 # Registration: green and blue onto red (affine per channel, sub-pixel).
 if "--align" in sys.argv:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import rgb_align as align
     H, W = r.shape
     out_ch = []
+    trim = 0          # px: the largest shift applied; the warps' replicated borders are cut off below
     for name, mov in (("G", g), ("B", b)):
         pts = align.measure(r, mov)
         cx, cy, n_ok, n, rms = align.fit(pts)
         print(align.describe(f"{name}->R before", cx, cy, n_ok, n, rms, H, W))
-        # Too few matching tiles (dark, busy or moving scene) or a loose fit:
-        # the "correction" would be noise. Keep the channel as captured.
-        # (Was 25% / 1.5 px: with the line counts matched first the residual
-        # is a 2-3 px constant, and a film-set scene full of people still
-        # fits at rms ~1.9 on 170 tiles - plenty for an affine.)
-        if n_ok < max(40, 0.15 * n) or rms > 3.0:
+        # The affine needs enough matching tiles spread over the frame (12% of
+        # them, at least 12) and a tight fit. A scan with little texture (the
+        # chart on a black curtain: 37 of 192 tiles) fails that, but its
+        # shift is still a clean constant - the blue sat 4 px off on scan 2283
+        # and every edge ghosted - so fall back to the median shift when the
+        # reliable tiles agree within a pixel or two.
+        if n_ok < max(12, 0.12 * n) or rms > 3.0:
+            good = pts[pts[:, 4] >= 0.08]
+            if len(good) >= 8:
+                dx, dy = np.median(good[:, 2]), np.median(good[:, 3])
+                sx = np.subtract(*np.percentile(good[:, 2], [75, 25]))
+                sy = np.subtract(*np.percentile(good[:, 3], [75, 25]))
+                if sx < 2.5 and sy < 2.5:
+                    print(f"{name}->R: affine unreliable ({n_ok}/{n} tiles, rms {rms:.2f} px) - "
+                          f"constant shift x {dx:+.2f} y {dy:+.2f} px from {len(good)} tiles "
+                          f"(IQR {sx:.1f}/{sy:.1f})")
+                    cx = np.array([dx, 0.0, 0.0]); cy = np.array([dy, 0.0, 0.0])
+                    trim = max(trim, abs(dx), abs(dy))
+                    warped = np.clip(align.warp(mov, cx, cy), 0, 65535).astype(np.uint16)
+                    cx2, cy2, n2, nn2, rms2 = align.fit(align.measure(r, warped))
+                    print(align.describe(f"{name}->R after ", cx2, cy2, n2, nn2, rms2, H, W))
+                    out_ch.append(warped)
+                    continue
             print(f"{name}->R: alignment unreliable ({n_ok}/{n} tiles, rms {rms:.2f} px) "
                   f"- leaving {name} as captured")
             out_ch.append(mov)
             continue
+        trim = max(trim, abs(cx[0]) + abs(cx[1]) * W + abs(cx[2]) * H, abs(cy[0]) + abs(cy[1]) * W + abs(cy[2]) * H)
         warped = np.clip(align.warp(mov, cx, cy), 0, 65535).astype(np.uint16)
         cx2, cy2, n2, nn2, rms2 = align.fit(align.measure(r, warped))
         print(align.describe(f"{name}->R after ", cx2, cy2, n2, nn2, rms2, H, W))
+        # One refinement by a CONSTANT shift, the median over the reliable
+        # tiles: the first fit is measured on tiles several px off and leaves
+        # ~1 px; re-fitting a whole affine on a sparse scene (30-40 tiles)
+        # just chases its own noise, the median does not.
+        pts2 = align.measure(r, warped)
+        good2 = pts2[pts2[:, 4] >= 0.08]
+        if len(good2) >= 8:
+            dx2, dy2 = float(np.median(good2[:, 2])), float(np.median(good2[:, 3]))
+            if max(abs(dx2), abs(dy2)) > 0.3:
+                trim = max(trim, abs(dx2), abs(dy2))
+                warped = np.clip(align.warp(warped, np.array([dx2, 0.0, 0.0]), np.array([dy2, 0.0, 0.0])),
+                                 0, 65535).astype(np.uint16)
+                pts3 = align.measure(r, warped); good3 = pts3[pts3[:, 4] >= 0.08]
+                print(f"{name}->R refine: median shift x {dx2:+.2f} y {dy2:+.2f} px applied; "
+                      f"residual median x {np.median(good3[:, 2]):+.2f} y {np.median(good3[:, 3]):+.2f} px "
+                      f"over {len(good3)} tiles")
         out_ch.append(warped)
     g, b = out_ch
+    # Cut the replicated borders the warps left (a shifted channel has no data
+    # for its first rows/columns): the same margin on all three channels.
+    t = int(np.ceil(trim)) + 1
+    if trim > 0 and 2 * t < min(r.shape):
+        r, g, b = (c[t:-t, t:-t] for c in (r, g, b))
+        rows, cols = r.shape
+        print(f"edges trimmed by {t} px for the registration shifts -> {rows} x {cols}")
 
 # Blue denoise (see the docstring). Grain is measured as the MAD of the
 # residual after a 5x5 median, in the middle of the frame.
@@ -162,6 +229,25 @@ if dn:
     mad2 = 1.4826 * float(np.median(np.abs(res2 - np.median(res2))))
     b = np.clip(bf, 0, 65535).astype(np.uint16)
     print(f"B: denoised, grain {mad:.0f} -> {mad2:.0f} counts (sigma {k:g} x grain)")
+
+# Chroma denoise (see the docstring): Y from the three channels, each
+# channel's difference to Y smoothed with an edge-preserving filter, Y kept.
+dc = [a for a in sys.argv if a.startswith("--denoise-chroma")]
+if dc:
+    k = float(dc[0].split("=")[1]) if "=" in dc[0] else 3.0
+    rf, gf, bf = (c.astype(np.float32) for c in (r, g, b))
+    Y = 0.3 * rf + 0.5 * gf + 0.2 * bf
+    outs = []
+    Hh, Ww = Y.shape
+    for name, cf in (("R", rf), ("G", gf), ("B", bf)):
+        d = cf - Y
+        t = d[Hh // 2 - 512:Hh // 2 + 512, Ww // 2 - 512:Ww // 2 + 512]
+        res = t - cv2.medianBlur(t, 5)
+        mad = 1.4826 * float(np.median(np.abs(res - np.median(res))))
+        d = cv2.bilateralFilter(d, 9, k * max(mad, 1.0), 4.0)
+        outs.append(np.clip(Y + d, 0, 65535).astype(np.uint16))
+        print(f"{name}: chroma grain {mad:.0f} counts smoothed (sigma {k:g} x)")
+    r, g, b = outs
 
 rgb16 = np.dstack([r, g, b]).astype(np.uint16)
 tmp = out_tif + ".part"

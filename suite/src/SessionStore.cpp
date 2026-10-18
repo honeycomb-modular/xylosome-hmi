@@ -1158,7 +1158,8 @@ void SessionStore::mergeColour(int row, bool discardChannels)
                                        QDir::toNativeSeparators(files[1]),
                                        QDir::toNativeSeparators(files[2]),
                                        QStringLiteral("--out"), QDir::toNativeSeparators(outAbs),
-                                       QStringLiteral("--align"), QStringLiteral("--denoise-blue") });
+                                       QStringLiteral("--align"), QStringLiteral("--deband-rows"),
+                                       QStringLiteral("--denoise-blue"), QStringLiteral("--denoise-chroma") });
     m_merge->setProcessChannelMode(QProcess::MergedChannels);
     connect(m_merge, &QProcess::readyReadStandardOutput, this, [this] {
         m_mergeOut += QString::fromLocal8Bit(m_merge->readAllStandardOutput());
