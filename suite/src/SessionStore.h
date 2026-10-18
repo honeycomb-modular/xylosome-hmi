@@ -167,6 +167,11 @@ public:
     // TIFFs (and their proxies) once the merge is in; the pass records stay,
     // marked discarded, so the session's timing history is kept.
     Q_INVOKABLE void mergeColour(int row, bool discardChannels);
+    // Hand the shown pass's TIFF (channel or merged) to Photoshop, detached.
+    // passPos is the position in the session's pass list (what the UI shows).
+    // external/photoshop in the settings overrides the install lookup.
+    Q_INVOKABLE bool openInPhotoshop(int row, int passPos);
+    Q_INVOKABLE bool photoshopAvailable() const;
     Q_PROPERTY(bool colourMergeBusy READ colourMergeBusy NOTIFY hdrMergeBusyChanged)
     bool colourMergeBusy() const { return m_merge != nullptr && !m_mergeUuid.isEmpty(); }
 

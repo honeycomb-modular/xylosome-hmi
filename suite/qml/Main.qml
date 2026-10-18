@@ -83,6 +83,18 @@ ApplicationWindow {
         return !!m && m.length === 3
     }
     Shortcut { enabled: root.keysLive; sequences: ["K"]; onActivated: root.wbOn = !root.wbOn }
+    // P: the shown image (a channel pass or the merge) in Photoshop — the TIFF
+    // itself, 16-bit, raw orientation.
+    readonly property bool canPhotoshop: strip.currentItem !== null && root.shownPass >= 0
+                                         && strip.currentItem.sPassPaired[root.shownPass]
+    function openInPhotoshop() {
+        if (!root.canPhotoshop) return
+        if (!Sessions.openInPhotoshop(strip.currentIndex, root.shownPass)) {
+            root.reclaimText = qsTr("Photoshop not found — set external/photoshop in the settings")
+            reclaimTimer.restart()
+        }
+    }
+    Shortcut { enabled: root.keysLive; sequences: ["P"]; onActivated: root.openInPhotoshop() }
     readonly property bool canMergeRGB: {
         const it = strip.currentItem
         if (!it || it.sState === "live") return false
@@ -347,6 +359,11 @@ ApplicationWindow {
                       : qsTr("Merge R/G/B → colour TIFF")
                 enabled: !Sessions.hdrMergeBusy && !Sessions.colourMergeBusy && root.canMergeRGB
                 onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
+            }
+            MenuItem {
+                text: qsTr("Open in Photoshop\tP")
+                enabled: root.canPhotoshop
+                onTriggered: root.openInPhotoshop()
             }
             MenuItem {
                 text: qsTr("Discard R/G/B channel TIFFs after merge")
@@ -792,6 +809,20 @@ ApplicationWindow {
                             color: root.inkMuted
                             font.pixelSize: 11
                         }
+                    }
+                }
+                Label {
+                    visible: root.canPhotoshop
+                    text: qsTr("open in photoshop")
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                    font.underline: psMouse.containsMouse
+                    MouseArea {
+                        id: psMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openInPhotoshop()
                     }
                 }
                 Label {

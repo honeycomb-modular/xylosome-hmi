@@ -1240,6 +1240,64 @@ void SessionStore::colourMerged(const QString &uuid, const QString &outRel, bool
     }
 }
 
+// ── open in Photoshop ─────────────────────────────────────────────────────────
+
+static QString photoshopPath()
+{
+    const QString custom = QSettings().value(QStringLiteral("external/photoshop")).toString();
+    if (!custom.isEmpty() && QFile::exists(custom))
+        return custom;
+#ifdef Q_OS_WIN
+    // Newest "Adobe Photoshop <year>" under Program Files, then the App Paths key.
+    const QDir adobe(QStringLiteral("C:/Program Files/Adobe"));
+    const QStringList dirs = adobe.entryList({ QStringLiteral("Adobe Photoshop*") },
+                                             QDir::Dirs, QDir::Name | QDir::Reversed);
+    for (const QString &d : dirs) {
+        const QString exe = adobe.absoluteFilePath(d) + QStringLiteral("/Photoshop.exe");
+        if (QFile::exists(exe))
+            return exe;
+    }
+    const QSettings app(QStringLiteral("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Photoshop.exe"),
+                        QSettings::NativeFormat);
+    const QString reg = app.value(QStringLiteral("Default")).toString();
+    if (!reg.isEmpty() && QFile::exists(reg))
+        return reg;
+#elif defined(Q_OS_MAC)
+    const QDir apps(QStringLiteral("/Applications"));
+    const QStringList dirs = apps.entryList({ QStringLiteral("Adobe Photoshop*") },
+                                            QDir::Dirs, QDir::Name | QDir::Reversed);
+    for (const QString &d : dirs) {
+        const QString exe = apps.absoluteFilePath(d) + QStringLiteral("/Adobe Photoshop ")
+                            + d.mid(16) + QStringLiteral(".app/Contents/MacOS/Adobe Photoshop ") + d.mid(16);
+        if (QFile::exists(exe))
+            return exe;
+    }
+#endif
+    return {};
+}
+
+bool SessionStore::photoshopAvailable() const
+{
+    return !photoshopPath().isEmpty();
+}
+
+bool SessionStore::openInPhotoshop(int row, int passPos)
+{
+    if (row < 0 || row >= m_sessions.size())
+        return false;
+    const SessionRecord &s = m_sessions[row];
+    if (passPos < 0 || passPos >= s.passes.size() || s.passes[passPos].file.isEmpty())
+        return false;
+    const QString exe = photoshopPath();
+    if (exe.isEmpty()) {
+        qWarning() << "[photoshop] not found — set external/photoshop in the settings";
+        return false;
+    }
+    const QString file = QDir::toNativeSeparators(passAbsPath(s.passes[passPos]));
+    qInfo() << "[photoshop]" << file;
+    return QProcess::startDetached(exe, { file });
+}
+
 // ── metadata SVG pairing (Pi MetadataRecorder export) ────────────────────────
 
 void SessionStore::pairMetaSvg(const QString &absPath, qint64 mtimeMs)
