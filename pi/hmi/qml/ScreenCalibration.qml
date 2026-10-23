@@ -2,6 +2,7 @@
 // plus the TDI sync override (see Calib.qml): tdi.sync on makes every scan mode
 // use lines/deg below instead of its own constant.
 import QtQuick
+import QtQuick.Controls   // StackView attached property, for the flat.field push
 import XylosomeHMI 1.0
 
 ChoiceList {

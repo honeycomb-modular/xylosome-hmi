@@ -53,7 +53,11 @@ Item {
     Connections {
         target: Camera
         function onFfcEvent(step, state, note, level, rate) {
-            root.note = note
+            // An agent without the ffc command refuses with a bare
+            // {"ack":"ffc","ok":false}: no step, no note. Pin it on the step
+            // we asked for and say what that silence means.
+            if (step === "") step = root.runStep
+            root.note = note !== "" ? note : "capture agent refused the command — is it running the new build?"
             if (state === "running") { root.runStep = step; root.failed = false; return }
             root.runStep = ""
             root.failed  = (state === "failed")
