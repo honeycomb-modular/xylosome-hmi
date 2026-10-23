@@ -151,10 +151,20 @@ if "--align" in sys.argv:
     import rgb_align as align
     H, W = r.shape
     out_ch = []
-    trim = 0          # px: the largest shift applied; the warps' replicated borders are cut off below
+    trim_x = trim_y = 0   # px: the largest shift applied per axis; the warps' replicated borders are cut off below
     for name, mov in (("G", g), ("B", b)):
-        pts = align.measure(r, mov)
+        # A shift the tiles cannot see (scan 2344: 175 lines, 0/848 tiles)
+        # is found on the whole frame first and taken out before measuring;
+        # the model below gets it added back, so the warp is still one pass.
+        ox = oy = 0
+        cdx, cdy, cresp = align.coarse(r, mov)
+        if cresp >= 0.15 and max(abs(cdx), abs(cdy)) >= 8.0:
+            ox, oy = int(round(cdx)), int(round(cdy))
+            print(f"{name}->R coarse: whole-frame shift x {cdx:+.1f} y {cdy:+.1f} px "
+                  f"(response {cresp:.2f}) - taken out before the tile fit")
+        pts = align.measure(r, align.shift_int(mov, ox, oy) if (ox or oy) else mov)
         cx, cy, n_ok, n, rms = align.fit(pts)
+        cx[0] += ox; cy[0] += oy
         print(align.describe(f"{name}->R before", cx, cy, n_ok, n, rms, H, W))
         # The affine needs enough matching tiles spread over the frame (12% of
         # them, at least 12) and a tight fit. A scan with little texture (the
@@ -165,7 +175,7 @@ if "--align" in sys.argv:
         if n_ok < max(12, 0.12 * n) or rms > 3.0:
             good = pts[pts[:, 4] >= 0.08]
             if len(good) >= 8:
-                dx, dy = np.median(good[:, 2]), np.median(good[:, 3])
+                dx, dy = np.median(good[:, 2]) + ox, np.median(good[:, 3]) + oy
                 sx = np.subtract(*np.percentile(good[:, 2], [75, 25]))
                 sy = np.subtract(*np.percentile(good[:, 3], [75, 25]))
                 if sx < 2.5 and sy < 2.5:
@@ -173,7 +183,7 @@ if "--align" in sys.argv:
                           f"constant shift x {dx:+.2f} y {dy:+.2f} px from {len(good)} tiles "
                           f"(IQR {sx:.1f}/{sy:.1f})")
                     cx = np.array([dx, 0.0, 0.0]); cy = np.array([dy, 0.0, 0.0])
-                    trim = max(trim, abs(dx), abs(dy))
+                    trim_x = max(trim_x, abs(dx)); trim_y = max(trim_y, abs(dy))
                     warped = np.clip(align.warp(mov, cx, cy), 0, 65535).astype(np.uint16)
                     cx2, cy2, n2, nn2, rms2 = align.fit(align.measure(r, warped))
                     print(align.describe(f"{name}->R after ", cx2, cy2, n2, nn2, rms2, H, W))
@@ -183,7 +193,8 @@ if "--align" in sys.argv:
                   f"- leaving {name} as captured")
             out_ch.append(mov)
             continue
-        trim = max(trim, abs(cx[0]) + abs(cx[1]) * W + abs(cx[2]) * H, abs(cy[0]) + abs(cy[1]) * W + abs(cy[2]) * H)
+        trim_x = max(trim_x, abs(cx[0]) + abs(cx[1]) * W + abs(cx[2]) * H)
+        trim_y = max(trim_y, abs(cy[0]) + abs(cy[1]) * W + abs(cy[2]) * H)
         warped = np.clip(align.warp(mov, cx, cy), 0, 65535).astype(np.uint16)
         cx2, cy2, n2, nn2, rms2 = align.fit(align.measure(r, warped))
         print(align.describe(f"{name}->R after ", cx2, cy2, n2, nn2, rms2, H, W))
@@ -196,7 +207,7 @@ if "--align" in sys.argv:
         if len(good2) >= 8:
             dx2, dy2 = float(np.median(good2[:, 2])), float(np.median(good2[:, 3]))
             if max(abs(dx2), abs(dy2)) > 0.3:
-                trim = max(trim, abs(dx2), abs(dy2))
+                trim_x = max(trim_x, abs(dx2)); trim_y = max(trim_y, abs(dy2))
                 warped = np.clip(align.warp(warped, np.array([dx2, 0.0, 0.0]), np.array([dy2, 0.0, 0.0])),
                                  0, 65535).astype(np.uint16)
                 pts3 = align.measure(r, warped); good3 = pts3[pts3[:, 4] >= 0.08]
@@ -206,12 +217,14 @@ if "--align" in sys.argv:
         out_ch.append(warped)
     g, b = out_ch
     # Cut the replicated borders the warps left (a shifted channel has no data
-    # for its first rows/columns): the same margin on all three channels.
-    t = int(np.ceil(trim)) + 1
-    if trim > 0 and 2 * t < min(r.shape):
-        r, g, b = (c[t:-t, t:-t] for c in (r, g, b))
+    # for its first rows/columns): the same margin on all three channels,
+    # per axis - a 175-line shift along the scan costs rows, not columns.
+    ty = int(np.ceil(trim_y)) + 1 if trim_y > 0 else 0
+    tx = int(np.ceil(trim_x)) + 1 if trim_x > 0 else 0
+    if (tx or ty) and 2 * ty < r.shape[0] and 2 * tx < r.shape[1]:
+        r, g, b = (c[ty:c.shape[0] - ty, tx:c.shape[1] - tx] for c in (r, g, b))
         rows, cols = r.shape
-        print(f"edges trimmed by {t} px for the registration shifts -> {rows} x {cols}")
+        print(f"edges trimmed by {ty} rows / {tx} columns for the registration shifts -> {rows} x {cols}")
 
 # Blue denoise (see the docstring). Grain is measured as the MAD of the
 # residual after a 5x5 median, in the middle of the frame.

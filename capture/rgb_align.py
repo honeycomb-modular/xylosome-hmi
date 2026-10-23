@@ -39,6 +39,30 @@ def measure(ref, mov, tile=TILE):
     return np.array(pts)
 
 
+def coarse(ref, mov, ds=8):
+    """Whole-frame shift of mov against ref, phase correlation on the edge
+    image downsampled ds x. The 512-px tiles above cannot see a shift past
+    ~60 px (scan 2344: G and B both 175 lines along the scan from R, every
+    tile rejected); this can. Returns (dx, dy, response) in full-res px."""
+    def small(img):
+        H, W = img.shape
+        H -= H % ds; W -= W % ds
+        return img[:H, :W].reshape(H // ds, ds, W // ds, ds).mean(axis=(1, 3)).astype(np.float32)
+    a, b = small(ref), small(mov)
+    h, w = min(a.shape[0], b.shape[0]), min(a.shape[1], b.shape[1])
+    ea, eb = _edges(a[:h, :w]), _edges(b[:h, :w])
+    (dx, dy), resp = cv2.phaseCorrelate(ea, eb, cv2.createHanningWindow((w, h), cv2.CV_32F))
+    return dx * ds, dy * ds, resp
+
+
+def shift_int(img, dx, dy):
+    # whole-pixel move, same convention as warp(): img(x + dx, y + dy) lands on (x, y)
+    H, W = img.shape
+    M = np.array([[1, 0, dx], [0, 1, dy]], np.float32)
+    return cv2.warpAffine(img, M, (W, H), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                          borderMode=cv2.BORDER_REPLICATE)
+
+
 def fit(pts, min_resp=0.08, max_shift=60.0):
     keep = (pts[:, 4] >= min_resp) & (np.abs(pts[:, 2]) < max_shift) & (np.abs(pts[:, 3]) < max_shift)
     p = pts[keep]
