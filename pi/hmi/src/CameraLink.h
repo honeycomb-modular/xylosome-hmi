@@ -49,6 +49,10 @@ public:
     // ── commands ────────────────────────────────────────────────────────────
     Q_INVOKABLE void setParam(const QString &key, const QVariant &value);
     Q_INVOKABLE void refresh();          // ask the agent for current state
+    // Flat-field calibration step on the camera: "dark" (ccf, lens capped),
+    // "flat" (ccp on the white panel) or "save" (epc + wus). The agent runs
+    // it and reports through ffcEvent; settings ▸ calibration ▸ flat field.
+    Q_INVOKABLE void ffc(const QString &step);
 
 signals:
     void connectedChanged();
@@ -59,6 +63,10 @@ signals:
     // 99th percentile of the 16-bit data). settings ▸ colour uses it to
     // equalise the filters; everything else ignores it.
     void passStats(int pass, const QString &filter, double median, double p99, int lines, double gainDb);
+    // Flat-field calibration progress from the agent: state is running | done |
+    // failed; level (fraction of full scale) and rate (Hz) only mean something
+    // for the "flat" step.
+    void ffcEvent(const QString &step, const QString &state, const QString &note, double level, double rate);
 
 private slots:
     void onConnected();

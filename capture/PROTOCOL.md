@@ -48,6 +48,27 @@ the sequence closes.)
 A `state` event is broadcast to **every** connected client after any successful
 `set`, so the HMI and Suite stay in sync without polling.
 
+## Flat-field calibration (settings ▸ calibration ▸ flat field)
+
+The camera's own FPN/PRNU calibration, one step per command. The agent runs the
+step in the background (holding the grabber, like a scan) and broadcasts its
+progress; the ack only says whether it started.
+
+```
+{"cmd":"ffc","step":"dark"}   -> lens capped: ccf, wfc 1
+{"cmd":"ffc","step":"flat"}   -> white panel: free-run exposure found (brightest columns ~80%), ccp, wpc 1, line rate restored
+{"cmd":"ffc","step":"save"}   -> epc 1 1, wus
+
+{"ack":"ffc","ok":true,"step":"flat","note":"started"}          (false: "board busy (...)")
+{"ev":"ffc","step":"flat","state":"running","note":"level 34% -> trying 16200 Hz","level":0.34,"rate":38000}
+{"ev":"ffc","step":"flat","state":"done","note":"white (PRNU) calibrated at 16200 Hz, written to set 1","level":0.81,"rate":16200}
+{"ev":"ffc","step":"dark","state":"failed","note":"ccf -> Warning 09: ..."}
+```
+
+It calibrates the camera as it stands (direction, stages, gain, aperture). The
+raw pass-through (`{"cmd":"raw","line":...}`, `capture/cam_raw.py`) is still
+there for anything these three steps do not cover.
+
 ## Parameters
 
 | key          | type   | range / values              | TLC command  | gcp readback field |

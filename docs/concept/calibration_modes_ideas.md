@@ -375,6 +375,12 @@ Decision pending (Hoyte) — the question last asked:
 - [ ] Reverse 1797 collected 7909/8972 lines ("frame not filled", ~12% short;
   forward ~7 short) — grab/trigger side, unrelated to the calibration. Look into it.
 - [ ] Recalibrate if aperture, stages, or gain change (`ccp` at least).
+  **Now a page on the HMI (2026-10-23): settings ▸ calibration ▸ flat.field** —
+  [run] dark (lens capped: ccf + wfc 1), [run] white (panel: agent finds the
+  free-run exposure for ~80% then ccp + wpc 1, restores ssf), [save] (epc 1 1 +
+  wus). Agent `{"cmd":"ffc","step":...}` on :5521, see `capture/PROTOCOL.md`.
+  Calibrates the current direction only (forward in use; a reverse run needs
+  scan.dir reverse on the camera page first).
 - [ ] Old, now superseded: **Option 2 — camera flat-field correction** for what remains: `ccf` (FPN,
   lens capped), `ccp` (PRNU, even defocused white target), save `wfc`/`wpc`,
   enable `epc 1 1`. At working setup: 48 stages, −6 dB, forward (scd 0), and

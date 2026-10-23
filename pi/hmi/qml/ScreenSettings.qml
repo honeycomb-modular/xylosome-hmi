@@ -53,7 +53,7 @@ Item {
         id: rowCalibration
         controller: setFocus
         x: Theme.marginX; y: Theme.contentTop + Theme.rowStride * 3; width: Theme.contentW
-        rowName: "calibration";   rowDesc: "homing offset · zero · touch"
+        rowName: "calibration";   rowDesc: "homing offset · zero · touch · sensor flat field"
         onClicked: root.StackView.view.push(Qt.resolvedUrl("ScreenCalibration.qml"))
     }
     NavRow {

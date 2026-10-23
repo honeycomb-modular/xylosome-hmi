@@ -211,6 +211,110 @@ def raw_cmd(line):
     finally:
         if hold: board_lock.release()
 
+# ---------- flat-field calibration steps (settings ▸ calibration ▸ flat field) ----------
+# The 2026-09-13 procedure (docs/concept/calibration_modes_ideas.md, checklist §7)
+# as three buttons on the HMI instead of hand-typed raw commands:
+#   dark  — lens capped:        ccf (FPN), wfc 1
+#   flat  — white panel, even:  free-run exposure found so the brightest columns
+#           sit near 80% of full scale, then ccp (PRNU), wpc 1, line rate restored
+#   save  — epc 1 1 (use both coefficient sets), wus (keep across power cycles)
+# Each step calibrates the camera AS IT STANDS (direction, stages, gain) — redo
+# it when any of those change. The step holds the board for its duration, like
+# the raw ccf/ccp did, so a scan or LIVE cannot flip the camera mid-sample.
+# Progress is broadcast on the camera bus:
+#   {"ev":"ffc","step":"flat","state":"running"|"done"|"failed","note":...,
+#    "level":0.81,"rate":14800}
+FFC_SET = 1          # coefficient set the September calibration lives in
+FFC_TARGET = 0.80    # brightest columns at this fraction of full scale for ccp
+FFC_LEVEL_OK = (0.70, 0.88)
+FFC_LINES = 256      # free-run lines per level measurement
+_CAM_WARN = re.compile(r"(Warning|Error) \d+:[^\r\n]*")
+
+def _ffc_bcast(step, state, note, **extra):
+    print("  ffc %s: %s - %s" % (step, state, note))
+    _bcast(dict({"ev": "ffc", "step": step, "state": state, "note": note}, **extra))
+
+def _ffc_cmd(line, timeout):
+    # One camera command inside a calibration step; raises with the camera's own
+    # words on a warning/error prompt, or on silence.
+    r = cam_cmd(line, timeout, stop_on_warning=True)
+    m = _CAM_WARN.search(r)
+    if m: raise RuntimeError("%s -> %s" % (line, m.group(0).strip()))
+    if not r.rstrip().endswith("OK>"): raise RuntimeError("%s -> no reply from the camera" % line)
+    return r
+
+def _ffc_level(grab):
+    # Brightest columns of a short free-run frame as a fraction of full scale:
+    # the 99.9th percentile of the column means (a hot pixel must not set the
+    # exposure), on the left-justified 16-bit data the grabber hands back.
+    grab.arm()
+    img = grab.collect(timeout_ms=5000, abort=True)
+    cols = img.astype(np.float32).mean(axis=0)
+    return float(np.percentile(cols, 99.9)) / float(((1 << CAM_BITS) - 1) << RAW_SHIFT)
+
+def ffc_step(step):
+    # Runs in its own thread; the board lock is already held by the caller.
+    extra = {}
+    try:
+        set_cam_external(False)          # ssf writes are ignored in sem 3, and ccf/ccp need free-run
+        if step == "dark":
+            _ffc_bcast(step, "running", "ccf - keep the lens capped (up to 2 min)")
+            _ffc_cmd("ccf", RAW_TIMEOUT["ccf"])
+            _ffc_cmd("wfc %d" % FFC_SET, RAW_TIMEOUT["wfc"])
+            note = "dark (FPN) calibrated and written to set %d" % FFC_SET
+        elif step == "flat":
+            base = cached_state().get("line.rate") or 38000.0
+            rate = float(base); level = None
+            _ffc_bcast(step, "running", "finding the exposure on the white panel")
+            grab = Grabber(lines=FFC_LINES, ext=False)
+            try:
+                for _ in range(6):
+                    level = _ffc_level(grab)
+                    extra = {"level": round(level, 3), "rate": round(rate)}
+                    if FFC_LEVEL_OK[0] <= level <= FFC_LEVEL_OK[1]: break
+                    # brightness ~ exposure = 1/rate, so scale the rate by level/target
+                    want = max(3500.0, min(float(CAM_MODE["max_hz"]), rate * max(level, 0.001) / FFC_TARGET))
+                    if abs(want - rate) < 1.0:
+                        raise RuntimeError("white panel %s at %.0f Hz (%d%% of full scale): %s"
+                            % ("too dark even" if level < FFC_LEVEL_OK[0] else "still clipping",
+                               rate, level * 100,
+                               "more light on the panel" if level < FFC_LEVEL_OK[0] else "less light, or stop down"))
+                    _ffc_cmd("ssf %.0f" % want, RAW_TIMEOUT["ssf"]); rate = want
+                    _ffc_bcast(step, "running", "level %d%% -> trying %.0f Hz" % (level * 100, rate), **extra)
+                else:
+                    raise RuntimeError("exposure did not settle (last %d%% at %.0f Hz) - is the light steady?" % (level * 100, rate))
+            finally:
+                grab.close()
+            _ffc_bcast(step, "running", "ccp at %.0f Hz, level %d%% - hold still (up to 2 min)" % (rate, level * 100), **extra)
+            _ffc_cmd("ccp", RAW_TIMEOUT["ccp"])
+            _ffc_cmd("wpc %d" % FFC_SET, RAW_TIMEOUT["wpc"])
+            note = "white (PRNU) calibrated at %.0f Hz, written to set %d" % (rate, FFC_SET)
+        elif step == "save":
+            _ffc_bcast(step, "running", "enabling the coefficients and saving the camera settings")
+            _ffc_cmd("epc 1 1", RAW_TIMEOUT["epc"])
+            _ffc_cmd("wus", RAW_TIMEOUT["wus"])
+            note = "coefficients on (FPN + PRNU), settings kept across power cycles"
+        else:
+            raise RuntimeError("unknown step %r" % step)
+        _ffc_bcast(step, "done", note, **extra)
+    except Exception as e:
+        _ffc_bcast(step, "failed", str(e), **extra)
+    finally:
+        if step == "flat":
+            # back to the working line rate whatever happened; the state
+            # broadcast lets the HMI's camera page show the truth
+            base = cached_state().get("line.rate")
+            if base: cam_cmd("ssf %.0f" % base)
+            _bcast(dict({"ev": "state"}, **read_state()))
+        board_lock.release()
+
+def start_ffc(step):
+    if step not in ("dark", "flat", "save"): return False, "unknown step %r" % step
+    if not board_lock.acquire("flat field: " + step):
+        return False, "board busy (%s)" % board_lock.status()
+    threading.Thread(target=ffc_step, args=(step,), daemon=True).start()
+    return True, "started"
+
 # Camera settings pushed on agent startup, overriding whatever the camera
 # powered up with. Forward scan direction is markedly sharper on the bench;
 # 48 TDI stages forward is the current best (supersedes the old 16-stage note).
@@ -588,6 +692,10 @@ def cam_client(conn, addr):
                 print("  set %s=%s -> ok=%s (%s)" % (key, val, ok, note))
                 conn.sendall((json.dumps({"ack": "set", "ok": ok, "key": key, "value": val, "note": note}) + "\n").encode())
                 if ok: _bcast(dict({"ev": "state"}, **read_state()))
+            elif cmd == "ffc":
+                step = str(m.get("step", ""))
+                ok, note = start_ffc(step)
+                conn.sendall((json.dumps({"ack": "ffc", "ok": ok, "step": step, "note": note}) + "\n").encode())
             elif cmd == "raw":
                 line = str(m.get("line", "")).strip()
                 ok, reply = raw_cmd(line)

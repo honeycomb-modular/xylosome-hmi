@@ -14,11 +14,14 @@ ChoiceList {
         { key: "homing.offset", value: "0.0°",  options: ["-1.0°", "-0.5°", "0.0°", "+0.5°", "+1.0°"] },
         { key: "axis.zero",     value: "set",    options: ["set", "clear"] },
         { key: "touch.cal",     value: "idle",   options: ["idle", "run"] },
-        { key: "backlash",      value: "0.00°" }
+        { key: "backlash",      value: "0.00°" },
+        // Sensor flat field (camera FPN/PRNU) — opens its own page.
+        { key: "flat.field",    value: "dark · white panel · save ▸", options: ["dark · white panel · save ▸"] }
     ]
 
     onRowActivated: function(idx) {
         var key = calList.rowKey(idx)
+        if (key === "flat.field") { calList.StackView.view.push(Qt.resolvedUrl("ScreenFlatField.qml")); return }
         if (key === "tdi.sync")  Calib.setSyncEnabled(calList.rowValue(idx) === "on")
         if (key === "lines/deg") Calib.setSyncLinesPerDeg(parseFloat(calList.rowValue(idx)))
     }

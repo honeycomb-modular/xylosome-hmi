@@ -86,9 +86,15 @@ void CameraLink::onReadyRead() {
 
 void CameraLink::handleMessage(const QJsonObject &m) {
     if (m.contains(QStringLiteral("ack"))) {
-        if (!m.value(QStringLiteral("ok")).toBool(true))
+        const bool ok = m.value(QStringLiteral("ok")).toBool(true);
+        if (!ok)
             qWarning() << "[camera] nack:" << m.value(QStringLiteral("key")).toString()
                        << m.value(QStringLiteral("note")).toString();
+        // A refused calibration step (board busy, unknown step) never produces
+        // an "ffc" event, so surface the refusal as its failure.
+        if (!ok && m.value(QStringLiteral("ack")).toString() == QLatin1String("ffc"))
+            emit ffcEvent(m.value(QStringLiteral("step")).toString(), QStringLiteral("failed"),
+                          m.value(QStringLiteral("note")).toString(), 0.0, 0.0);
         return;
     }
 
@@ -111,6 +117,13 @@ void CameraLink::handleMessage(const QJsonObject &m) {
                        m.value(QStringLiteral("lines")).toInt(),
                        m.value(QStringLiteral("gainDb")).toDouble(0.0));
     }
+    else if (ev == QLatin1String("ffc")) {
+        emit ffcEvent(m.value(QStringLiteral("step")).toString(),
+                      m.value(QStringLiteral("state")).toString(),
+                      m.value(QStringLiteral("note")).toString(),
+                      m.value(QStringLiteral("level")).toDouble(0.0),
+                      m.value(QStringLiteral("rate")).toDouble(0.0));
+    }
     else if (ev == QLatin1String("welcome")) {
         m_model = m.value(QStringLiteral("camera")).toString();
         qInfo() << "[camera] agent" << m.value(QStringLiteral("version")).toString() << m_model;
@@ -128,4 +141,9 @@ void CameraLink::setParam(const QString &key, const QVariant &value) {
 
 void CameraLink::refresh() {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("get")}});
+}
+
+void CameraLink::ffc(const QString &step) {
+    sendJson({{QStringLiteral("cmd"),  QStringLiteral("ffc")},
+              {QStringLiteral("step"), step}});
 }

@@ -1232,3 +1232,28 @@ nothing is broken today; the one-line fix is to apply `mean` only when
 Deployed nowhere yet. Freerun has never driven the servo — the first run wants
 a small FOV and a short duration, and `~/.xsession-errors` read afterwards
 (a green QML build proves nothing).
+
+## 2026-10-23 — settings ▸ calibration ▸ flat field: the white-panel calibration as three buttons
+
+The September sensor-banding fix (checklist §7: `ccf` lens capped, `ccp` on a
+flat target, `wfc 1`/`wpc 1`, `epc 1 1`, `wus`) was typed by hand through the
+agent's raw pass-through. It has to be redone whenever direction, stages, gain
+or aperture change, so it is now a page on the HMI.
+
+- **Agent** (`capture/capture_agent.py`): `{"cmd":"ffc","step":"dark"|"flat"|"save"}`
+  on the camera bus. Each step runs in a thread holding the board lock (a scan
+  or LIVE meanwhile is refused, as the raw `ccf`/`ccp` already were) and
+  broadcasts `{"ev":"ffc",step,state,note,level,rate}`. `flat` grabs 256
+  free-run lines, scales `ssf` until the 99.9th-percentile column mean sits in
+  70–88% of full scale (target 80%, what the September run did by hand at
+  15000 Hz), runs `ccp`, writes set 1 and restores the line rate. A camera
+  `Warning`/`Error` prompt or silence fails the step with the camera's words.
+- **HMI**: `CameraLink::ffc(step)` + `ffcEvent`; `ScreenFlatField.qml` (three
+  rows with [run]/[run]/[save], result per row, status line); reached from
+  settings ▸ calibration ▸ `flat.field` (the settings menu itself is full at
+  seven rows). `capture/PROTOCOL.md` documents the command.
+- Calibrates the camera **as it stands** — the page shows direction · stages ·
+  gain · line rate so that is visible. Current direction only.
+- Needs the agent restarted (elevated, Stop then Start with a pause) before the
+  buttons do anything; until then the HMI shows "failed: ..." with the agent's
+  `{"ack":"ffc","ok":false}` — an old agent answers that for any unknown cmd.
