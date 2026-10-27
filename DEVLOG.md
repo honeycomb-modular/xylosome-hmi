@@ -1257,3 +1257,12 @@ or aperture change, so it is now a page on the HMI.
 - Needs the agent restarted (elevated, Stop then Start with a pause) before the
   buttons do anything; until then the HMI shows "failed: ..." with the agent's
   `{"ack":"ffc","ok":false}` — an old agent answers that for any unknown cmd.
+
+## 2026-10-27 — camera analog gain reset to 0 by hand
+
+The camera's analog tap gain (`sag`, "Analog Gain (dB)", all taps) was reset
+to **0 dB** by hand through PuTTY on **COM3 @ 9600 baud**, the Camera Link
+serial port. COM3 is single-occupant, so this was done outside the capture
+agent; the agent's cached gain is only refreshed on its next `gcp` read, so
+restart the agent (elevated, Stop then Start with a pause) before trusting the
+gain the HMI/Suite report.
