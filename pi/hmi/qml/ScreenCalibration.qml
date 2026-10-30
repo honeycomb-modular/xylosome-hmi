@@ -10,8 +10,10 @@ ChoiceList {
     title: "calibration"
     entries: [
         { key: "tdi.sync",      value: Calib.syncEnabled ? "on" : "off", options: ["off", "on"] },
+        // 0.1 steps: a 96-stage sweep pins the value to +-0.2 (tdi_sync_ratio.py),
+        // and 0.1 lines/deg is 0.07 px of smear at 96 stages.
         { key: "lines/deg",     value: Calib.syncLinesPerDeg.toFixed(1),
-          min: 100, max: 250, step: 0.5, unit: "" },
+          min: 100, max: 250, step: 0.1, unit: "" },
         { key: "homing.offset", value: "0.0°",  options: ["-1.0°", "-0.5°", "0.0°", "+0.5°", "+1.0°"] },
         { key: "axis.zero",     value: "set",    options: ["set", "clear"] },
         { key: "touch.cal",     value: "idle",   options: ["idle", "run"] },
