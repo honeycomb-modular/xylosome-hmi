@@ -507,11 +507,25 @@ ApplicationWindow {
             }
         }
         Menu {
+            // Session: what describes or disposes of the selected session.
+            // Anything that PRODUCES something from it lives under Tools.
             title: qsTr("&Session")
-            MenuItem { text: qsTr("Rate\t1–5 · 0 clears"); enabled: false }
-            MenuItem {
+            Menu {
+                id: rateMenu
+                title: qsTr("Rate")
+                enabled: strip.currentItem !== null
+                readonly property int rating: strip.currentItem ? strip.currentItem.sRating : -1
+                StateItem { text: "★★★★★\t5"; isOn: rateMenu.rating ===5; onTriggered: Sessions.setRating(strip.currentIndex, 5) }
+                StateItem { text: "★★★★\t4";  isOn: rateMenu.rating ===4; onTriggered: Sessions.setRating(strip.currentIndex, 4) }
+                StateItem { text: "★★★\t3";   isOn: rateMenu.rating ===3; onTriggered: Sessions.setRating(strip.currentIndex, 3) }
+                StateItem { text: "★★\t2";    isOn: rateMenu.rating ===2; onTriggered: Sessions.setRating(strip.currentIndex, 2) }
+                StateItem { text: "★\t1";     isOn: rateMenu.rating ===1; onTriggered: Sessions.setRating(strip.currentIndex, 1) }
+                StateItem { text: qsTr("Unrated\t0"); isOn: rateMenu.rating ===0; onTriggered: Sessions.setRating(strip.currentIndex, 0) }
+            }
+            StateItem {
                 text: qsTr("Reject\tX")
                 enabled: strip.currentItem !== null
+                isOn: !!(strip.currentItem && strip.currentItem.sRejected)
                 onTriggered: Sessions.setRejected(strip.currentIndex,
                                                   !(strip.currentItem && strip.currentItem.sRejected))
             }
@@ -521,6 +535,35 @@ ApplicationWindow {
                 onTriggered: noteField.beginEdit()
             }
             MenuSeparator {}
+            MenuItem {
+                text: qsTr("Delete now…")
+                enabled: strip.currentItem !== null
+                         && strip.currentItem.sState !== "live"
+                onTriggered: root.confirmMode = 1
+            }
+        }
+        // Tools: operations on the selected session that produce something
+        // new - a merge, fresh proxies, a hand-off to an editor. Each runs
+        // on the selection only, never on a scan still being captured. In
+        // workflow order: merges, proxies, editors. New tools (metadata
+        // infuser, ...) go in here.
+        Menu {
+            id: toolsMenu
+            title: qsTr("&Tools")
+            readonly property bool haveSession: strip.currentItem !== null
+                                                && strip.currentItem.sState !== "live"
+            MenuItem {
+                text: Sessions.colourMergeBusy
+                      ? qsTr("Merging R/G/B…")
+                      : qsTr("Merge R/G/B → colour TIFF")
+                enabled: !Sessions.hdrMergeBusy && !Sessions.colourMergeBusy && root.canMergeRGB
+                onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
+            }
+            StateItem {
+                text: qsTr("    Discard R/G/B channel TIFFs after merge")
+                isOn: root.discardAfterMerge
+                onTriggered: root.discardAfterMerge = !root.discardAfterMerge
+            }
             // Enabled only on a scan that xylod told us belongs to a bracket
             // set — there is no guessing from the files here.
             MenuItem {
@@ -532,35 +575,17 @@ ApplicationWindow {
                          && strip.currentItem.sHdrSet !== ""
                 onTriggered: Sessions.mergeHdrSet(strip.currentIndex)
             }
-            MenuItem {
-                text: Sessions.colourMergeBusy
-                      ? qsTr("Merging R/G/B…")
-                      : qsTr("Merge R/G/B → colour TIFF")
-                enabled: !Sessions.hdrMergeBusy && !Sessions.colourMergeBusy && root.canMergeRGB
-                onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
-            }
+            MenuSeparator {}
             MenuItem {
                 text: qsTr("Rebuild proxies (gamma tiles)")
-                enabled: strip.currentItem !== null && strip.currentItem.sState !== "live"
+                enabled: toolsMenu.haveSession
                 onTriggered: Sessions.rebuildProxies(strip.currentIndex)
-            }
-            MenuItem {
-                text: qsTr("Open in Photoshop\tP")
-                enabled: root.canPhotoshop
-                onTriggered: root.openInPhotoshop()
-            }
-            MenuItem {
-                text: qsTr("Discard R/G/B channel TIFFs after merge")
-                checkable: true
-                checked: root.discardAfterMerge
-                onTriggered: root.discardAfterMerge = !root.discardAfterMerge
             }
             MenuSeparator {}
             MenuItem {
-                text: qsTr("Delete now…")
-                enabled: strip.currentItem !== null
-                         && strip.currentItem.sState !== "live"
-                onTriggered: root.confirmMode = 1
+                text: qsTr("Open in Photoshop\tP")
+                enabled: root.canPhotoshop && toolsMenu.haveSession
+                onTriggered: root.openInPhotoshop()
             }
         }
         Menu {
