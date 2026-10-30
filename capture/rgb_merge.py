@@ -1,7 +1,7 @@
 """Merge one colour scan's R/G/B passes into a colour image.
 
-usage: python -I rgb_merge.py <capture dir> <seq> <out dir> [--align] [--denoise-blue[=K]]
-       python -I rgb_merge.py --files R.tif G.tif B.tif --out merged.tif [--jpg] [--align] [--denoise-blue[=K]] [--denoise-chroma[=K]]
+usage: python -I rgb_merge.py <capture dir> <seq> <out dir> [--align] [--destripe] [--deband-rows] [--denoise-blue[=K]] [--denoise-chroma[=K]]
+       python -I rgb_merge.py --files R.tif G.tif B.tif --out merged.tif [--jpg] [same flags]
 
 The second form is what the Review Suite calls (Session > Merge R/G/B): explicit
 pass files, one output TIFF, no JPEG/preview unless --jpg (the Suite builds its
@@ -11,15 +11,38 @@ Example: python -I capture/rgb_merge.py D:/capture 2227 D:/merged --align
 
 Each pass becomes its own channel. One shared white point and one gamma for
 all three channels, so the image shows the real balance between the passes
-(no per-channel stretch). Rows are trimmed to the shortest pass (passes can
-differ by a few lines). Writes:
+(no per-channel stretch). Writes:
   scan_<seq>_RGB16.tif   full resolution, 16-bit linear
   scan_<seq>_RGB.jpg     full resolution, 8-bit, gamma 2.2, upright + unmirrored
   scan_<seq>_RGB_preview.png  preview, 2048 px on the short side, upright
 
---align registers G and B onto R (rgb_align.py): slow passes drop lines
-evenly (EL2521 frequency step, 2026-10-16), so blue can be ~1% short along
-the scan. The 16-bit TIFF stays in raw capture orientation.
+THE DEFAULT MERGE IS PURE: the three passes are stacked as captured, trimmed
+to their common size, and nothing is estimated from the picture. Every step
+that derives a correction from the image content is opt-in by flag, so a
+plain merge can never print one part of the scene onto another (scan 2604,
+2026-10-29: the destripe took a streaked block in the middle of the scan for
+the sensor's column pattern and subtracted it from the whole frame).
+
+Line counts: a slow (exposure-matched) pass drops lines evenly - the EL2521
+frequency step truncates, so blue came back 1.06% short on scan 2233 (17835
+vs 18026 lines) and its image was compressed along the scan: 25 px off at
+the start of the frame, 175 px at the end. A pass that is short by more than
+0.1% is resampled along the scan to red's line count (a geometric fact of
+the trigger rates, not a guess from the picture). A difference of a line or
+two is trigger-count rounding, not line dropping, so those passes are
+trimmed to the shortest instead: resampling 11107 lines onto 11106 would
+blend neighbouring lines across the middle of the frame for nothing.
+
+--align registers G and B onto R (rgb_align.py): the shifts are measured on
+the picture, but the only thing done with them is resampling the pass onto
+red's grid. The 16-bit TIFF stays in raw capture orientation.
+
+--destripe subtracts each channel's sensor column pattern (dark-current
+offsets along the scan on a slow pass) and brings the three black floors to
+the lowest one. Both are estimated from the image, see column_pattern below
+for how that is kept from reading the scene. Off by default: a measured
+dark frame (settings > calibration > flat.field) is the right source for
+this, not the picture.
 
 --deband-rows removes line-to-line exposure jitter: every scan line is one
 trigger period, and a period that alternates by one EL2521 step (the word
@@ -85,52 +108,68 @@ for f in "RGB":
     chan[f] = img[np.any(img > 0, axis=1)]          # drop unfilled rows
     print(f"{f}: {os.path.basename(paths[f])} -> {chan[f].shape}")
 
-# Line-count match. A slow (exposure-matched) pass drops lines evenly — the
-# EL2521 frequency step truncates, so blue came back 1.06% short on scan 2233
-# (17835 vs 18026 lines) and its image was compressed along the scan: 25 px
-# off at the start of the frame, 175 px at the end. Trimming every pass to the
-# shortest hid that. The drop is uniform, so the exact correction is to
-# resample each pass along the scan to red's line count; the registration
-# below then only has the odd pixel left to find.
+# Line-count match (see the docstring): resample a pass that is short by more
+# than 0.1% - uniform line dropping on a slow pass - onto red's line count;
+# otherwise trim all three to the shortest.
 rowsR = chan["R"].shape[0]
 cols = min(c.shape[1] for c in chan.values())
 for f in "GB":
     n = chan[f].shape[0]
-    if n != rowsR:
+    if abs(n - rowsR) > 0.001 * rowsR:
         print(f"{f}: {n} lines -> resampled to red's {rowsR} ({100.0 * (rowsR - n) / n:+.2f}%)")
         chan[f] = cv2.resize(chan[f][:, :cols], (cols, rowsR), interpolation=cv2.INTER_LINEAR)
-rows = rowsR
+rows = min(c.shape[0] for c in chan.values())
+if any(c.shape[0] != rows for c in chan.values()):
+    print(f"lines trimmed to the shortest pass: " + ", ".join(f"{f} {chan[f].shape[0]}" for f in "RGB") + f" -> {rows}")
+for f in "RGB":
+    chan[f] = chan[f][:rows, :cols]
 
-# Destripe: slow passes (the exposure-matched blue) integrate each line for
-# longer, so every sensor column's dark current adds its own offset — stripes
-# along the scan and a lifted black. Two parts, both additive (subtraction,
-# never a gain):
-#  · the column PATTERN: each column's offset relative to its neighbours.
-#    Estimated as the median over all lines of (pixel - the row's local mean
-#    across 31 columns). Scene content is smooth across neighbouring columns
-#    and changes along the scan, so the median keeps only the fixed pattern.
-#    It used to be each column's 2nd percentile, which needs dark pixels in
-#    every column: on a bright wall (scan 2245) that was wall texture, and
-#    subtracting it printed the wall's column minima as bands in the merge.
+
+# Destripe (--destripe only): slow passes (the exposure-matched blue)
+# integrate each line for longer, so every sensor column's dark current adds
+# its own offset - stripes along the scan and a lifted black. Two parts, both
+# additive (subtraction, never a gain):
+#  · the column PATTERN: each column's offset relative to its neighbours,
+#    (pixel - the row's local mean across 31 columns), reduced over the lines.
+#    A sensor offset is the same on every line of the scan; anything the scene
+#    contributes is not. So the scan is cut into 16 bands along its length,
+#    each band's median taken per column, and the column gets the band value
+#    of the 4th-smallest magnitude (the 25th percentile of |value| across the
+#    bands): a real offset shows up in all 16 bands and survives, a feature
+#    that sits in up to three quarters of the scan does not. The plain median
+#    over all lines did not have that protection: on scan 2604 a streaked
+#    block covering half the scan WAS the median, and its streaks were
+#    subtracted from the trees and grass around it (±2000 counts; the band
+#    estimate on the same scan is ±200). Before that it was each column's 2nd
+#    percentile, which needs dark pixels in every column: on a bright wall
+#    (scan 2245) that was wall texture. The result is also clamped to 8 MADs
+#    of itself; a dark-current offset is tens of counts, never thousands.
 #  · the channel's lifted black: its 2nd percentile, brought down to the
 #    lowest channel's floor.
-def column_pattern(img):
+def column_pattern(img, bands=16, q=0.25):
     sub = img[::max(1, img.shape[0] // 4000)].astype(np.float32)   # ~4000 lines is plenty
-    local = cv2.blur(sub, (31, 1))                                   # mean across 31 columns, per row
-    return np.median(sub - local, axis=0)
+    res = sub - cv2.blur(sub, (31, 1))                               # minus the mean across 31 columns, per row
+    per = np.stack([np.median(b, axis=0) for b in np.array_split(res, bands, axis=0)])
+    order = np.argsort(np.abs(per), axis=0)
+    k = int(q * (bands - 1))
+    pat = np.take_along_axis(per, order[k:k + 1], axis=0)[0]
+    mad = 1.4826 * float(np.median(np.abs(pat - np.median(pat))))
+    return np.clip(pat, -8.0 * mad, 8.0 * mad)
 
-offs = {}
-for f in "RGB":
-    img = chan[f][:rows, :cols]
-    pat = column_pattern(img)
-    offs[f] = float(np.percentile(img[::8, ::8], 2))
-    print(f"{f}: column pattern p5..p95 {np.percentile(pat, 5):+.0f}..{np.percentile(pat, 95):+.0f} counts, "
-          f"black (p2) {offs[f]:.0f}")
-    chan[f] = (img.astype(np.float32) - pat[None, :].astype(np.float32), None)
-floor = min(offs.values())
-for f in "RGB":
-    c = chan[f][0] - np.float32(offs[f] - floor)
-    chan[f] = np.clip(c, 0, 65535).astype(np.uint16)
+if "--destripe" in sys.argv:
+    offs = {}
+    for f in "RGB":
+        img = chan[f]
+        pat = column_pattern(img)
+        offs[f] = float(np.percentile(img[::8, ::8], 2))
+        print(f"{f}: column pattern p5..p95 {np.percentile(pat, 5):+.0f}..{np.percentile(pat, 95):+.0f} counts, "
+              f"black (p2) {offs[f]:.0f}")
+        chan[f] = img.astype(np.float32) - pat[None, :]
+    floor = min(offs.values())
+    for f in "RGB":
+        c = chan[f] - np.float32(offs[f] - floor)
+        chan[f] = np.clip(c, 0, 65535).astype(np.uint16)
+    print(f"black floors brought to {floor:.0f}")
 
 r, g, b = (chan[f] for f in "RGB")
 

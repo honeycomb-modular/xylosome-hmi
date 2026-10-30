@@ -1158,8 +1158,12 @@ void SessionStore::mergeColour(int row, bool discardChannels)
                                        QDir::toNativeSeparators(files[1]),
                                        QDir::toNativeSeparators(files[2]),
                                        QStringLiteral("--out"), QDir::toNativeSeparators(outAbs),
-                                       QStringLiteral("--align"), QStringLiteral("--deband-rows"),
-                                       QStringLiteral("--denoise-blue"), QStringLiteral("--denoise-chroma") });
+                                       // registration only: the merge must not derive
+                                       // tone or noise corrections from the picture
+                                       // (scan 2604: the destripe printed one part of
+                                       // the scene onto the rest). Destripe, row deband
+                                       // and the denoisers stay available by flag.
+                                       QStringLiteral("--align") });
     m_merge->setProcessChannelMode(QProcess::MergedChannels);
     connect(m_merge, &QProcess::readyReadStandardOutput, this, [this] {
         m_mergeOut += QString::fromLocal8Bit(m_merge->readAllStandardOutput());

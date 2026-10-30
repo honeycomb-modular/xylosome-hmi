@@ -162,8 +162,9 @@ public:
     bool hdrMergeBusy() const { return m_merge != nullptr && m_mergeUuid.isEmpty(); }
 
     // ── colour merge ──────────────────────────────────────────────────────────
-    // Runs capture/rgb_merge.py over the session's R, G and B passes (destripe,
-    // registration, blue denoise) into <captureDir>/merged/scan_NNNN_RGB16.tif,
+    // Runs capture/rgb_merge.py over the session's R, G and B passes (pure
+    // stack plus registration, nothing estimated from the picture) into
+    // <captureDir>/merged/scan_NNNN_RGB16.tif,
     // then adds it to the session as an "RGB" pass so it is ingested, shown and
     // deleted like any other image. discardChannels deletes the three channel
     // TIFFs (and their proxies) once the merge is in; the pass records stay,
