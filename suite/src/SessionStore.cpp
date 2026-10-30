@@ -1325,7 +1325,7 @@ bool SessionStore::photoshopAvailable() const
     return !photoshopPath().isEmpty();
 }
 
-bool SessionStore::openInPhotoshop(int row, int passPos)
+bool SessionStore::openInPhotoshop(int row, int passPos, const QVariantMap &view)
 {
     if (row < 0 || row >= m_sessions.size())
         return false;
@@ -1338,6 +1338,37 @@ bool SessionStore::openInPhotoshop(int row, int passPos)
         return false;
     }
     const QString file = QDir::toNativeSeparators(passAbsPath(s.passes[passPos]));
+
+    // The profile view travels with the file as an embedded ICC profile
+    // (see the header). Synchronous: the tool appends a few hundred KB to
+    // a TIFF and is back in well under a second; a failure is logged and
+    // the file still opens, just without the view.
+    if (!view.isEmpty() && s.passes[passPos].filter == QLatin1String("RGB")) {
+        const QString tool = toolPath(QStringLiteral("view_icc.py"));
+        const QString profile = m_captureDir + QStringLiteral("/.xylosome/colour_profile.json");
+        if (tool.isEmpty() || !QFile::exists(profile)) {
+            qWarning() << "[photoshop] view_icc.py or colour_profile.json missing - opening without the view";
+        } else {
+            QStringList py = pythonCommand();
+            QProcess icc;
+            icc.setProgram(py.takeFirst());
+            icc.setArguments(py + QStringList{
+                QStringLiteral("-I"), tool, file,
+                QStringLiteral("--profile"), QDir::toNativeSeparators(profile),
+                QStringLiteral("--black"), view.value(QStringLiteral("black"), QStringLiteral("chart")).toString(),
+                QStringLiteral("--toe"), QString::number(view.value(QStringLiteral("toe"), 0.0).toDouble(), 'f', 5),
+                QStringLiteral("--offset"), QString::number(view.value(QStringLiteral("offset"), 0.0).toDouble(), 'f', 5),
+                QStringLiteral("--trim-thirds"), QString::number(view.value(QStringLiteral("trimThirds"), 0).toInt()),
+                QStringLiteral("--exposure"), view.value(QStringLiteral("exposure"), QStringLiteral("captured")).toString() });
+            icc.setProcessChannelMode(QProcess::MergedChannels);
+            icc.start();
+            if (!icc.waitForFinished(30000) || icc.exitStatus() != QProcess::NormalExit || icc.exitCode() != 0)
+                qWarning().noquote() << "[photoshop] view_icc.py failed - opening without the view:"
+                                     << QString::fromLocal8Bit(icc.readAllStandardOutput()).trimmed();
+            else
+                qInfo().noquote() << "[photoshop]" << QString::fromLocal8Bit(icc.readAllStandardOutput()).trimmed();
+        }
+    }
     qInfo() << "[photoshop]" << file;
     return QProcess::startDetached(exe, { file });
 }

@@ -173,7 +173,13 @@ public:
     // Hand the shown pass's TIFF (channel or merged) to Photoshop, detached.
     // passPos is the position in the session's pass list (what the UI shows).
     // external/photoshop in the settings overrides the install lookup.
-    Q_INVOKABLE bool openInPhotoshop(int row, int passPos);
+    // view (optional, merged RGB passes only): the Suite's profile view as
+    // Main.qml shows it - black ("chart"|"sensor"), toe, offset, trimThirds,
+    // exposure ("captured"|"chart"). When given, capture/view_icc.py first
+    // embeds that view in the TIFF as an ICC profile, so Photoshop renders
+    // the file exactly as the Suite does instead of assuming its working
+    // space. Pixels untouched. Without it the TIFF is handed over as is.
+    Q_INVOKABLE bool openInPhotoshop(int row, int passPos, const QVariantMap &view = {});
     // The viewing colour profile fitted from a ColorChecker scan
     // (capture/colour_profile.py -> <captureDir>/.xylosome/colour_profile.json):
     // gain[3], exposure, pedestal[3] (counts of 65535), matrix[3][3]. Empty

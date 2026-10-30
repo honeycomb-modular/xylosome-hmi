@@ -190,12 +190,18 @@ ApplicationWindow {
     }
     Shortcut { enabled: root.keysLive; sequences: ["K"]; onActivated: root.wbOn = !root.wbOn }
     // P: the shown image (a channel pass or the merge) in Photoshop — the TIFF
-    // itself, 16-bit, raw orientation.
+    // itself, 16-bit, raw orientation. With the profile view on, the view
+    // (black point, toe, offset, exposure, trim) goes along embedded as an
+    // ICC profile, so Photoshop shows the same picture the Suite does.
     readonly property bool canPhotoshop: strip.currentItem !== null && root.shownPass >= 0
                                          && strip.currentItem.sPassPaired[root.shownPass]
     function openInPhotoshop() {
         if (!root.canPhotoshop) return
-        if (!Sessions.openInPhotoshop(strip.currentIndex, root.shownPass)) {
+        const view = root.cpActive ? {
+            black: root.cpChartBlack && !!root.colourProfile.chartBlack ? "chart" : "sensor",
+            toe: root.cpToe, offset: root.cpBlack, trimThirds: root.cpTrimThirds,
+            exposure: root.cpAsCaptured ? "captured" : "chart" } : {}
+        if (!Sessions.openInPhotoshop(strip.currentIndex, root.shownPass, view)) {
             root.reclaimText = qsTr("Photoshop not found — set external/photoshop in the settings")
             reclaimTimer.restart()
         }

@@ -124,7 +124,7 @@ REM Same for the side tools. Refreshing only the exe left a stale hdr_merge.py
 REM here on 2026-08-11: the Suite ran the packaged copy, which still had a bug
 REM already fixed in the repo, and the merge died 8 seconds in.
 if exist "$PSScriptRoot\suite\tools\hdr_merge.py" robocopy "$PSScriptRoot\suite\tools" "%~dp0tools" hdr_merge.py /XO /NJH /NJS /NDL /NFL /NP >nul
-if exist "$PSScriptRoot\capture\rgb_merge.py" robocopy "$PSScriptRoot\capture" "%~dp0tools" rgb_merge.py rgb_align.py /XO /NJH /NJS /NDL /NFL /NP >nul
+if exist "$PSScriptRoot\capture\rgb_merge.py" robocopy "$PSScriptRoot\capture" "%~dp0tools" rgb_merge.py rgb_align.py view_icc.py /XO /NJH /NJS /NDL /NFL /NP >nul
 start "" "%~dp0xylosome-suite.exe" --fullscreen
 REM Pi clock + metadata SVG sync (best effort; the Suite runs fine without it)
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0pi-metadata.ps1"
@@ -140,7 +140,9 @@ Copy-Item "$PSScriptRoot\suite\tools\hdr_merge.py" "$dist\tools\" -Force
 # Colour merge (Session > Merge R/G/B) + the registration module it imports.
 Copy-Item "$PSScriptRoot\capture\rgb_merge.py" "$dist\tools\" -Force
 Copy-Item "$PSScriptRoot\capture\rgb_align.py" "$dist\tools\" -Force
-Write-Host "tools -> hdr_merge.py rgb_merge.py rgb_align.py"
+# Open in Photoshop embeds the profile view in the TIFF as an ICC profile.
+Copy-Item "$PSScriptRoot\capture\view_icc.py" "$dist\tools\" -Force
+Write-Host "tools -> hdr_merge.py rgb_merge.py rgb_align.py view_icc.py"
 
 # ── desktop shortcut ──────────────────────────────────────────────────────────
 $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Xylosome Suite.lnk"
