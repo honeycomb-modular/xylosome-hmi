@@ -123,6 +123,22 @@ ApplicationWindow {
     Shortcut { enabled: root.keysLive; sequences: ["}"]; onActivated: root.cpBlackSteps = Math.min(20, root.cpBlackSteps + 1) }
     Shortcut { enabled: root.keysLive; sequences: ["|"]; onActivated: root.cpBlackSteps = 0 }
     readonly property real cpBlack: root.cpBlackSteps * 0.005
+    // Black toe: the black point's hard clip softened into a power toe of this
+    // width (linear, steps of 0.25% of full scale; , and . , / resets). The
+    // chart-black point alone cuts every shadow darker than the patch (3.1%
+    // reflectance, sRGB 50) to zero; the sensor-zero point shows the scene's
+    // own veiling glare as a grey floor. The toe keeps the deep shadows black
+    // and every gradation below the patch in order: nothing clipped, nothing
+    // lifted. Default 1%. See shaders/wb.frag.
+    property int cpToeSteps: 4
+    Settings {
+        category: "view"
+        property alias cpToeSteps: root.cpToeSteps
+    }
+    Shortcut { enabled: root.keysLive; sequences: [","]; onActivated: root.cpToeSteps = Math.max(0, root.cpToeSteps - 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["."]; onActivated: root.cpToeSteps = Math.min(16, root.cpToeSteps + 1) }
+    Shortcut { enabled: root.keysLive; sequences: ["/"]; onActivated: root.cpToeSteps = 4 }
+    readonly property real cpToe: root.cpToeSteps * 0.0025
     function fmtTrim() {
         const t = root.cpTrimThirds
         if (t === 0) return "0"
@@ -440,6 +456,11 @@ ApplicationWindow {
                 onTriggered: root.cpTrimThirds = 0
             }
             MenuItem {
+                text: qsTr("Profile black toe %1%\t, .   / resets").arg((root.cpToe * 100).toFixed(2))
+                enabled: root.cpAvailable
+                onTriggered: root.cpToeSteps = 4
+            }
+            MenuItem {
                 text: qsTr("Profile black +%1%\t{ }   | resets").arg((root.cpBlack * 100).toFixed(1))
                 enabled: root.cpAvailable
                 onTriggered: root.cpBlackSteps = 0
@@ -748,6 +769,7 @@ ApplicationWindow {
                       ? strip.currentItem.sPassDims[root.shownPass].h : 0
                 colourMatrix: root.viewMatrix
                 pedestal: root.viewPedestal
+                knee: root.cpActive ? root.cpToe : 0.0
                 gammaOn: root.cpActive
                 gammaIn: (strip.currentItem && root.shownPass >= 0)
                          ? strip.currentItem.sPassProxyGamma[root.shownPass] : 1.0

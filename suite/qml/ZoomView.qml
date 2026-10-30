@@ -20,10 +20,13 @@ Item {
 
     // Viewer colour pipeline, applied to every tile by a small fragment shader
     // (shaders/wb.frag) — live, never touching the proxies or the TIFF:
-    // out = srgb?( cm * max(in - pedestal, 0) ). cm carries white balance,
+    // out = srgb?( cm * toe(in - pedestal) ). cm carries white balance,
     // the chart-fitted 3x3 and exposure; identity + no gamma = off, no layer.
+    // knee (linear, fraction of full scale) softens the black point into a
+    // power toe below pedestal + knee; 0 = hard clip (see wb.frag).
     property matrix4x4 colourMatrix: Qt.matrix4x4()
     property vector4d pedestal: Qt.vector4d(0, 0, 0, 0)
+    property real knee: 0.0
     property bool gammaOn: false
     property real gammaIn: 1.0          // the tile's encoding exponent (2.2 new, 1.0 old)
     property bool colourActive: false
@@ -196,6 +199,7 @@ Item {
                         property vector4d pedestal: view.pedestal
                         property real gammaOn: view.gammaOn ? 1.0 : 0.0
                         property real gammaIn: view.gammaIn
+                        property real knee: view.knee
                         fragmentShader: "qrc:/qt/qml/XylosomeSuite/shaders/wb.frag.qsb"
                     }
                 }
