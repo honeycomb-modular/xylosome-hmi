@@ -1,11 +1,17 @@
-# Usage: python tdi_sync_score.py round1.json [round2.json ...]   (outputs of tdi_sync_sweep.py)
+# Usage: python tdi_sync_score.py round1.json [round2.json ...] [--fit]   (outputs of tdi_sync_sweep.py)
 # TDI sync score. Each scan is box-resampled along the scan axis onto one common
 # angular grid (T lines/deg, below every tested value) so a stretched image is not
 # mistaken for a blurred one. Then along-scan detail energy is divided by
 # across-sensor detail energy from the SAME image: TDI smear only acts along the
 # scan, so the across term cancels scene, focus and exposure.
+# --fit: quadratic through the best point and its neighbours (the scores
+# nearest the peak), peak lines/deg with a 68% bootstrap interval, and the
+# smear that interval means at the sweep's stage count - the number to put
+# in settings > calibration > tdi.sync.
 import json, struct, sys
 import numpy as np
+argv = [a for a in sys.argv[1:] if not a.startswith("--")]
+do_fit = "--fit" in sys.argv
 T = 140.0
 CAP_DIR = "D:/capture/"
 def tiff(fn):
@@ -41,7 +47,7 @@ def score(fn, lpd, bands=12):
         bs.append(float("nan") if min(na, nc) < 5000 else (ga2[:, sl].sum() / na) / (gc2[:, sl].sum() / nc))
     return tot, bs, float(ok.mean())
 res = []
-for path in sys.argv[1:]:
+for path in argv:
     res += json.load(open(path))
 res.sort(key=lambda r: r["lpd"])
 print("lpd     file                score   valid  per-band (12 x 12 deg)")
@@ -49,3 +55,28 @@ for r in res:
     tot, bs, v = score(r["file"], r["lpd"])
     r["score"] = tot
     print("%-7.1f %-19s %.3f   %3.0f%%   %s" % (r["lpd"], r["file"], tot, 100 * v, " ".join("  -  " if b != b else "%.2f" % b for b in bs)))
+
+if do_fit and len(res) >= 4:
+    x = np.array([r["lpd"] for r in res]); y = np.array([r["score"] for r in res])
+    # the peak region: the best point and everything within 40% of its score
+    sel = y >= 0.6 * y.max()
+    if sel.sum() < 4: sel = np.argsort(y)[-4:]
+    xs, ys = x[sel], y[sel]
+    def peak(xs, ys):
+        a, b, c = np.polyfit(xs, ys, 2)
+        return -b / (2 * a) if a < 0 else float("nan")
+    p0 = peak(xs, ys)
+    rng = np.random.default_rng(0)
+    boots = []
+    for _ in range(2000):
+        i = rng.integers(0, len(xs), len(xs))
+        if len(set(i)) >= 3:
+            p = peak(xs[i], ys[i])
+            if p == p: boots.append(p)
+    lo, hi = np.percentile(boots, [16, 84]) if boots else (float("nan"), float("nan"))
+    stages = next((r.get("stages") for r in res if r.get("stages")), None)
+    print("\npeak %.2f lines/deg  (68%% %.2f .. %.2f, from %d points %.1f..%.1f)" % (p0, lo, hi, sel.sum(), xs.min(), xs.max()))
+    if stages:
+        half = max(abs(hi - p0), abs(p0 - lo)) / p0
+        print("at %d stages that uncertainty is %.2f px of smear; a 1%% error would be %.1f px" % (stages, stages * half, stages * 0.01))
+    print("-> settings > calibration > tdi.sync: lines/deg = %.1f" % p0)
