@@ -366,6 +366,19 @@ ApplicationWindow {
     }
 
     // ── Menus (every item shows its key — the menu is the cheat sheet)
+    // A menu item whose check mark mirrors a piece of viewer state. A plain
+    // `checked: root.x` binding dies the first time the item is clicked (the
+    // click writes `checked` imperatively), after which the key that changes
+    // the same state no longer moves the mark; a Binding survives the click.
+    // For a radio pair isOn is true on one of the two items; onTriggered sets
+    // the state outright, and the mark is re-read after the click so choosing
+    // the already-chosen item leaves it checked.
+    component StateItem: MenuItem {
+        property bool isOn: false
+        checkable: true
+        Binding on checked { value: isOn }
+        onTriggered: Qt.callLater(function() { checked = isOn })
+    }
     menuBar: MenuBar {
         background: Rectangle { color: "#FFFFFF" }
         Menu {
@@ -400,69 +413,96 @@ ApplicationWindow {
             MenuSeparator {}
             MenuItem { text: qsTr("Preferences…"); enabled: false }
         }
+        // View, top to bottom: where you look (library, zoom, channel), what
+        // is drawn over the image (metadata), how colour is rendered (grey-
+        // world or the chart profile), and the profile's own choices and
+        // trims, which only make sense once the profile is on.
         Menu {
             title: qsTr("&View")
-            MenuItem {
-                text: qsTr("Library\tL · T grid⇄timeline")
+            StateItem {
+                text: qsTr("Library\tL · T grid ⇄ timeline")
+                isOn: root.libraryOpen
                 onTriggered: root.libraryOpen = !root.libraryOpen
-            }
-            MenuItem {
-                text: qsTr("Channel solo R/G/B/C — A auto")
-                enabled: false   // reference only; the keys do the work
             }
             MenuItem {
                 text: qsTr("Zoom fit ⇄ 1:1\tZ · wheel · double-click")
                 onTriggered: zoomView.toggleFit()
             }
-            MenuItem {
+            Menu {
+                title: qsTr("Channel")
+                StateItem { text: qsTr("Auto\tA"); isOn: root.soloChannel === "auto"; onTriggered: root.soloChannel = "auto" }
+                StateItem { text: qsTr("Red\tR");  isOn: root.soloChannel === "R";    onTriggered: root.soloChannel = "R" }
+                StateItem { text: qsTr("Green\tG"); isOn: root.soloChannel === "G";   onTriggered: root.soloChannel = "G" }
+                StateItem { text: qsTr("Blue\tB"); isOn: root.soloChannel === "B";    onTriggered: root.soloChannel = "B" }
+                StateItem { text: qsTr("Clear\tC"); isOn: root.soloChannel === "C";   onTriggered: root.soloChannel = "C" }
+            }
+            MenuSeparator {}
+            StateItem {
                 text: qsTr("Metadata block\tM · drag moves · corner scales")
+                isOn: root.metaShown
                 onTriggered: root.metaShown = !root.metaShown
             }
-            MenuItem {
-                text: qsTr("Metadata black ⇄ white\tW")
+            StateItem {
+                text: qsTr("Metadata on white\tW")
                 enabled: strip.currentItem !== null && strip.currentItem.sMetaSvg !== ""
+                isOn: !!(strip.currentItem && strip.currentItem.sMetaWhite)
                 onTriggered: Sessions.setMetaWhite(strip.currentIndex,
                     !(strip.currentItem && strip.currentItem.sMetaWhite))
             }
-            MenuItem { text: qsTr("Gray surround"); enabled: false }
             MenuSeparator {}
-            MenuItem {
-                text: qsTr("White balance (grey-world)\tK")
-                checkable: true
-                checked: root.wbOn
+            StateItem {
+                text: qsTr("White balance: grey-world\tK")
+                isOn: root.wbOn
                 onTriggered: root.wbOn = !root.wbOn
             }
-            MenuItem {
-                text: root.cpAvailable ? qsTr("Colour profile (chart, sRGB)\tJ")
-                                       : qsTr("Colour profile — none in this folder")
-                checkable: true
-                checked: root.cpOn
+            StateItem {
+                text: root.cpAvailable ? qsTr("Colour profile: chart → sRGB\tJ")
+                                       : qsTr("Colour profile: none in this folder")
+                isOn: root.cpOn
                 enabled: root.cpAvailable
                 onTriggered: { root.reloadProfile(); root.cpOn = !root.cpOn }
             }
-            MenuItem {
-                text: root.cpChartBlack ? qsTr("Black point: chart black patch") : qsTr("Black point: sensor zero")
-                enabled: root.cpAvailable && !!root.colourProfile.chartBlack
-                onTriggered: root.cpChartBlack = !root.cpChartBlack
+            MenuSeparator {}
+            // Profile choices: one of each pair is checked.
+            StateItem {
+                text: qsTr("Black point: chart black patch")
+                enabled: root.cpAvailable && root.cpOn && !!root.colourProfile.chartBlack
+                isOn: root.cpChartBlack
+                onTriggered: root.cpChartBlack = true
             }
-            MenuItem {
-                text: root.cpAsCaptured ? qsTr("Exposure: as captured") : qsTr("Exposure: normalised to chart")
-                enabled: root.cpAvailable
-                onTriggered: root.cpAsCaptured = !root.cpAsCaptured
+            StateItem {
+                text: qsTr("Black point: sensor zero")
+                enabled: root.cpAvailable && root.cpOn && !!root.colourProfile.chartBlack
+                isOn: !root.cpChartBlack
+                onTriggered: root.cpChartBlack = false
             }
+            StateItem {
+                text: qsTr("Exposure: as captured")
+                enabled: root.cpAvailable && root.cpOn
+                isOn: root.cpAsCaptured
+                onTriggered: root.cpAsCaptured = true
+            }
+            StateItem {
+                text: qsTr("Exposure: normalised to chart")
+                enabled: root.cpAvailable && root.cpOn
+                isOn: !root.cpAsCaptured
+                onTriggered: root.cpAsCaptured = false
+            }
+            MenuSeparator {}
+            // Profile trims: the value is shown, the keys move it, clicking resets.
             MenuItem {
-                text: qsTr("Profile exposure %1 stop\t[ ]   \\ resets").arg(root.fmtTrim())
-                enabled: root.cpAvailable
+                text: qsTr("Exposure trim  %1 stop\t[ ]   \\ resets").arg(root.fmtTrim())
+                enabled: root.cpAvailable && root.cpOn
                 onTriggered: root.cpTrimThirds = 0
             }
             MenuItem {
-                text: qsTr("Profile black toe %1%\t, .   / resets").arg((root.cpToe * 100).toFixed(2))
-                enabled: root.cpAvailable
+                text: qsTr("Black toe  %1 %\t, .   / resets to 1 %").arg((root.cpToe * 100).toFixed(2))
+                enabled: root.cpAvailable && root.cpOn
                 onTriggered: root.cpToeSteps = 4
             }
             MenuItem {
-                text: qsTr("Profile black +%1%\t{ }   | resets").arg((root.cpBlack * 100).toFixed(1))
-                enabled: root.cpAvailable
+                text: qsTr("Black point offset  +%1 %\t{ }   | resets").arg((root.cpBlack * 100).toFixed(1))
+                enabled: root.cpAvailable && root.cpOn
                 onTriggered: root.cpBlackSteps = 0
             }
         }
