@@ -988,6 +988,10 @@ static QString toolPath(const QString &name)
                               exe + QStringLiteral("/../capture/") + name })
         if (QFile::exists(t))
             return QFileInfo(t).absoluteFilePath();
+    // Say where we looked: 2026-10-31 the packaged Suite reported only
+    // "clean_pass.py not found beside the app" and the log had nothing at all.
+    qWarning().noquote() << "[tools]" << name << "not found beside" << exe
+                         << "(tools/, ../suite/tools/, ../capture/)";
     return {};
 }
 

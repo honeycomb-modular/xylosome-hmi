@@ -6,11 +6,16 @@
 # actually needs into one folder, so it runs from a double-click on a machine
 # that has no msys2 at all.
 #
-#   pwsh -File package-suite.ps1
+#   pwsh -File package-suite.ps1             full package (Qt deploy, launcher, shortcuts)
+#   pwsh -File package-suite.ps1 -NoDeploy   launcher, tools and shortcuts only (no Qt/DLL
+#                                            deploy - safe while the Suite is running)
+#   pwsh -File package-suite.ps1 -Sync       refresh the exe (if newer) and the side tools;
+#                                            the launcher runs this at EVERY start
 #
-# Re-run it after any rebuild; it refreshes the exe and re-deploys.
+# Re-run the full form after a rebuild that pulls in a new DLL. A plain rebuild
+# or a tool edit needs nothing: the launcher's -Sync picks them up next start.
 
-param([switch]$NoAutostart)
+param([switch]$NoAutostart, [switch]$Sync, [switch]$NoDeploy)
 
 $ErrorActionPreference = "Stop"
 
@@ -18,12 +23,58 @@ $ucrt = "C:\msys64\ucrt64\bin"
 $src  = "$PSScriptRoot\build-suite\xylosome-suite.exe"
 $dist = "$PSScriptRoot\dist\XylosomeSuite"
 
+# -- the side tools -----------------------------------------------------------
+# Every Python tool the Suite runs as a side process (SessionStore::toolPath
+# finds them at tools\<name> beside the exe). THE ONLY LIST: the launcher's
+# -Sync copies exactly these at every start, so a tool added here reaches the
+# autostarted Suite without re-packaging. 2026-10-31: clean_pass.py was wired
+# into the Suite but never added to the two hand-kept copy lists that used to
+# live here and in the launcher - Tools > Clean passes failed with
+# "clean_pass.py not found beside the app" from the packaged copy while it
+# worked from build-suite.
+$tools = @(
+    "$PSScriptRoot\suite\tools\hdr_merge.py",   # HDR bracket merge
+    "$PSScriptRoot\capture\rgb_merge.py",        # colour merge (Session > Merge R/G/B)
+    "$PSScriptRoot\capture\rgb_align.py",        # registration module rgb_merge imports
+    "$PSScriptRoot\capture\view_icc.py",         # Open in Photoshop: profile view as ICC
+    "$PSScriptRoot\capture\clean_pass.py"        # Tools > Clean passes (denoise twins)
+)
+
+function Sync-Exe {
+    # Only when build-suite has a newer exe: the packaged one may be running
+    # (locked), and an identical file needs no copy anyway.
+    if (-not (Test-Path $src)) { return }
+    $cur = Join-Path $dist "xylosome-suite.exe"
+    if ((Test-Path $cur) -and (Get-Item $cur).LastWriteTime -ge (Get-Item $src).LastWriteTime) {
+        Write-Host "exe  -> up to date"; return
+    }
+    try { Copy-Item $src $dist -Force; Write-Host "exe  -> refreshed from build-suite" }
+    catch { Write-Warning "exe not refreshed (Suite running?): $_" }
+}
+function Sync-Tools {
+    New-Item -ItemType Directory -Force -Path "$dist\tools" | Out-Null
+    foreach ($t in $tools) {
+        if (-not (Test-Path $t)) { Write-Warning "tool missing in the repo: $t"; continue }
+        Copy-Item $t "$dist\tools\" -Force
+    }
+    Write-Host ("tools -> " + (($tools | ForEach-Object { Split-Path $_ -Leaf }) -join " "))
+}
+
+if ($Sync) {
+    # Launch-time refresh: nothing else, and never the launcher itself (the
+    # .cmd that called us is still executing).
+    Sync-Exe
+    Sync-Tools
+    exit 0
+}
+
 if (-not (Test-Path $src))  { throw "not built: $src  (cmake --build build-suite)" }
-if (-not (Test-Path $ucrt)) { throw "msys2 UCRT64 not found at $ucrt" }
+if (-not $NoDeploy -and -not (Test-Path $ucrt)) { throw "msys2 UCRT64 not found at $ucrt" }
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-Copy-Item $src $dist -Force
-Write-Host "exe -> $dist"
+Sync-Exe
+
+if (-not $NoDeploy) {
 
 # ── Qt: DLLs, platform plugins, QML modules ───────────────────────────────────
 # --qmldir makes it scan our QML for imports, so QtQuick/Controls/Layouts and
@@ -102,29 +153,29 @@ for ($pass = 0; $pass -lt 12; $pass++) {
     if ($added -eq 0) { break }
 }
 Write-Host ("deps -> {0} dll(s) beside the exe" -f (Get-ChildItem $dist -Filter *.dll).Count)
+}   # -not $NoDeploy
 
 # ── launcher ──────────────────────────────────────────────────────────────────
 # Keeps the rig-specific bits (capture folder, Beckhoff address, the Pi clock
 # push and metadata sync) out of the exe, so the same build works elsewhere.
 #
-# The launcher also refreshes the exe from build-suite when that one is newer.
-# Without it this folder is a snapshot: a rebuild never reaches the Startup
-# shortcut, so logon keeps opening the build from the last time this script ran
-# (which is exactly what happened between 2026-08-09 and 08-11). Only the exe is
-# copied — if a rebuild pulls in a NEW dll, re-run package-suite.ps1.
+# The launcher also refreshes the exe and the side tools from the repo at every
+# start (this script, -Sync). Without it this folder is a snapshot: a rebuild
+# never reaches the Startup shortcut, so logon keeps opening the build from the
+# last time this script ran (which is exactly what happened between 2026-08-09
+# and 08-11), and a new tool never arrives (clean_pass.py, 2026-10-31). Only
+# the exe and the tools are copied - if a rebuild pulls in a NEW dll, re-run
+# package-suite.ps1 in full.
 @"
 @echo off
 REM Xylosome Suite — self-contained launcher. No msys2 on PATH required.
 set CAPTURE_DIR=D:/capture
 set XYLOD_HOST=192.168.2.2
 cd /d "%~dp0"
-REM Pick up a newer local build if there is one (/XO = only if source is newer).
-if exist "$PSScriptRoot\build-suite\xylosome-suite.exe" robocopy "$PSScriptRoot\build-suite" "%~dp0." xylosome-suite.exe /XO /NJH /NJS /NDL /NFL /NP >nul
-REM Same for the side tools. Refreshing only the exe left a stale hdr_merge.py
-REM here on 2026-08-11: the Suite ran the packaged copy, which still had a bug
-REM already fixed in the repo, and the merge died 8 seconds in.
-if exist "$PSScriptRoot\suite\tools\hdr_merge.py" robocopy "$PSScriptRoot\suite\tools" "%~dp0tools" hdr_merge.py /XO /NJH /NJS /NDL /NFL /NP >nul
-if exist "$PSScriptRoot\capture\rgb_merge.py" robocopy "$PSScriptRoot\capture" "%~dp0tools" rgb_merge.py rgb_align.py view_icc.py /XO /NJH /NJS /NDL /NFL /NP >nul
+REM Refresh from the repo when it is here: a newer build-suite exe, and the side
+REM tools (the one list in package-suite.ps1). A stale packaged hdr_merge.py bit
+REM on 2026-08-11 and a never-packaged clean_pass.py on 2026-10-31.
+if exist "$PSScriptRoot\package-suite.ps1" powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PSScriptRoot\package-suite.ps1" -Sync
 start "" "%~dp0xylosome-suite.exe" --fullscreen
 REM Pi clock + metadata SVG sync (best effort; the Suite runs fine without it)
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0pi-metadata.ps1"
@@ -132,17 +183,8 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0pi
 
 Copy-Item "$PSScriptRoot\sync-metadata.ps1" "$dist\pi-metadata.ps1" -Force
 
-# The HDR merge runs as a side process, so the tool has to travel with the app.
-# SessionStore::mergeHdrSet looks for it at tools\hdr_merge.py beside the exe
-# (and in the source tree when running from build-suite).
-New-Item -ItemType Directory -Force -Path "$dist\tools" | Out-Null
-Copy-Item "$PSScriptRoot\suite\tools\hdr_merge.py" "$dist\tools\" -Force
-# Colour merge (Session > Merge R/G/B) + the registration module it imports.
-Copy-Item "$PSScriptRoot\capture\rgb_merge.py" "$dist\tools\" -Force
-Copy-Item "$PSScriptRoot\capture\rgb_align.py" "$dist\tools\" -Force
-# Open in Photoshop embeds the profile view in the TIFF as an ICC profile.
-Copy-Item "$PSScriptRoot\capture\view_icc.py" "$dist\tools\" -Force
-Write-Host "tools -> hdr_merge.py rgb_merge.py rgb_align.py view_icc.py"
+# The side tools travel with the app (see $tools at the top).
+Sync-Tools
 
 # ── desktop shortcut ──────────────────────────────────────────────────────────
 $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Xylosome Suite.lnk"
