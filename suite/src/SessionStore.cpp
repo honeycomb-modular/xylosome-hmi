@@ -1105,7 +1105,7 @@ void SessionStore::mergeHdrSet(int row)
 
 // ── colour merge (R/G/B passes → one 16-bit RGB TIFF) ────────────────────────
 
-void SessionStore::mergeColour(int row, bool discardChannels)
+void SessionStore::mergeColour(int row, bool discardChannels, bool fromCleaned)
 {
     if (m_merge) {
         emit colourMergeFinished(false, QStringLiteral("a merge is already running"));
@@ -1120,16 +1120,25 @@ void SessionStore::mergeColour(int row, bool discardChannels)
     }
     QString files[3];
     for (const PassRecord &p : s.passes) {
-        const int k = p.filter == QLatin1String("R") ? 0
-                    : p.filter == QLatin1String("G") ? 1
-                    : p.filter == QLatin1String("B") ? 2 : -1;
+        QString f = p.filter;                     // "R" raw, "Rc" its cleaned twin
+        if (fromCleaned) {
+            if (f.size() != 2 || !f.endsWith(QLatin1Char('c')))
+                continue;
+            f.chop(1);
+        } else if (f.size() != 1) {
+            continue;
+        }
+        const int k = f == QLatin1String("R") ? 0
+                    : f == QLatin1String("G") ? 1
+                    : f == QLatin1String("B") ? 2 : -1;
         if (k >= 0 && !p.file.isEmpty() && files[k].isEmpty())
             files[k] = passAbsPath(p);
     }
     for (int k = 0; k < 3; ++k)
         if (files[k].isEmpty()) {
-            emit colourMergeFinished(false, QStringLiteral("no %1 pass image")
-                                                .arg(QLatin1Char("RGB"[k])));
+            emit colourMergeFinished(false, (fromCleaned
+                ? QStringLiteral("no cleaned %1 pass — Tools ▸ Clean passes first")
+                : QStringLiteral("no %1 pass image")).arg(QLatin1Char("RGB"[k])));
             return;
         }
     const QString tool = toolPath(QStringLiteral("rgb_merge.py"));
@@ -1201,6 +1210,7 @@ void SessionStore::mergeColour(int row, bool discardChannels)
     emit colourMergeStarted(fseq >= 0 ? fseq : s.seq);
     emit hdrMergeBusyChanged();
     qInfo() << "[rgb] merging session" << s.seq << "->" << outRel
+            << (fromCleaned ? "(from cleaned passes)" : "")
             << (discardChannels ? "(channels will be discarded)" : "");
     m_merge->start();
 }
@@ -1255,6 +1265,129 @@ void SessionStore::colourMerged(const QString &uuid, const QString &outRel, bool
         }
         touchRow(row);
         enqueueIngest(s, m);
+        refreshDisk();
+        return;
+    }
+}
+
+void SessionStore::cleanPasses(int row, double strength)
+{
+    if (m_clean) {
+        emit cleanFinished(false, QStringLiteral("a clean is already running"));
+        return;
+    }
+    if (row < 0 || row >= m_sessions.size())
+        return;
+    const SessionRecord &s = m_sessions[row];
+    if (s.state == QLatin1String("live")) {
+        emit cleanFinished(false, QStringLiteral("session is still scanning"));
+        return;
+    }
+    QStringList files, filters;
+    for (const PassRecord &p : s.passes) {
+        if (p.filter.size() != 1 || p.file.isEmpty())   // channel passes only: never a merge or a clean
+            continue;
+        files << QDir::toNativeSeparators(passAbsPath(p));
+        filters << p.filter;
+    }
+    if (files.isEmpty()) {
+        emit cleanFinished(false, QStringLiteral("no pass images"));
+        return;
+    }
+    const QString tool = toolPath(QStringLiteral("clean_pass.py"));
+    if (tool.isEmpty()) {
+        emit cleanFinished(false, QStringLiteral("clean_pass.py not found beside the app"));
+        return;
+    }
+    // Same home as the merges: a subfolder the watcher never lists, owned by
+    // the session (deleted with it, counted in its size). The raw passes stay.
+    const QString outDir = m_captureDir + QStringLiteral("/cleaned");
+    QDir().mkpath(outDir);
+    const int fseq = data(index(row), FileSeqRole).toInt();
+
+    m_cleanOut.clear();
+    m_clean = new QProcess(this);
+    QStringList py = pythonCommand();
+    m_clean->setProgram(py.takeFirst());
+    m_clean->setArguments(py + QStringList{ QStringLiteral("-I"), tool } + files
+                          + QStringList{ QStringLiteral("--out"), QDir::toNativeSeparators(outDir),
+                                         QStringLiteral("--strength"), QString::number(strength) });
+    m_clean->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_clean, &QProcess::readyReadStandardOutput, this, [this] {
+        m_cleanOut += QString::fromLocal8Bit(m_clean->readAllStandardOutput());
+    });
+    const auto done = [this](bool ok, const QString &msg) {
+        if (!m_clean)
+            return;
+        m_clean->deleteLater();
+        m_clean = nullptr;
+        emit cleanBusyChanged();
+        emit cleanFinished(ok, msg);
+    };
+    connect(m_clean, &QProcess::errorOccurred, this, [this, done](QProcess::ProcessError e) {
+        done(false, e == QProcess::FailedToStart
+                        ? QStringLiteral("could not run python — is it on PATH?")
+                        : QStringLiteral("clean process error"));
+    });
+    const QString uuid = s.uuid;
+    connect(m_clean, &QProcess::finished, this,
+            [this, done, uuid, files, filters](int code, QProcess::ExitStatus st) {
+        m_cleanOut += QString::fromLocal8Bit(m_clean->readAllStandardOutput());
+        qInfo().noquote() << "[clean]" << m_cleanOut.trimmed();
+        // The tool prints "wrote <path>" per pass; every pass must be in.
+        QStringList outRel;
+        for (const QString &f : files)
+            outRel << QStringLiteral("cleaned/") + QFileInfo(f).fileName();
+        bool all = st == QProcess::NormalExit && code == 0
+                   && m_cleanOut.count(QStringLiteral("wrote ")) == files.size();
+        for (const QString &rel : outRel)
+            all = all && QFile::exists(m_captureDir + QLatin1Char('/') + rel);
+        if (!all) {
+            const QStringList lines = m_cleanOut.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            done(false, lines.isEmpty() ? QStringLiteral("clean failed") : lines.last().trimmed());
+            return;
+        }
+        cleaned(uuid, filters, outRel);
+        done(true, QStringLiteral("%1 passes → cleaned/").arg(files.size()));
+    });
+    emit cleanStarted(fseq >= 0 ? fseq : s.seq);
+    emit cleanBusyChanged();
+    qInfo() << "[clean] cleaning session" << s.seq << ":" << files.size() << "passes, strength" << strength;
+    m_clean->start();
+}
+
+void SessionStore::cleaned(const QString &uuid, const QStringList &filters, const QStringList &outRel)
+{
+    for (int row = 0; row < m_sessions.size(); ++row) {
+        SessionRecord &s = m_sessions[row];
+        if (s.uuid != uuid)
+            continue;
+        for (int i = 0; i < filters.size(); ++i) {
+            const QString cf = filters[i] + QLatin1Char('c');
+            // One cleaned twin per channel: a re-run replaces it (new proxies follow).
+            int slot = -1, maxIdx = -1;
+            for (int j = 0; j < s.passes.size(); ++j) {
+                maxIdx = qMax(maxIdx, s.passes[j].index);
+                if (s.passes[j].filter == cf)
+                    slot = j;
+            }
+            if (slot < 0) {
+                PassRecord p;
+                p.index = maxIdx + 1;
+                p.filter = cf;
+                s.passes << p;
+                slot = s.passes.size() - 1;
+            }
+            PassRecord &p = s.passes[slot];
+            p.file = outRel[i];
+            p.preview.clear();
+            p.pxW = p.pxH = 0;
+            p.clipBlackPct = p.clipWhitePct = -1;
+            p.hist256.clear();
+            p.wallStartMs = p.wallEndMs = QDateTime::currentMSecsSinceEpoch();
+            enqueueIngest(s, p);
+        }
+        touchRow(row);
         refreshDisk();
         return;
     }

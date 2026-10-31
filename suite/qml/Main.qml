@@ -47,6 +47,7 @@ ApplicationWindow {
     readonly property int easeMs: 200
 
     function filterColor(name) {
+        if (name.length === 2 && name.endsWith("c")) name = name[0]   // cleaned twin
         return name === "R" ? chR : name === "G" ? chG
              : name === "B" ? chB : name === "C" ? chC
              : name === "RGB" ? ink : inkFaint
@@ -56,9 +57,15 @@ ApplicationWindow {
     // store; the result joins the session as its "RGB" pass. The discard
     // choice is remembered across runs.
     property bool discardAfterMerge: false
+    // Tools ▸ Clean passes: filter strength in noise sigmas (capture/clean_pass.py),
+    // and whether Merge R/G/B takes the cleaned twins instead of the raw passes.
+    property real cleanStrength: 0.6
+    property bool mergeFromCleaned: false
     Settings {
         category: "merge"
         property alias discardAfterMerge: root.discardAfterMerge
+        property alias cleanStrength: root.cleanStrength
+        property alias mergeFromCleaned: root.mergeFromCleaned
     }
 
     // View ▸ White balance (K): grey-world gains from the shown image's R/G/B
@@ -82,7 +89,8 @@ ApplicationWindow {
     // profile from <captureDir>/.xylosome/colour_profile.json — white balance
     // for the light it was shot under, the 3x3 matrix, exposure, and the sRGB
     // curve. Applies to merged RGB images only; single channels are shown as
-    // they are. Takes precedence over the grey-world balance when both are on.
+    // they are, bar the black point (blackMode below). Takes precedence over the
+    // grey-world balance when both are on.
     property bool cpOn: false
     // Exposure trim on the profile, in thirds of a stop ([ and ], \ resets).
     // The fit anchors the chart's neutral 8 at its true value, which reads
@@ -95,17 +103,17 @@ ApplicationWindow {
     // reads its reference value, which is how the fit was checked, not how
     // the picture was exposed.
     property bool cpAsCaptured: true
-    // Black point at the chart's black patch (default): the patch renders as
-    // black and everything darker stays black, as a print would. Off = the
-    // sensor's own zero, which shows what the camera recorded below the
-    // patch (floor, curtain) as lifted dark greys.
-    property bool cpChartBlack: true
+    // Where black sits (View > Black point). "chart": the chart's black patch
+    // renders as black and everything darker stays black, as a print would.
+    // "sensor": the camera's own zero, which shows what it recorded below
+    // the patch (floor, curtain) as lifted dark greys. "off": nothing.
+    property string blackMode: "chart"
     Settings {
         category: "view"
         property alias cpOn: root.cpOn
         property alias cpTrimThirds: root.cpTrimThirds
         property alias cpAsCaptured: root.cpAsCaptured
-        property alias cpChartBlack: root.cpChartBlack
+        property alias blackMode: root.blackMode
     }
     Shortcut { enabled: root.keysLive; sequences: ["["]; onActivated: root.cpTrimThirds = Math.max(-9, root.cpTrimThirds - 1) }
     Shortcut { enabled: root.keysLive; sequences: ["]"]; onActivated: root.cpTrimThirds = Math.min(9, root.cpTrimThirds + 1) }
@@ -153,6 +161,28 @@ ApplicationWindow {
     readonly property bool shownIsRGB: strip.currentItem !== null && root.shownPass >= 0
                                        && strip.currentItem.sPassFilters[root.shownPass] === "RGB"
     readonly property bool cpActive: root.cpOn && root.cpAvailable && root.shownIsRGB
+    readonly property bool shownIsSingle: strip.currentItem !== null && root.shownPass >= 0
+                                          && strip.currentItem.sPassFilters[root.shownPass] !== "RGB"
+    // The black point's base, a fraction of full scale, per blackMode: the
+    // chart's black patch, the sensor's zero, or 0. Channel k of the profile
+    // for the RGB merge; k = -1 gives the channels' mean, for a single R, G,
+    // B or C pass - the camera's zero is the same whatever the filter. A
+    // single channel gets the black point (base + lift, with the toe) and
+    // nothing else: no matrix, no sRGB, the channel otherwise as it is.
+    function blackBase(k) {
+        const p = root.colourProfile
+        if (!root.cpAvailable) return 0
+        const b = root.blackMode === "chart" && p.chartBlack ? p.chartBlack
+                : root.blackMode === "sensor" && p.pedestal ? p.pedestal : null
+        if (!b) return 0
+        return (k >= 0 ? b[k] : (b[0] + b[1] + b[2]) / 3) / 65535
+    }
+    function blackPct(key) {
+        const b = root.cpAvailable ? root.colourProfile[key] : null
+        return b ? ((b[0] + b[1] + b[2]) / 3 / 655.35).toFixed(1) : "-"
+    }
+    readonly property real monoBlack: root.blackBase(-1) + root.cpBlack
+    readonly property bool bpActive: root.shownIsSingle && root.monoBlack > 0
     Shortcut { enabled: root.keysLive; sequences: ["J"]; onActivated: { root.reloadProfile(); root.cpOn = !root.cpOn } }
 
     // The matrix the viewer applies: profile (M · diag(gain) · exposure) or the
@@ -168,19 +198,23 @@ ApplicationWindow {
                 M[2][0] * g[0] * e, M[2][1] * g[1] * e, M[2][2] * g[2] * e, 0,
                 0, 0, 0, 1)
         }
+        if (root.bpActive) {   // white held: the black point scales the rest up
+            const s = 1 / Math.max(0.01, 1 - root.monoBlack)
+            return Qt.matrix4x4(s, 0, 0, 0,  0, s, 0, 0,  0, 0, s, 0,  0, 0, 0, 1)
+        }
         const w = root.wbGains
         return Qt.matrix4x4(w.x, 0, 0, 0,  0, w.y, 0, 0,  0, 0, w.z, 0,  0, 0, 0, 1)
     }
     readonly property vector4d viewPedestal: {
+        if (root.bpActive) return Qt.vector4d(root.monoBlack, root.monoBlack, root.monoBlack, 0)
         if (!root.cpActive) return Qt.vector4d(0, 0, 0, 0)
         const p = root.colourProfile
-        const base = (root.cpChartBlack && p.chartBlack) ? p.chartBlack : p.pedestal
         const e = root.cpAsCaptured ? 1.0 : p.exposure
-        return Qt.vector4d(base[0] / 65535 + root.cpBlack / Math.max(0.01, p.gain[0] * e),
-                           base[1] / 65535 + root.cpBlack / Math.max(0.01, p.gain[1] * e),
-                           base[2] / 65535 + root.cpBlack / Math.max(0.01, p.gain[2] * e), 0)
+        return Qt.vector4d(root.blackBase(0) + root.cpBlack / Math.max(0.01, p.gain[0] * e),
+                           root.blackBase(1) + root.cpBlack / Math.max(0.01, p.gain[1] * e),
+                           root.blackBase(2) + root.cpBlack / Math.max(0.01, p.gain[2] * e), 0)
     }
-    readonly property bool viewActive: root.cpActive
+    readonly property bool viewActive: root.cpActive || root.bpActive
         || (root.wbGains.x !== 1 || root.wbGains.y !== 1 || root.wbGains.z !== 1)
     readonly property bool wbAvailable: {
         const it = strip.currentItem
@@ -198,7 +232,7 @@ ApplicationWindow {
     function openInPhotoshop() {
         if (!root.canPhotoshop) return
         const view = root.cpActive ? {
-            black: root.cpChartBlack && !!root.colourProfile.chartBlack ? "chart" : "sensor",
+            black: root.blackMode === "chart" && !!root.colourProfile.chartBlack ? "chart" : "sensor",
             toe: root.cpToe, offset: root.cpBlack, trimThirds: root.cpTrimThirds,
             exposure: root.cpAsCaptured ? "captured" : "chart" } : {}
         if (!Sessions.openInPhotoshop(strip.currentIndex, root.shownPass, view)) {
@@ -215,6 +249,22 @@ ApplicationWindow {
             if (i < 0 || !it.sPassPaired[i]) return false
         }
         return true
+    }
+    readonly property bool canMergeCleaned: {
+        const it = strip.currentItem
+        if (!it || it.sState === "live") return false
+        for (const f of ["Rc", "Gc", "Bc"]) {
+            const i = it.sPassFilters.indexOf(f)
+            if (i < 0 || !it.sPassPaired[i]) return false
+        }
+        return true
+    }
+    readonly property bool canClean: {
+        const it = strip.currentItem
+        if (!it || it.sState === "live") return false
+        for (let i = 0; i < it.sPassFilters.length; i++)
+            if (it.sPassFilters[i].length === 1 && it.sPassPaired[i]) return true
+        return false
     }
 
     function stars(n) { return "★".repeat(n) }
@@ -342,6 +392,15 @@ ApplicationWindow {
                 .arg(message)
             reclaimTimer.restart()
         }
+        function onCleanStarted(seq) {
+            root.reclaimText = qsTr("cleaning the passes of scan %1 …").arg(root.scanLabel(seq))
+            reclaimTimer.stop()
+        }
+        function onCleanFinished(ok, message) {
+            root.reclaimText = (ok ? qsTr("cleaned %1 — D shows a cleaned pass") : qsTr("clean failed — %1"))
+                .arg(message)
+            reclaimTimer.restart()
+        }
         function onHdrMergeStarted(brackets, outPath) {
             root.reclaimText = qsTr("merging %1 brackets → %2").arg(brackets).arg(outPath)
             reclaimTimer.stop()          // no timeout while it is still running
@@ -366,10 +425,26 @@ ApplicationWindow {
                     return i
         }
         for (let i = it.sPassPreviews.length - 1; i >= 0; i--)
-            if (it.sPassPreviews[i] !== "")
+            if (it.sPassPreviews[i] !== "" && it.sPassFilters[i].length !== 2)   // not a cleaned twin
                 return i
         return -1
     }
+    // The cleaned twin of the shown pass ("Rc" for "R"), or its raw original.
+    readonly property int cleanedTwin: {
+        const it = strip.currentItem
+        if (!it || root.shownPass < 0) return -1
+        const f = it.sPassFilters[root.shownPass]
+        if (f === "RGB") return -1
+        const i = it.sPassFilters.indexOf(f.length === 2 ? f[0] : f + "c")
+        return i >= 0 && it.sPassPreviews[i] !== "" ? i : -1
+    }
+    readonly property bool shownIsCleaned: strip.currentItem !== null && root.shownPass >= 0
+                                           && strip.currentItem.sPassFilters[root.shownPass].length === 2
+    function toggleCleaned() {
+        if (root.cleanedTwin >= 0)
+            root.soloChannel = strip.currentItem.sPassFilters[root.cleanedTwin]
+    }
+    Shortcut { enabled: root.keysLive; sequences: ["D"]; onActivated: root.toggleCleaned() }
 
     // ── Menus (every item shows its key — the menu is the cheat sheet)
     // A menu item whose check mark mirrors a piece of viewer state. A plain
@@ -441,6 +516,12 @@ ApplicationWindow {
                 StateItem { text: qsTr("Green\tG"); isOn: root.soloChannel === "G";   onTriggered: root.soloChannel = "G" }
                 StateItem { text: qsTr("Blue\tB"); isOn: root.soloChannel === "B";    onTriggered: root.soloChannel = "B" }
                 StateItem { text: qsTr("Clear\tC"); isOn: root.soloChannel === "C";   onTriggered: root.soloChannel = "C" }
+                MenuSeparator {}
+                MenuItem {
+                    text: root.shownIsCleaned ? qsTr("Raw pass\tD") : qsTr("Cleaned pass\tD")
+                    enabled: root.cleanedTwin >= 0
+                    onTriggered: root.toggleCleaned()
+                }
             }
             MenuSeparator {}
             StateItem {
@@ -471,18 +552,6 @@ ApplicationWindow {
             MenuSeparator {}
             // Profile choices: one of each pair is checked.
             StateItem {
-                text: qsTr("Black point: chart black patch")
-                enabled: root.cpAvailable && root.cpOn && !!root.colourProfile.chartBlack
-                isOn: root.cpChartBlack
-                onTriggered: root.cpChartBlack = true
-            }
-            StateItem {
-                text: qsTr("Black point: sensor zero")
-                enabled: root.cpAvailable && root.cpOn && !!root.colourProfile.chartBlack
-                isOn: !root.cpChartBlack
-                onTriggered: root.cpChartBlack = false
-            }
-            StateItem {
                 text: qsTr("Exposure: as captured")
                 enabled: root.cpAvailable && root.cpOn
                 isOn: root.cpAsCaptured
@@ -501,15 +570,42 @@ ApplicationWindow {
                 enabled: root.cpAvailable && root.cpOn
                 onTriggered: root.cpTrimThirds = 0
             }
-            MenuItem {
-                text: qsTr("Black toe  %1 %\t, .   / resets to 1 %").arg((root.cpToe * 100).toFixed(2))
-                enabled: root.cpAvailable && root.cpOn
-                onTriggered: root.cpToeSteps = 4
-            }
-            MenuItem {
-                text: qsTr("Black point offset  +%1 %\t{ }   | resets").arg((root.cpBlack * 100).toFixed(1))
-                enabled: root.cpAvailable && root.cpOn
-                onTriggered: root.cpBlackSteps = 0
+            MenuSeparator {}
+            Menu {
+                // Where black sits: one base, then the lift and the toe on
+                // top. The profiled RGB merge and a single channel alike.
+                id: blackMenu
+                title: qsTr("Black point")
+                readonly property bool choices: root.cpAvailable && (root.cpActive || root.shownIsSingle)
+                StateItem {
+                    text: qsTr("Chart black patch  %1 %").arg(root.blackPct("chartBlack"))
+                    enabled: blackMenu.choices && !!root.colourProfile.chartBlack
+                    isOn: root.blackMode === "chart"
+                    onTriggered: root.blackMode = "chart"
+                }
+                StateItem {
+                    text: qsTr("Sensor zero  %1 %").arg(root.blackPct("pedestal"))
+                    enabled: blackMenu.choices && !!root.colourProfile.pedestal
+                    isOn: root.blackMode === "sensor"
+                    onTriggered: root.blackMode = "sensor"
+                }
+                StateItem {
+                    text: qsTr("None")
+                    enabled: blackMenu.choices
+                    isOn: root.blackMode === "off"
+                    onTriggered: root.blackMode = "off"
+                }
+                MenuSeparator {}
+                MenuItem {
+                    text: qsTr("Lift  +%1 %\t{ }   | resets").arg((root.cpBlack * 100).toFixed(1))
+                    enabled: root.cpActive || root.shownIsSingle
+                    onTriggered: root.cpBlackSteps = 0
+                }
+                MenuItem {
+                    text: qsTr("Toe  %1 %\t, .   / resets to 1 %").arg((root.cpToe * 100).toFixed(2))
+                    enabled: root.cpActive || root.shownIsSingle
+                    onTriggered: root.cpToeSteps = 4
+                }
             }
         }
         Menu {
@@ -562,13 +658,35 @@ ApplicationWindow {
                 text: Sessions.colourMergeBusy
                       ? qsTr("Merging R/G/B…")
                       : qsTr("Merge R/G/B → colour TIFF")
-                enabled: !Sessions.hdrMergeBusy && !Sessions.colourMergeBusy && root.canMergeRGB
-                onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge)
+                enabled: !Sessions.hdrMergeBusy && !Sessions.colourMergeBusy
+                         && (root.mergeFromCleaned ? root.canMergeCleaned : root.canMergeRGB)
+                onTriggered: Sessions.mergeColour(strip.currentIndex, root.discardAfterMerge, root.mergeFromCleaned)
+            }
+            StateItem {
+                text: qsTr("    From the cleaned passes")
+                isOn: root.mergeFromCleaned
+                onTriggered: root.mergeFromCleaned = !root.mergeFromCleaned
             }
             StateItem {
                 text: qsTr("    Discard R/G/B channel TIFFs after merge")
                 isOn: root.discardAfterMerge
                 onTriggered: root.discardAfterMerge = !root.discardAfterMerge
+            }
+            MenuSeparator {}
+            // Denoise every channel pass into cleaned/ (raw untouched); each
+            // result joins the session as its "Rc"/"Gc"/"Bc"/"Cc" twin, D
+            // flips between the two in the viewer.
+            MenuItem {
+                text: Sessions.cleanBusy ? qsTr("Cleaning passes…")
+                                         : qsTr("Clean passes → cleaned/ (denoise, raw kept)")
+                enabled: !Sessions.cleanBusy && toolsMenu.haveSession && root.canClean
+                onTriggered: Sessions.cleanPasses(strip.currentIndex, root.cleanStrength)
+            }
+            Menu {
+                title: qsTr("    Clean strength")
+                StateItem { text: qsTr("Light  (0.45 σ, a little grain stays)"); isOn: root.cleanStrength === 0.45; onTriggered: root.cleanStrength = 0.45 }
+                StateItem { text: qsTr("Normal  (0.6 σ)"); isOn: root.cleanStrength === 0.6; onTriggered: root.cleanStrength = 0.6 }
+                StateItem { text: qsTr("Strong  (0.8 σ, smooth)"); isOn: root.cleanStrength === 0.8; onTriggered: root.cleanStrength = 0.8 }
             }
             // Enabled only on a scan that xylod told us belongs to a bracket
             // set — there is no guessing from the files here.
@@ -840,7 +958,7 @@ ApplicationWindow {
                       ? strip.currentItem.sPassDims[root.shownPass].h : 0
                 colourMatrix: root.viewMatrix
                 pedestal: root.viewPedestal
-                knee: root.cpActive ? root.cpToe : 0.0
+                knee: (root.cpActive || root.bpActive) ? root.cpToe : 0.0
                 gammaOn: root.cpActive
                 gammaIn: (strip.currentItem && root.shownPass >= 0)
                          ? strip.currentItem.sPassProxyGamma[root.shownPass] : 1.0
@@ -1090,6 +1208,15 @@ ApplicationWindow {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: { root.reloadProfile(); root.cpOn = !root.cpOn }
                     }
+                }
+                Label {
+                    visible: root.shownIsSingle && (root.cpAvailable || root.bpActive)
+                    text: root.bpActive
+                          ? qsTr("black %1%").arg((root.monoBlack * 100).toFixed(1))
+                            + (root.cpToeSteps !== 4 ? qsTr(" · toe %1%").arg((root.cpToe * 100).toFixed(2)) : "")
+                          : qsTr("black off")
+                    color: root.bpActive ? root.ink : root.inkMuted
+                    font.pixelSize: 11
                 }
                 Label {
                     visible: root.wbAvailable && !root.cpActive

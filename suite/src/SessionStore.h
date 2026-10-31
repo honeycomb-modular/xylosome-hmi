@@ -169,7 +169,18 @@ public:
     // deleted like any other image. discardChannels deletes the three channel
     // TIFFs (and their proxies) once the merge is in; the pass records stay,
     // marked discarded, so the session's timing history is kept.
-    Q_INVOKABLE void mergeColour(int row, bool discardChannels);
+    // fromCleaned merges the session's cleaned twins (Rc/Gc/Bc, see
+    // cleanPasses) instead of the raw channel passes.
+    Q_INVOKABLE void mergeColour(int row, bool discardChannels, bool fromCleaned = false);
+    // Runs capture/clean_pass.py over every channel pass (R, G, B, C) of the
+    // session into <captureDir>/cleaned/<same file name>; the raw passes are
+    // never touched. Each result joins the session as a "<F>c" pass ("Rc",
+    // "Cc" ...) so it is ingested, shown, handed to Photoshop, merged and
+    // deleted like any other image; a re-run replaces it. strength is the
+    // filter strength in noise sigmas (0.45 light, 0.6 normal, 0.8 strong).
+    Q_INVOKABLE void cleanPasses(int row, double strength);
+    Q_PROPERTY(bool cleanBusy READ cleanBusy NOTIFY cleanBusyChanged)
+    bool cleanBusy() const { return m_clean != nullptr; }
     // Hand the shown pass's TIFF (channel or merged) to Photoshop, detached.
     // passPos is the position in the session's pass list (what the UI shows).
     // external/photoshop in the settings overrides the install lookup.
@@ -202,6 +213,9 @@ signals:
     void hdrMergeFinished(bool ok, const QString &message);
     void colourMergeStarted(int seq);
     void colourMergeFinished(bool ok, const QString &message);
+    void cleanBusyChanged();
+    void cleanStarted(int seq);
+    void cleanFinished(bool ok, const QString &message);
 
 private slots:
     void onPassStarted(int pass, const QString &filter, qint64 tMs, qint64 wallMs,
@@ -246,6 +260,9 @@ private:
     QString m_mergeOut;
     QString m_mergeUuid;                          // colour merge: session being merged ("" = HDR)
     bool    m_mergeDiscard = false;
+    QProcess *m_clean = nullptr;                  // running clean_pass.py, if any
+    QString m_cleanOut;
+    void cleaned(const QString &uuid, const QStringList &filters, const QStringList &outRel);
     void colourMerged(const QString &uuid, const QString &outRel, bool discard);
     int m_nextSeq = 1;
     double m_freeGB = -1;
