@@ -1,6 +1,6 @@
-# Usage: python tdi_sync_sweep.py 145,150,155 out.json 10800 [--stages 96] [--range 146:153:0.5]
+# Usage: python tdi_sync_sweep.py 145,150,155 out.json 10800 [--stages 96] [--range 146:153:0.5] [--arc -28:28]
 #        (lines/deg list, output, constant line rate Hz; --range replaces the list)
-# Moves the scan axis 14 -> 158 deg once per value. Cart must be clear.
+# Moves the scan axis 14 -> 158 deg (or the --arc given) once per value. Cart must be clear.
 # Drive xylod directly: one constant-speed single pass per lines/deg value,
 # wait for the capture agent to save the TIFF, record the mapping.
 #
@@ -17,7 +17,8 @@ LOG = r"C:\dev\capture_agent.log"
 ARC0, ARC1, VEL = 14.0, 158.0, 72.0
 argv = sys.argv[1:]
 stages = int(argv[argv.index("--stages") + 1]) if "--stages" in argv else 0
-pos = [a for i, a in enumerate(argv) if not a.startswith("--") and (i == 0 or argv[i - 1] not in ("--stages", "--range"))]
+if "--arc" in argv: ARC0, ARC1 = (float(x) for x in argv[argv.index("--arc") + 1].split(":"))
+pos = [a for i, a in enumerate(argv) if not a.startswith("--") and (i == 0 or argv[i - 1] not in ("--stages", "--range", "--arc"))]
 if "--range" in argv:
     a, b, step = (float(x) for x in argv[argv.index("--range") + 1].split(":"))
     vals = [round(a + i * step, 3) for i in range(int(round((b - a) / step)) + 1)]

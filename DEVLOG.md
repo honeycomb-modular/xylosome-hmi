@@ -1266,3 +1266,61 @@ serial port. COM3 is single-occupant, so this was done outside the capture
 agent; the agent's cached gain is only refreshed on its next `gcp` read, so
 restart the agent (elevated, Stop then Start with a pause) before trusting the
 gain the HMI/Suite report.
+
+
+## 2026-11-04 — new rotating camera mount: red and home re-taught, sync sweep prepared (not run)
+
+Hoyte rebuilt the rotating camera mount: the pivot now sits under the lens and
+the weight moved back, so every taught position and the balance were suspect.
+The evening was cut short by two power outages; nothing below was changed in
+xylod itself.
+
+### Re-taught on the box (both live in `/var/lib/xylod`, not in git)
+
+- **Colour-wheel red:** `el7211_red` = **132473** (was 133629, −1.59°). Taught by
+  hand with xylod stopped: `sudo -n ./el7211_csp enp4s0 8 0 3 --teach-red`.
+  Two hand placements that night were about 1° apart, so a hand teach is good
+  to about a degree. Hoyte confirmed R/G/B and the direction of rotation.
+- **Scan-axis home:** `[set home]` on the HMI after a slow jog —
+  `home taught — current pose is now 0° (1573524 counts)` (was 1944186).
+  xylod loaded it again at both later boots (`absolute home loaded`).
+
+### Found, not changed
+
+- **The A6-EC scan axis is on factory defaults** (C00.04 auto-tune mode 1,
+  C00.05 stiffness 12, C00.06 inertia ratio 100 %, C01.00–03 = 400/250/3184/200,
+  feedforward 0). It has never been tuned for the camera, old mount or new.
+  C-parameter CoE address: `Cgg.nn` = `0x20gg:(nn+1)`.
+- xylod's A6-EC TxPDO carries no torque (0x6077) or following error (0x60F4),
+  so the balance of the new mount cannot be measured without adding them.
+- Timed single-pass scans 2689–2698 ran from the HMI over **−28° → +28°**,
+  8260 lines (147.5 lines/deg), 96 TDI stages, at 516 / 1032 / 1377 / 2065 Hz.
+  The agent log says all ten were saved, but only `scan_2697` and `scan_2698`
+  are in `D:\capture`. Not looked into.
+
+### Power outages
+
+Two cuts (about 18:15 and 18:20 PC time). After the second the C6920 had power
+but never came up (a 3-second boot in `journalctl --list-boots`, no ARP reply
+from 192.168.2.2 to the PC or the Pi); a full restart of the rig fixed it.
+After it: xylod operational, 9 slaves, no drive fault, wheel −0.87° from red
+with torque off, axis at −28°. The C6920 clock runs about 7 minutes ahead of
+the capture PC.
+
+### Next: TDI sync at the timed-scan field of view
+
+The lens pupil moved relative to the rotation axis, so the lines/deg that
+keeps 96 stages sharp has probably moved too. `capture/tdi_sync_sweep.py` got
+an `--arc a:b` option so the sweep can run over the timed-scan arc instead of
+the fixed 14° → 158°. Prepared, dry-run only — **no pass has been run**:
+
+```
+cd capture
+python -I tdi_sync_sweep.py D:\capture\sweep_newmount.json 2065 --stages 96 --range 144.5:150.5:0.5 --arc -28:28
+python -I tdi_sync_ratio.py D:\capture\sweep_newmount.json
+```
+
+13 passes at about 14 deg/s (4 s each, the same as the 4-second timed scans).
+The script returns at 40 deg/s, faster than anything the new mount has done;
+ask Hoyte before running, and choose `--band` / `--cols` on the in-focus
+subject when scoring.
