@@ -125,7 +125,8 @@ struct ScanJob {
 
 struct SeqCommand {
     enum Type { Enable, Disable, Home, Jog, MoveTo, Filter, Execute,
-                Pause, Resume, Stop, FaultReset, SetHome, ColourStops, LineDither, Armed } type;
+                Pause, Resume, Stop, FaultReset, SetHome, ColourStops, LineDither, Armed,
+                WheelJog, WheelSet } type;
     double  a = 0.0, b = 0.0;      // vel / pos arguments
     double  stops[3] = {0.0, 0.0, 0.0};   // ColourStops: R G B
     int     slot = 0;
@@ -145,6 +146,8 @@ struct SeqStatus {
     int    halts = 0;              // xerox: halts logged in pass 0 (replayed by later passes)
     double gainStops = 0.0;        // this pass: stops the line-rate floor could not give (camera gain)
     double colourStops[3] = {0.0, 0.0, 0.0};   // R G B, stops of extra exposure
+    double wheelDeg = NAN;                     // colour wheel, deg from red (NaN = no wheel / not ready)
+    double wheelSlotDeg[3] = {NAN, NAN, NAN};  // taught R G B positions, deg from red
 };
 
 class Sequencer {

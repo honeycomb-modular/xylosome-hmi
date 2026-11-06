@@ -9,6 +9,7 @@
 // outputs are sent. All Backend methods below are only legal inside that
 // callback (single-threaded control context — no locks needed there).
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 
@@ -52,6 +53,12 @@ public:
     // End of a sequence: back to slot 0. A backend that can safely drop torque
     // at rest (the colour wheel) may do so once it is there.
     virtual void fwPark() { fwMoveToSlot(0); }
+    // Colour-wheel calibration (HMI: settings ▸ calibration ▸ colour wheel).
+    // Angles are degrees from red. No-ops on a backend without that wheel.
+    virtual void   fwJog(double /*deg*/) {}                 // nudge the wheel where it stands
+    virtual bool   fwTeach(int /*slot*/) { return false; }  // where it stands becomes this slot, persisted
+    virtual double fwDeg() const { return NAN; }            // where it stands; NaN = no wheel / not ready
+    virtual double fwSlotDeg(int /*slot*/) const { return NAN; }   // a slot's taught position
 
     // ── line trigger (EL2521) ────────────────────────────────────────────────
     virtual void setLineHz(double hz) = 0;

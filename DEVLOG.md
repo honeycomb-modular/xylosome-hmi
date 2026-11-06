@@ -1324,3 +1324,64 @@ python -I tdi_sync_ratio.py D:\capture\sweep_newmount.json
 The script returns at 40 deg/s, faster than anything the new mount has done;
 ask Hoyte before running, and choose `--band` / `--cols` on the in-focus
 subject when scoring.
+
+## 2026-11-05 — colour-wheel positions taught on the HMI; TDI sync re-found at 152.2 lines/deg
+
+### settings ▸ calibration ▸ colour wheel
+
+With the rebuilt mount the red filter sat a few degrees off by eye, and the
+only way to move it was a hand teach with xylod stopped. Now there is a page:
+pick a colour (the wheel turns to it and holds), jog it in 1° / 0.1° steps,
+set. Every colour keeps its own position.
+
+- **xylod:** `{"cmd":"wheel_jog","deg":x}` and `{"cmd":"wheel_set","slot":0|1|2}`,
+  idle only and only while the wheel is holding (send `filter` first). Status
+  gains `wheelDeg` and `wheelSlots` (see `beckhoff/PROTOCOL.md`).
+- **Red is the anchor.** Setting red rewrites `wheel_red_file` (the file
+  `el7211_csp --teach-red` writes), so the window, the trip and green/blue all
+  move with it — the fix when the whole wheel has shifted. At most 10° per set,
+  so the window cannot be walked round a full turn. Setting green or blue stores
+  that one offset from red in the new `wheel_slot_file`
+  (`/var/lib/xylod/wheel_slots`); the `wheel_slot_g/b` config values are only
+  the defaults now.
+- **HMI:** `ScreenColourWheel.qml`, opened from the calibration list. `[back]`
+  sends the wheel to red.
+
+On the rig: red set on the page, **+2.50°** → `el7211_red` = 134296. Green then
+stopped at the 46° window, so `/etc/xylod.conf` got `wheel_window_deg = 50`,
+`wheel_trip_deg = 52` (same lines added to the repo conf). Green and blue were
+then set at **+50.00° / −50.00°**, i.e. exactly on the new limit — check whether
+they want more.
+
+Deployed by copying the changed files (not a git sync): the C6920 checkout is
+still f0a86f6 plus uncommitted files equal to this commit, built and installed
+there; the Pi is a1dea44 plus the HMI files, rebuilt, which also brought it the
+0.1-step `lines/deg` row from 6755a13.
+
+### TDI sync on the new mount
+
+27 constant-speed passes over the timed-scan field (−28° → +28°), 96 stages,
+2065 Hz, one lines/deg value each from 144.5 to 157.5 (scans 2702–2706 and
+2708–2729, `D:\capture\sweep_newmount.json`). Subject: a framed poster on an
+indoor wall. `tdi_sync_ratio.py --band 18:42 --cols 1100:4500`:
+
+- **peak 152.2 lines/deg** (68% 152.06–152.32). The HMI was on 147.5, about
+  3 px of smear at 96 stages on this subject. `calib/syncLinesPerDeg` on the Pi
+  is now 152.2.
+- Inside the frame: 152.0 / 152.5 across the sensor, 150.9 early in the arc and
+  152.9 late.
+
+Hoyte: the enclosure sits further back and the pivot is now at the lens pupil,
+which is why the number moved. The pupil shifts with focus on this lens, so the
+pivot is right for one focus setting only; the value belongs to a focus
+distance — sweep again after refocusing a long way.
+
+### Found, not fixed: a sequence can stall in the reposition
+
+Pass 6 of the first sweep never opened: state `moving`, axis at the run-up
+start, no fault, no log line after `seq: execute` (scan 2707 was never taken).
+`{"cmd":"stop"}` released it. Unproven reading: `Sequencer::stepMove` calls a
+move done only when |velocity| < 0.5 deg/s, but with `acc_limit_degs2 = 1500`
+and a 1 ms cycle the setpoint can fall into a ±0.75 deg/s chatter around the
+target and never pass that test. Once in 28 passes; an HMI scan could hang the
+same way.

@@ -19,12 +19,15 @@ ChoiceList {
         { key: "touch.cal",     value: "idle",   options: ["idle", "run"] },
         { key: "backlash",      value: "0.00°" },
         // Sensor flat field (camera FPN/PRNU) — opens its own page.
-        { key: "flat.field",    value: "dark · white panel · save ▸", options: ["dark · white panel · save ▸"] }
+        { key: "flat.field",    value: "dark · white panel · save ▸", options: ["dark · white panel · save ▸"] },
+        // Colour-wheel filter positions, taught by eye — opens its own page.
+        { key: "colour.wheel",  value: "pick · jog · set ▸", options: ["pick · jog · set ▸"] }
     ]
 
     onRowActivated: function(idx) {
         var key = calList.rowKey(idx)
         if (key === "flat.field") { calList.StackView.view.push(Qt.resolvedUrl("ScreenFlatField.qml")); return }
+        if (key === "colour.wheel") { calList.StackView.view.push(Qt.resolvedUrl("ScreenColourWheel.qml")); return }
         if (key === "tdi.sync")  Calib.setSyncEnabled(calList.rowValue(idx) === "on")
         if (key === "lines/deg") Calib.setSyncLinesPerDeg(parseFloat(calList.rowValue(idx)))
     }

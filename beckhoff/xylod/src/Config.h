@@ -44,6 +44,7 @@ struct Config {
     // `el7211_csp ... --teach-red` and read from wheelRedFile.
     bool   wheelEnable     = false;      // false = EL7211 left untouched (pre-2026-10-16)
     std::string wheelRedFile = "/var/lib/xylod/el7211_red";
+    std::string wheelSlotFile = "/var/lib/xylod/wheel_slots";   // green / blue from red, taught on the HMI
     double wheelSlotDeg[4] = {0.0, 45.0, -45.0, NAN};   // R G B C from red; nan = not fitted
     double wheelWindowDeg  = 46.0;
     double wheelTripDeg    = 48.0;

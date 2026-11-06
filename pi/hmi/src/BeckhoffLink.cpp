@@ -106,6 +106,8 @@ void BeckhoffLink::handleMessage(const QJsonObject &m) {
         m_velDegS    = m.value(QStringLiteral("velDegS")).toDouble();
         m_lineHz     = m.value(QStringLiteral("lineHz")).toDouble();
         m_filterSlot = m.value(QStringLiteral("filterSlot")).toInt(-1);
+        m_wheelDeg   = m.value(QStringLiteral("wheelDeg")).toDouble(std::numeric_limits<double>::quiet_NaN());
+        m_wheelSlots = m.value(QStringLiteral("wheelSlots")).toArray().toVariantList();
         m_halts      = m.value(QStringLiteral("halts")).toInt(0);
         m_captureConnected = m.value(QStringLiteral("capture")).toBool(true);
         emit statusChanged();
@@ -434,6 +436,14 @@ void BeckhoffLink::moveTo(double posDeg, double velDegS) {
 }
 void BeckhoffLink::setFilter(int slot) {
     sendJson({{QStringLiteral("cmd"), QStringLiteral("filter")},
+              {QStringLiteral("slot"), slot}});
+}
+void BeckhoffLink::wheelJog(double deg) {
+    sendJson({{QStringLiteral("cmd"), QStringLiteral("wheel_jog")},
+              {QStringLiteral("deg"), deg}});
+}
+void BeckhoffLink::wheelSet(int slot) {
+    sendJson({{QStringLiteral("cmd"), QStringLiteral("wheel_set")},
               {QStringLiteral("slot"), slot}});
 }
 

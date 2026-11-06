@@ -88,6 +88,7 @@ qt_add_qml_module(xylosome_hmi
         qml/ScreenAxis.qml
         qml/ScreenCalibration.qml
         qml/ScreenFlatField.qml
+        qml/ScreenColourWheel.qml
         qml/ScreenColour.qml
         qml/ScreenDisplay.qml
         qml/ScreenSystem.qml

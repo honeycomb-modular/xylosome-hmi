@@ -16,6 +16,7 @@ using json = nlohmann::json;
 #include <cstring>
 #include <cstdlib>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 
 bool TcpServer::listen() {
@@ -92,6 +93,10 @@ std::string TcpServer::statusJson() {
         {"drive", {{"sw", s.driveSw}, {"fault", s.driveFault}}},
         {"echo", s.echo},
     };
+    if (std::isfinite(s.wheelDeg)) {      // colour wheel fitted and usable
+        j["wheelDeg"]   = s.wheelDeg;
+        j["wheelSlots"] = {s.wheelSlotDeg[0], s.wheelSlotDeg[1], s.wheelSlotDeg[2]};
+    }
     return j.dump();
 }
 
@@ -122,6 +127,8 @@ void TcpServer::handleLine(Client &c, const std::string &line) {
                                  sc.b = req.value("velDegS", 20.0); }
     else if (cmd == "filter")  { sc.type = SeqCommand::Filter; sc.slot = req.value("slot", 3); }
     else if (cmd == "set_home") sc.type = SeqCommand::SetHome;
+    else if (cmd == "wheel_jog") { sc.type = SeqCommand::WheelJog; sc.a = req.value("deg", 0.0); }
+    else if (cmd == "wheel_set") { sc.type = SeqCommand::WheelSet; sc.slot = req.value("slot", -1); }
     else if (cmd == "line_dither") { sc.type = SeqCommand::LineDither; sc.a = req.value("on", true) ? 1.0 : 0.0; }
     else if (cmd == "armed")   { sc.type = SeqCommand::Armed; sc.slot = req.value("pass", -1); }
     else if (cmd == "colour_stops") {

@@ -381,6 +381,12 @@ void Sequencer::cycle(double dt) {
             m_bk.fwMoveToSlot(c.slot);
             if (m_st == St::Idle) m_st = St::FilterMove;
             break;
+        case SeqCommand::WheelJog:      // colour-wheel calibration — only at rest
+            if (m_st == St::Idle) m_bk.fwJog(c.a);
+            break;
+        case SeqCommand::WheelSet:
+            if (m_st == St::Idle) m_bk.fwTeach(c.slot);
+            break;
         case SeqCommand::Execute: {
             m_job = c.job;
             // The HMI sets image aspect by line COUNT (the sensor fixes one axis at
@@ -930,6 +936,8 @@ void Sequencer::publish() {
     s.lineHz     = m_bk.lineHz();
     s.plannedLines = m_plannedLines;
     s.filterSlot = m_bk.fwSlot();
+    s.wheelDeg   = m_bk.fwDeg();
+    for (int i = 0; i < 3; i++) s.wheelSlotDeg[i] = m_bk.fwSlotDeg(i);
     s.driveSw    = d.statusword;
     s.driveFault = d.errorCode;
     s.echo       = m_bk.echoCounts();

@@ -12,6 +12,7 @@
 #include <QTcpSocket>
 #include <QTimer>
 #include <QVariantList>
+#include <limits>
 
 class BeckhoffLink : public QObject
 {
@@ -33,6 +34,10 @@ class BeckhoffLink : public QObject
     Q_PROPERTY(double  velocityDegS READ velocityDegS NOTIFY statusChanged)
     Q_PROPERTY(double  lineHz      READ lineHz      NOTIFY statusChanged)
     Q_PROPERTY(int     filterSlot  READ filterSlot  NOTIFY statusChanged)
+    // Colour wheel, degrees from red: where it stands (NaN = no wheel / not
+    // ready) and the taught [R, G, B] positions. settings ▸ calibration ▸ colour wheel.
+    Q_PROPERTY(double  wheelDeg    READ wheelDeg    NOTIFY statusChanged)
+    Q_PROPERTY(QVariantList wheelSlots READ wheelSlots NOTIFY statusChanged)
     Q_PROPERTY(int     halts       READ halts       NOTIFY statusChanged)   // xerox: halts logged in pass 0
     // The capture agent is attached to xylod (status "capture"). Every execute
     // is refused while it is not: a scan with nobody recording is lost motion.
@@ -63,6 +68,8 @@ public:
     double  velocityDegS() const { return m_velDegS; }
     double  lineHz()       const { return m_lineHz; }
     int     filterSlot()   const { return m_filterSlot; }
+    double  wheelDeg()     const { return m_wheelDeg; }
+    QVariantList wheelSlots() const { return m_wheelSlots; }
     int     halts()        const { return m_halts; }
     bool    captureConnected() const { return m_captureConnected; }
     QVariantList colourStops() const { return m_colourStops; }
@@ -152,6 +159,10 @@ public:
     Q_INVOKABLE void jog(double velDegS);
     Q_INVOKABLE void moveTo(double posDeg, double velDegS);   // absolute step moves (dial jog)
     Q_INVOKABLE void setFilter(int slot);
+    // Colour-wheel calibration: nudge the wheel where it stands, and teach that
+    // spot as a filter's position (0=R 1=G 2=B). xylod persists it.
+    Q_INVOKABLE void wheelJog(double deg);
+    Q_INVOKABLE void wheelSet(int slot);
     // Line-rate coupling for the NEXT executeScan. "curve" = trigger rate tracks
     // instantaneous velocity, so geometry stays honest. "fixed" = constant
     // baseHz regardless of speed, which stretches the subject where the axis is
@@ -210,6 +221,8 @@ private:
     int     m_pass = -1, m_filterSlot = -1, m_halts = 0;
     bool    m_captureConnected = true;   // true until a status says otherwise (old xylod: always)
     QVariantList m_colourStops{0.0, 0.0, 0.0};
+    double  m_wheelDeg = std::numeric_limits<double>::quiet_NaN();
+    QVariantList m_wheelSlots;
     double  m_progress = 0.0, m_posDeg = 0.0, m_velDegS = 0.0, m_lineHz = 0.0;
     QString m_faultText;
     QString m_xylodVersion;

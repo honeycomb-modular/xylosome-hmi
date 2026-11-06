@@ -145,10 +145,23 @@ bool EcBackend::wheelPreop(int s) {
              m_cfg.wheelWindowDeg, m_cfg.wheelTripDeg);
         return false;
     }
+    // Slots: the config, then green/blue as taught on the HMI (settings ▸
+    // calibration ▸ colour wheel). Red is the anchor — the red file above —
+    // so its slot stays where the config puts it (0).
+    for (int k = 0; k < 4; k++) m_whSlotDeg[k] = m_cfg.wheelSlotDeg[k];
+    if (FILE *f = std::fopen(m_cfg.wheelSlotFile.c_str(), "r")) {
+        double g = NAN, b = NAN;
+        if (std::fscanf(f, "%lf %lf", &g, &b) == 2 && std::isfinite(g) && std::isfinite(b)) {
+            m_whSlotDeg[1] = g; m_whSlotDeg[2] = b;
+            LOGI("ec: wheel slots taught — G %+.2f, B %+.2f deg from red (%s)",
+                 g, b, m_cfg.wheelSlotFile.c_str());
+        }
+        std::fclose(f);
+    }
     for (int k = 0; k < 4; k++)
-        if (!std::isnan(m_cfg.wheelSlotDeg[k]) && std::fabs(m_cfg.wheelSlotDeg[k]) > m_cfg.wheelWindowDeg) {
+        if (!std::isnan(m_whSlotDeg[k]) && std::fabs(m_whSlotDeg[k]) > m_cfg.wheelWindowDeg) {
             LOGE("ec: wheel slot %d at %.1f deg lies outside the %.1f deg window",
-                 k, m_cfg.wheelSlotDeg[k], m_cfg.wheelWindowDeg);
+                 k, m_whSlotDeg[k], m_cfg.wheelWindowDeg);
             return false;
         }
     m_whWin  = int32_t(m_cfg.wheelWindowDeg / 360.0 * double(m_whCpr));
@@ -472,7 +485,7 @@ void EcBackend::fwMoveToSlot(int slot) {
     if (m_cfg.wheelEnable) {
         static const char kName[] = "RGBC";
         m_whParkArmed = false;            // any explicit move holds; only fwPark() releases
-        const double deg = m_cfg.wheelSlotDeg[slot];
+        const double deg = m_whSlotDeg[slot];
         if (std::isnan(deg)) {
             LOGW("ec: wheel has no %c filter — staying where it is", kName[slot]);
             return;
@@ -569,6 +582,77 @@ void EcBackend::fwPark() {
     if (m_cfg.wheelEnable) m_whParkArmed = true;   // release torque once at rest on red
 }
 
+// ── colour-wheel calibration (HMI: settings ▸ calibration ▸ colour wheel) ────
+// Pick a colour (fwMoveToSlot: the wheel goes there and holds), nudge it by
+// eye, teach. Both act only on a wheel that is holding at rest.
+void EcBackend::fwJog(double deg) {
+    if (!m_cfg.wheelEnable || m_wh != Wh::Holding || !std::isfinite(deg)) return;
+    const int32_t at = int32_t(std::llround(m_whCmd));
+    int32_t t = at + int32_t(std::llround(deg / 360.0 * double(m_whCpr)));
+    t = std::max(m_whCenter - m_whWin, std::min(m_whCenter + m_whWin, t));
+    if (t == at) return;                  // at the edge of the window
+    m_whParkArmed = false;                // being adjusted: keep holding
+    m_whTarget = t;
+    m_whVel = 0.0;
+    m_wh = Wh::Moving;
+}
+
+// Red is the anchor: the window, the trip and green/blue are all measured
+// from it, so teaching red moves every one of them. It rewrites the red file
+// that `el7211_csp --teach-red` writes. Small steps only — the window travels
+// with red, and the wheel must never work its way round a full turn.
+static const double kWheelRedStepDeg = 10.0;
+
+bool EcBackend::fwTeach(int slot) {
+    if (!m_cfg.wheelEnable || m_wh != Wh::Holding || slot < 0 || slot > 2) {
+        LOGW("ec: wheel teach ignored — pick the colour first, so the wheel is holding on it");
+        return false;
+    }
+    const int32_t at  = int32_t(std::llround(m_whCmd));
+    const double  deg = double(at - m_whCenter) * 360.0 / double(m_whCpr);
+    if (slot == 0) {
+        if (std::fabs(deg) > kWheelRedStepDeg) {
+            LOGW("ec: wheel red NOT taught — %+.2f deg from the current red, limit %.0f per teach",
+                 deg, kWheelRedStepDeg);
+            return false;
+        }
+        const long long st = (((long long)at % m_whCpr) + m_whCpr) % m_whCpr;
+        FILE *f = std::fopen(m_cfg.wheelRedFile.c_str(), "w");
+        if (!f) { LOGE("ec: cannot write %s — red NOT taught", m_cfg.wheelRedFile.c_str()); return false; }
+        std::fprintf(f, "%lld\n", st);
+        std::fclose(f);
+        LOGI("ec: wheel red taught — %+.2f deg from the old one, now %lld/%lld (%s)",
+             deg, st, m_whCpr, m_cfg.wheelRedFile.c_str());
+        m_whRedSt  = st;
+        m_whCenter = at;
+    } else {
+        double v[3] = {0.0, m_whSlotDeg[1], m_whSlotDeg[2]};
+        v[slot] = deg;
+        FILE *f = std::fopen(m_cfg.wheelSlotFile.c_str(), "w");
+        if (!f) { LOGE("ec: cannot write %s — slot NOT taught", m_cfg.wheelSlotFile.c_str()); return false; }
+        std::fprintf(f, "%.3f %.3f\n", v[1], v[2]);
+        std::fclose(f);
+        m_whSlotDeg[slot] = deg;
+        LOGI("ec: wheel %c taught — %+.2f deg from red (%s)", slot == 1 ? 'G' : 'B', deg,
+             m_cfg.wheelSlotFile.c_str());
+    }
+    m_whSlot = slot;
+    return true;
+}
+
+double EcBackend::fwDeg() const {
+    if (!m_cfg.wheelEnable || !m_whTx || m_whCpr <= 0) return NAN;
+    if (m_wh == Wh::Holding || m_wh == Wh::Moving)          // commanded: what a teach would store
+        return (m_whCmd - double(m_whCenter)) * 360.0 / double(m_whCpr);
+    if (m_wh == Wh::Released)                               // free: where it actually sits
+        return double(m_whTx->pos - m_whCenter) * 360.0 / double(m_whCpr);
+    return NAN;                                             // off / waiting / tripped
+}
+
+double EcBackend::fwSlotDeg(int slot) const {
+    return (m_cfg.wheelEnable && m_whTx && slot >= 0 && slot < 4) ? m_whSlotDeg[slot] : NAN;
+}
+
 // ── colour wheel, one cycle ──────────────────────────────────────────────────
 // Off      fitted but unusable: controlword 0, never energised
 // Waiting  drive coming up; once position is valid, judge the pose vs red
@@ -647,7 +731,7 @@ void EcBackend::wheelCycle(double dt) {
             m_whTarget = pos;
             m_whSlot = -1;
             for (int k = 0; k < 4; k++) {
-                const double d = m_cfg.wheelSlotDeg[k];
+                const double d = m_whSlotDeg[k];
                 if (!std::isnan(d) && std::fabs(degFromRed(pos) - d) < 0.5) m_whSlot = k;
             }
             m_wh = Wh::Holding;

@@ -23,6 +23,8 @@ Every command may carry an optional `"id"` (int) which is echoed in the ack.
 | `jog` | `{"velDegS":-5.0}` | constant velocity jog; `0` stops |
 | `moveTo` | `{"posDeg":12.5,"velDegS":20.0}` | absolute move (output degrees) |
 | `filter` | `{"slot":2}` | filter wheel → slot 0=R 1=G 2=B 3=C |
+| `wheel_jog` | `{"deg":0.1}` | colour-wheel calibration: nudge the wheel by `deg` from where it stands (+ toward green), clamped to the window. Idle only, and only while the wheel is holding — send `filter` first |
+| `wheel_set` | `{"slot":1}` | teach: where the wheel stands becomes that filter's position, persisted. `1`/`2` (G/B) store an offset from red in `wheel_slot_file`; `0` (R) re-teaches red itself (`wheel_red_file`), which moves the window and G/B with it, at most 10° per teach. Idle only |
 | `execute` | see below | run the full scan sequence |
 | `pause` | — | freeze a running pass (velocity ramps to 0, position held). In a `xerox` job: halt the axis, the trigger keeps running |
 | `resume` | — | continue a paused pass |
@@ -167,6 +169,8 @@ Infuser and for the capture PC to bracket acquisitions.
   "posDeg": 37.8,          // scan axis output angle
   "velDegS": 41.2,
   "filterSlot": 1,         // -1 while moving / unhomed
+  "wheelDeg": 45.3,        // colour wheel, deg from red; absent with no wheel, or while it is off / tripped
+  "wheelSlots": [0.0, 45.0, -45.0],   // taught R G B positions, deg from red; absent with wheelDeg
   "lineHz": 2061.0,        // current EL2521 output frequency
   "estopOk": true,
   "drive": { "sw": 4663, "fault": 0 },

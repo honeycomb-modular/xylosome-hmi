@@ -40,6 +40,10 @@ public:
 
     void fwMoveToSlot(int slot) override;
     void fwPark() override;               // colour wheel: to red, then torque off
+    void   fwJog(double deg) override;    // colour-wheel calibration, see Backend.h
+    bool   fwTeach(int slot) override;
+    double fwDeg() const override;
+    double fwSlotDeg(int slot) const override;
     bool fwBusy() const override { return m_cfg.wheelEnable ? wheelBusy() : m_fwBusy; }
     int  fwSlot() const override {
         if (m_cfg.wheelEnable) return wheelBusy() ? -1 : m_whSlot;
@@ -133,6 +137,7 @@ private:
     bool     m_whParkArmed = false;       // at rest after a park/boot: may release torque
     Wh       m_wh = Wh::Off;              // Off = fitted but unusable (logged why)
     long long m_whRedSt = -1;             // red, single-turn counts
+    double   m_whSlotDeg[4] = {0.0, 45.0, -45.0, NAN};   // R G B C from red: the config, then the taught file
     long long m_whCpr = 0;                // counts per rev (0x9008:12)
     int32_t  m_whCenter = 0;              // red in this session's counts
     int32_t  m_whWin = 0, m_whTrip = 0;   // window / trip in counts
