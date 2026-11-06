@@ -1385,3 +1385,66 @@ move done only when |velocity| < 0.5 deg/s, but with `acc_limit_degs2 = 1500`
 and a 1 ms cycle the setpoint can fall into a ±0.75 deg/s chatter around the
 target and never pass that test. Once in 28 passes; an HMI scan could hang the
 same way.
+
+## 2026-11-06 — the wheel stalling on a stop, flat field run from the HMI, BW scans hold red
+
+### The colour wheel was running into a mechanical stop (2026-11-05 evening)
+
+Three colour scans lost their green and blue passes and the HMI restarted
+mid-scan each time. It looked like a power dip at the scan-axis reset; it was
+the colour wheel.
+
+- Green and blue had been taught at ±50° (the window limit). From about 18:56
+  the wheel could no longer get there: xylod logged it arriving at **+47.7°**
+  and **−48.7°** instead of ±49.93°, the same angles on separate scans — a hard
+  stop, with the motor left pushing against it for the whole pass.
+- About 0.8 s after each arrival at green the PoE switch lost power and took
+  the Pi with it; power came back within seconds of the wheel returning to red.
+  The capture agent lost xylod while the link was down, so those passes were
+  never recorded (2739 has only R; 2740 R + 2741 B are one xerox scan, G lost).
+- Slowing the reset (`beckhoff/returnVelDegS` 240 → 80 in the Pi's
+  `XYLOSOME.conf`) changed nothing and was put back to 240.
+- Next morning the same stall tripped the wheel drive instead:
+  `wheel drive left operation enabled (sw 0x0068) — latched until fault_reset`
+  37 ms after arriving at +48.7°. While it is latched every scan hangs in
+  `filter`; a `fault_reset` re-enables it where it sits.
+
+Hoyte reworked the wheel mechanically on 2026-11-06; it arrives at +49.92° /
+−49.93° again.
+
+How to recognise it next time:
+- the arrival line — `ec: wheel at slot 1 (+47.73 deg from red)` — reads short
+  of the taught angle;
+- on the capture PC, `Get-WinEvent System` shows `aqnic650` id 14/15 (link lost /
+  established) in a down-up-down-up pattern = the switch restarting;
+- on the Pi, `journalctl -b -1 | tail` ends with no shutdown lines = power cut,
+  not a reboot.
+
+### Flat field from the HMI, first real run
+
+settings ▸ calibration ▸ flat field, run on the camera for the first time: dark,
+white (the agent settled on 14317 Hz at 79%), save. The first white attempt
+failed "too dark even at 3500 Hz". Calibrated **without** the colour filter in
+the path, so it corrects sensor and lens for all three colours.
+
+Flat-white scans, column pattern after removing the broad shading:
+
+| scan | state | typical | worst (1–99%) |
+|---|---|---|---|
+| 2749 | before, red filter | 0.51% | 2.6% |
+| 2751 | after, no filter | 0.22% | 1.1% |
+| 2753 | after, red filter, wheel held | 0.26% | 1.2% |
+
+Not removed: steps where the sensor's four sections join, about −1.2% (column
+2048), −0.7% (4096) and −0.3…−0.5% (6144), the same before and after. Through
+the red filter the ends of the sensor line are 15–18% darker than the middle;
+that is the filter itself (a design limit for now), which the calibration did
+not see.
+
+### BW scans now hold the wheel on red
+
+In a BW (`C`) scan the wheel has no slot, so it was left where it was: hanging
+free, torque off, resting anywhere from −1.6° to −3.6° from red. At −3.6°
+(scan 2750) the filter's edge was in the frame at both ends of the sensor.
+`wheel_slot_c = 0` in `/etc/xylod.conf` (and here) gives `C` the red position:
+`ec: wheel -> C (+0.0 deg)`, held for the pass, released at the end as before.
